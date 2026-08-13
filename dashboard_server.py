@@ -442,6 +442,10 @@ DASHBOARD_HTML = """\
   pre.raw { background: #0f172a; padding: 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; overflow-x: auto; max-height: 200px; overflow-y: auto; margin-top: 0.5rem; color: #94a3b8; }
   .toggle-raw { background: none; border: 1px solid #334155; color: #94a3b8; padding: 0.2rem 0.6rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem; margin-top: 0.5rem; }
   .toggle-raw:hover { border-color: #64748b; color: #e2e8f0; }
+  details.more-info { margin-top: 0.5rem; }
+  details.more-info summary { list-style: none; display: inline-block; }
+  details.more-info summary::-webkit-details-marker { display: none; }
+  details.more-info[open] summary { margin-bottom: 0.35rem; }
 </style>
 </head>
 <body>
@@ -555,19 +559,24 @@ DASHBOARD_HTML = """\
       html += '<h2>Bot</h2>';
       html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
 
+      d.buys = d.buys ?? 0;
+      d.sells = d.sells ?? 0;
+
       const metrics = [
-        ['Price', 'price'], ['ETH Balance', 'eth_balance'],
-        ['Token Balance', 'token_balance'], ['P&L', 'profit_percent'],
+        ['Price', 'price'], ['P&L', 'profit_percent'],
         ['Filled / Max Positions', 'position_capacity'],
         ['Buys', 'buys'], ['Sells', 'sells'],
-        ['Uptime', 'uptime_seconds'],
+      ];
+      const moreMetrics = [
+        ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
+        ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
 
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
         : null;
 
-      metrics.forEach(function(pair) {
+      function renderMetric(pair) {
         const label = pair[0], key = pair[1];
         if (d[key] !== undefined && d[key] !== null) {
           let val = d[key];
@@ -586,9 +595,15 @@ DASHBOARD_HTML = """\
           } else if (key === 'eth_balance' || key === 'token_balance') {
             val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : 0);
           }
-          html += '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(val) + '</span></div>';
+          return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(val) + '</span></div>';
         }
-      });
+        return '';
+      }
+
+      metrics.forEach(function(pair) { html += renderMetric(pair); });
+      html += '<details class="more-info"><summary class="toggle-raw">More info</summary>';
+      moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
+      html += '</details>';
 
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
