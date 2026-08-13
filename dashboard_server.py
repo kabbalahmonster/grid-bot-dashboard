@@ -529,6 +529,9 @@ DASHBOARD_HTML = """\
   .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
   .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
   .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
+  .filter-wrap { position: relative; display: inline-flex; }
+  .filter-wrap input { padding-right: 2rem; width: 100%; }
+  .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
   .chain-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
@@ -591,7 +594,7 @@ DASHBOARD_HTML = """\
 <div class="container">
   <div class="summary-bar" id="summary-bar"></div>
   <div class="toolbar">
-    <input id="bot-filter" placeholder="Filter bots or groups">
+    <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&L</option><option value="profit">Session profit</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Ascending ↑</button>
@@ -613,6 +616,7 @@ DASHBOARD_HTML = """\
   const connStatus = document.getElementById('connection-status');
   const summaryBar = document.getElementById('summary-bar');
   const botFilter = document.getElementById('bot-filter');
+  const clearFilter = document.getElementById('clear-filter');
   const chainFilter = document.getElementById('chain-filter');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
@@ -960,9 +964,17 @@ DASHBOARD_HTML = """\
   }
 
   connect();
-  [botFilter, chainFilter].forEach(function(control) {
-    control.addEventListener('input', function() { render(true); });
+  botFilter.addEventListener('input', function() {
+    clearFilter.style.display = botFilter.value ? 'block' : 'none';
+    render(true);
   });
+  clearFilter.addEventListener('click', function() {
+    botFilter.value = '';
+    clearFilter.style.display = 'none';
+    botFilter.focus();
+    render(true);
+  });
+  chainFilter.addEventListener('input', function() { render(true); });
   function updateSortDirectionButton() {
     sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
   }
