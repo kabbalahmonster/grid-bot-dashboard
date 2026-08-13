@@ -563,11 +563,12 @@ DASHBOARD_HTML = """\
       d.sells = d.sells ?? 0;
 
       const metrics = [
-        ['Price', 'price'], ['P&L', 'profit_percent'],
+        ['P&L', 'profit_percent'],
         ['Session Profit', 'session_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
       ];
       const moreMetrics = [
+        ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
