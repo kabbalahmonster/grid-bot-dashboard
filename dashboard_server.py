@@ -32,8 +32,10 @@ import uuid
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 from functools import wraps
+from urllib.parse import urlencode
 
-from flask import Flask, Response, jsonify, request
+import requests as http_requests
+from flask import Flask, Response, jsonify, redirect, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -53,6 +55,9 @@ RATE_LIMIT_WINDOW = 60          # seconds
 RATE_LIMIT_MAX_REQUESTS = 100   # per window per IP
 SSE_KEEPALIVE_INTERVAL = 15     # seconds
 SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
+DEXSCREENER_TIMEOUT = 8
+DEXSCREENER_CACHE_TTL = 300
+CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
 
 # Patterns that suggest private key material (checked against keys AND values)
 _PRIVATE_KEY_PATTERNS = [
@@ -102,6 +107,10 @@ _sse_lock = threading.Lock()
 # Rate-limit store: ip → deque of timestamps
 _rate_store: dict[str, deque] = defaultdict(lambda: deque(maxlen=RATE_LIMIT_MAX_REQUESTS + 1))
 _rate_lock = threading.Lock()
+
+# (chain_id, token_address) -> (cached_at_monotonic, pair_address)
+_dexscreener_pair_cache: dict[tuple[int, str], tuple[float, str]] = {}
+_dexscreener_lock = threading.Lock()
 
 # ---------------------------------------------------------------------------
 # Rate limiter
@@ -369,6 +378,67 @@ def health():
     }), 200
 
 
+@app.route("/api/dexscreener/embed", methods=["GET"])
+def dexscreener_embed():
+    """Resolve the preferred WETH pair and redirect to its embedded chart."""
+    try:
+        chain_id = int(request.args.get("chain_id", ""))
+    except ValueError:
+        return jsonify({"error": "Invalid chain_id"}), 400
+
+    token_address = request.args.get("token_address", "").strip()
+    wallet_address = request.args.get("wallet_address", "").strip()
+    if not re.fullmatch(r"0x[0-9a-fA-F]{40}", token_address):
+        return jsonify({"error": "Invalid token_address"}), 400
+    if wallet_address and not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet_address):
+        return jsonify({"error": "Invalid wallet_address"}), 400
+
+    chain_slug = CHAIN_SLUGS.get(chain_id)
+    if not chain_slug:
+        return jsonify({"error": f"Unsupported chain_id: {chain_id}"}), 400
+
+    cache_key = (chain_id, token_address.lower())
+    now = time.monotonic()
+    with _dexscreener_lock:
+        cached = _dexscreener_pair_cache.get(cache_key)
+    pair_address = cached[1] if cached and now - cached[0] < DEXSCREENER_CACHE_TTL else ""
+
+    if not pair_address:
+        api_url = f"https://api.dexscreener.com/token-pairs/v1/{chain_slug}/{token_address}"
+        try:
+            response = http_requests.get(api_url, timeout=DEXSCREENER_TIMEOUT)
+            response.raise_for_status()
+            pairs = response.json()
+        except (http_requests.RequestException, ValueError) as exc:
+            logger.warning("Dexscreener pair lookup failed: %s", exc)
+            return jsonify({"error": "Dexscreener pair lookup failed"}), 502
+
+        if not isinstance(pairs, list) or not pairs:
+            return jsonify({"error": "No Dexscreener pair found"}), 404
+
+        def pair_rank(pair):
+            quote_symbol = str(pair.get("quoteToken", {}).get("symbol", "")).upper()
+            base_symbol = str(pair.get("baseToken", {}).get("symbol", "")).upper()
+            is_weth = quote_symbol == "WETH" or base_symbol == "WETH"
+            liquidity = float(pair.get("liquidity", {}).get("usd") or 0)
+            return (is_weth, liquidity)
+
+        selected = max(pairs, key=pair_rank)
+        pair_address = str(selected.get("pairAddress", ""))
+        if not pair_address:
+            return jsonify({"error": "Dexscreener pair response missing address"}), 502
+        with _dexscreener_lock:
+            _dexscreener_pair_cache[cache_key] = (now, pair_address)
+
+    params = {"embed": "1", "theme": "dark", "info": "0"}
+    if wallet_address:
+        params["maker"] = wallet_address
+    return redirect(
+        f"https://dexscreener.com/{chain_slug}/{pair_address}?{urlencode(params)}",
+        code=302,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
@@ -446,6 +516,8 @@ DASHBOARD_HTML = """\
   details.more-info summary { list-style: none; display: inline-block; }
   details.more-info summary::-webkit-details-marker { display: none; }
   details.more-info[open] summary { margin-bottom: 0.35rem; }
+  details.chart-panel { margin-top: 0.75rem; }
+  .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
 </style>
 </head>
 <body>
@@ -477,6 +549,7 @@ DASHBOARD_HTML = """\
   const openMoreInfo = new Set();
   const openPositions = new Set();
   const openRawJson = new Set();
+  const openCharts = new Set();
   const rawJsonScroll = new Map();
 
   let evtSource = null;
@@ -562,6 +635,12 @@ DASHBOARD_HTML = """\
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       rawJsonScroll.set(el.dataset.rawScrollKey, el.scrollTop);
     });
+    container.querySelectorAll('details.chart-panel[data-chart-key]').forEach(function(el) {
+      if (el.open) openCharts.add(el.dataset.chartKey);
+      else openCharts.delete(el.dataset.chartKey);
+    });
+    // Avoid reloading an open third-party iframe on every bot status update.
+    if (openCharts.size > 0) return;
 
     const botIds = Object.keys(bots).sort();
     if (botIds.length === 0) {
@@ -580,6 +659,7 @@ DASHBOARD_HTML = """\
       const moreOpen = openMoreInfo.has(botKey);
       const positionsOpen = openPositions.has(botKey);
       const rawOpen = openRawJson.has(botKey);
+      const chartOpen = openCharts.has(botKey);
       html += '<div class="card">';
       html += '<h2>Bot</h2>';
       html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
@@ -634,6 +714,16 @@ DASHBOARD_HTML = """\
       html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '</details>';
+
+      if (d.chain_id && d.token_address && d.wallet_address) {
+        const chartParams = new URLSearchParams({
+          chain_id: String(d.chain_id),
+          token_address: String(d.token_address),
+          wallet_address: String(d.wallet_address),
+        });
+        html += '<details class="chart-panel" data-chart-key="' + esc(botKey) + '"' + (chartOpen ? ' open' : '') + '><summary class="toggle-raw">Dexscreener chart</summary>';
+        html += '<iframe class="dex-chart" loading="lazy" referrerpolicy="no-referrer" src="/api/dexscreener/embed?' + esc(chartParams.toString()) + '"></iframe></details>';
+      }
 
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
