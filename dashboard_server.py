@@ -52,7 +52,7 @@ HOST = os.environ.get("HOST", "0.0.0.0")
 
 MAX_HISTORY_PER_BOT = 100
 RATE_LIMIT_WINDOW = 60          # seconds
-RATE_LIMIT_MAX_REQUESTS = 100   # per window per IP
+RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS", "600"))
 SSE_KEEPALIVE_INTERVAL = 15     # seconds
 SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
 DEXSCREENER_TIMEOUT = 8
@@ -265,7 +265,7 @@ def rate_limit():
     if request.path.startswith("/api/"):
         ip = request.remote_addr or "unknown"
         if _is_rate_limited(ip):
-            return jsonify({"error": "Rate limit exceeded. Max 100 requests/minute."}), 429
+            return jsonify({"error": f"Rate limit exceeded. Max {RATE_LIMIT_MAX_REQUESTS} requests/minute."}), 429
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Optional bot display names/groups and chain badges
 - Bounded ETH-denominated bot trade history with explorer links
 - `X-API-Key` authentication for writes and deletion
-- 100 API requests/minute/IP rate limit
+- Configurable API rate limit (default 600 requests/minute/IP)
 - Recursive private-key detection and rejection
 - Bounded SSE client queues
 - Responsive inline frontend; no build step or database
@@ -52,6 +52,7 @@ Configure `.env`:
 API_KEY=replace-with-a-long-random-secret
 HOST=0.0.0.0
 PORT=5000
+RATE_LIMIT_MAX_REQUESTS=600
 ```
 
 Generate a key:
