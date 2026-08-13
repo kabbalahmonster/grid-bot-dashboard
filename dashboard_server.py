@@ -57,6 +57,8 @@ SSE_KEEPALIVE_INTERVAL = 15     # seconds
 SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
 DEXSCREENER_TIMEOUT = 8
 DEXSCREENER_CACHE_TTL = 300
+ETH_PRICE_TIMEOUT = 8
+ETH_PRICE_CACHE_TTL = 60
 STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
 
@@ -112,6 +114,10 @@ _rate_lock = threading.Lock()
 # (chain_id, token_address) -> (cached_at_monotonic, pair_address)
 _dexscreener_pair_cache: dict[tuple[int, str], tuple[float, str]] = {}
 _dexscreener_lock = threading.Lock()
+
+# Cached ETH fiat prices: (cached_at_monotonic, {"usd": float, "cad": float})
+_eth_price_cache: tuple[float, dict[str, float]] = (0.0, {})
+_eth_price_lock = threading.Lock()
 
 
 def _persist_state_locked():
@@ -427,6 +433,36 @@ def health():
     }), 200
 
 
+@app.route("/api/eth-price", methods=["GET"])
+def eth_price():
+    """Return cached ETH prices in USD and CAD from CoinGecko."""
+    global _eth_price_cache
+    now = time.monotonic()
+    with _eth_price_lock:
+        cached_at, cached_prices = _eth_price_cache
+        if cached_prices and now - cached_at < ETH_PRICE_CACHE_TTL:
+            return jsonify({**cached_prices, "cached": True}), 200
+
+        try:
+            response = http_requests.get(
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "ethereum", "vs_currencies": "usd,cad"},
+                headers={"Accept": "application/json"},
+                timeout=ETH_PRICE_TIMEOUT,
+            )
+            response.raise_for_status()
+            ethereum = response.json().get("ethereum", {})
+            prices = {"usd": float(ethereum["usd"]), "cad": float(ethereum["cad"])}
+            _eth_price_cache = (now, prices)
+            return jsonify({**prices, "cached": False}), 200
+        except (http_requests.RequestException, KeyError, TypeError, ValueError) as exc:
+            if cached_prices:
+                logger.warning("ETH price refresh failed; serving stale cache: %s", exc)
+                return jsonify({**cached_prices, "cached": True, "stale": True}), 200
+            logger.warning("ETH price lookup failed: %s", exc)
+            return jsonify({"error": "ETH price temporarily unavailable"}), 503
+
+
 @app.route("/api/dexscreener/chart-url", methods=["GET"])
 def dexscreener_chart_url():
     """Resolve the preferred WETH pair and return its direct embed URL."""
@@ -581,6 +617,7 @@ DASHBOARD_HTML = """\
   .trade .buy { color: #22c55e; } .trade .sell { color: #ef4444; }
   .trade a { color: #f1f5f9; text-decoration: none; }
   .trade a:hover { text-decoration: underline; }
+  .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -633,6 +670,8 @@ DASHBOARD_HTML = """\
   const notifiedOffline = new Set();
   const defaultSortDirections = { name: 'asc', pnl: 'desc', profit: 'desc', status: 'asc' };
   let sortDirectionValue = defaultSortDirections.profit;
+  let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'usd';
+  let ethPrices = {};
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
     8453: { name: 'Base', explorer: 'https://base.blockscout.com/address/' },
@@ -741,10 +780,25 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
+    const fiatRate = ethPrices[profitCurrency];
+    const fiatCode = profitCurrency.toUpperCase();
+    const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
     summaryBar.innerHTML = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
-      '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH</span>' +
+      '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
+      (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
+      ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>';
+  }
+
+  function fetchEthPrices() {
+    fetch('/api/eth-price')
+      .then(function(response) { if (!response.ok) throw new Error(response.status); return response.json(); })
+      .then(function(data) {
+        ethPrices = { usd: Number(data.usd), cad: Number(data.cad) };
+        render(true);
+      })
+      .catch(function() {});
   }
 
   function shortenAddress(address) {
@@ -967,12 +1021,21 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  fetchEthPrices();
+  setInterval(fetchEthPrices, 60000);
+  summaryBar.addEventListener('click', function(event) {
+    if (!event.target.closest('[data-currency-toggle]')) return;
+    profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
+    localStorage.setItem('dashboard-profit-currency', profitCurrency);
+    render(true);
+  });
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
       dot.className = 'status-dot disconnected';
       connStatus.textContent = 'Reconnecting…';
       reconnectDelay = 1000;
       connect();
+      fetchEthPrices();
     }
   });
   botFilter.addEventListener('input', function() {
