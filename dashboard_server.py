@@ -560,7 +560,7 @@ DASHBOARD_HTML = """\
         ['Token Balance', 'token_balance'], ['P&L', 'profit_percent'],
         ['Filled / Max Positions', 'position_capacity'],
         ['Buys', 'buys'], ['Sells', 'sells'],
-        ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
+        ['Uptime', 'uptime_seconds'],
       ];
 
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
