@@ -566,9 +566,9 @@ DASHBOARD_HTML = """\
         ['Price', 'price'], ['P&L', 'profit_percent'],
         ['Session Profit', 'session_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
-        ['Buys', 'buys'], ['Sells', 'sells'],
       ];
       const moreMetrics = [
+        ['Buys', 'buys'], ['Sells', 'sells'],
         ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
