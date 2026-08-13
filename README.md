@@ -9,7 +9,7 @@ Each bot card shows:
 - **AVG P&L** — cost-weighted unrealized P&L across open positions
 - **Session Profit** — realized ETH profit since the bot process started
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
-- The newest three positions, expandable to show all
+- The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
 Each position shows token amount, ETH cost basis, and P&L percentage. **More info** reveals price, buys, sells, ETH balance, token balance, RPC status, and uptime.
 
@@ -21,8 +21,12 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Latest state and bounded history persisted across dashboard restarts
 - Aggregate active-bot, session-profit, and filled-position totals
 - Bot filtering and sorting by name, chain, P&L, profit, or status
+- Reversible ascending/descending sorting with sensible per-field defaults
 - Optional bot display names/groups and chain badges
 - Bounded ETH-denominated bot trade history with explorer links
+- Lazy-loaded Dexscreener WETH-pair charts filtered to the bot wallet
+- Live report age with running, stale, and offline states
+- Optional browser offline notifications when served over HTTPS
 - `X-API-Key` authentication for writes and deletion
 - Configurable API rate limit (default 600 requests/minute/IP)
 - Recursive private-key detection and rejection
@@ -52,6 +56,7 @@ Configure `.env`:
 API_KEY=replace-with-a-long-random-secret
 HOST=0.0.0.0
 PORT=5000
+STATE_FILE=data/dashboard_state.json
 RATE_LIMIT_MAX_REQUESTS=600
 ```
 
@@ -139,12 +144,12 @@ For long-term internet exposure, use HTTPS behind a reverse proxy or Cloudflare 
 
 ## Configure bots
 
-Use the grid bot dashboard branch:
+Dashboard reporting is included in the bot repository's `main` branch:
 
 ```bash
 git fetch origin
-git switch feature/dashboard-integration
-git pull --ff-only origin feature/dashboard-integration
+git switch main
+git pull --ff-only origin main
 ```
 
 Add to each bot `.env`:
@@ -200,7 +205,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 }
 ```
 
-Bots may additionally send `display_name`, `group`, and up to 50 entries in `trades_history`. Trade entries are recorded from swaps the bot already executes, so this adds no RPC or third-party API calls.
+Bots may additionally send `display_name`, `group`, and up to 50 entries in `trades_history`. Trade entries contain timestamp, side, ETH amount, token amount, execution price, transaction hash, and sell profit when applicable. They are recorded from swaps the bot already executes, so this adds no RPC or third-party API calls.
 
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
 
@@ -227,6 +232,7 @@ curl -X POST http://SERVER_IP:5000/api/status \
 | `DELETE` | `/api/bots/<bot_id>` | `X-API-Key` | Remove bot and history |
 | `GET` | `/api/stream` | No | SSE update stream |
 | `GET` | `/api/health` | No | Health and counts |
+| `GET` | `/api/dexscreener/chart-url` | No | Resolve preferred WETH pair embed URL |
 
 SSE events:
 
@@ -238,6 +244,10 @@ SSE events:
 
 Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Bot-side trade history is separately capped at 50 entries.
 
+Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is opened. The server resolves the token's preferred WETH pair without an API key and caches the pair for five minutes. Routine SSE updates do not reload an open chart.
+
+The fleet toolbar can search bot IDs, display names, and groups; filter by chain; and sort by name, AVG P&L, session profit, or status. Default directions are name ascending, P&L/profit descending, and status running-to-offline. The direction button reverses the active sort.
+
 ## Security
 
 - Generate a unique API key and rotate it if exposed.
@@ -247,6 +257,7 @@ Latest state and the 100-entry status history are persisted atomically to `STATE
 - Restrict port 5000 by source IP where practical.
 - CORS is permissive by default and should be tightened for production.
 - Rate limiting is in-memory and per process.
+- Browser system notifications require a secure HTTPS context; dashboard status/offline counts work over HTTP.
 
 ## Troubleshooting
 
@@ -268,7 +279,7 @@ The bot's `DASHBOARD_API_KEY` must exactly match server `API_KEY`. Check quotes,
 
 - Ensure `DASHBOARD_URL` ends in `/api/status`.
 - Restart after editing `.env`.
-- Confirm the dashboard integration branch is current.
+- Confirm the bot's `main` branch is current.
 - Test connectivity from the bot host with `curl`.
 - Failures log as warnings; successes require DEBUG logging.
 
@@ -290,7 +301,8 @@ systemctl --user restart grid-dashboard.service
 Bot:
 
 ```bash
-git pull --ff-only origin feature/dashboard-integration
+git switch main
+git pull --ff-only origin main
 python grid_bot.py
 ```
 
