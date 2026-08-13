@@ -598,8 +598,8 @@ DASHBOARD_HTML = """\
   <div class="toolbar">
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
-    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&L</option><option value="profit">Session profit</option><option value="status">Status</option></select>
-    <button id="sort-direction" type="button" title="Reverse sort direction">Ascending ↑</button>
+    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&L</option><option value="profit" selected>Session profit</option><option value="status">Status</option></select>
+    <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <button id="notifications">Enable offline alerts</button>
   </div>
   <div id="bots-container">
@@ -632,7 +632,7 @@ DASHBOARD_HTML = """\
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const defaultSortDirections = { name: 'asc', pnl: 'desc', profit: 'desc', status: 'asc' };
-  let sortDirectionValue = defaultSortDirections.name;
+  let sortDirectionValue = defaultSortDirections.profit;
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
     8453: { name: 'Base', explorer: 'https://base.blockscout.com/address/' },
