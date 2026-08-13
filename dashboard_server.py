@@ -670,7 +670,7 @@ DASHBOARD_HTML = """\
   const notifiedOffline = new Set();
   const defaultSortDirections = { name: 'asc', pnl: 'desc', profit: 'desc', status: 'asc' };
   let sortDirectionValue = defaultSortDirections.profit;
-  let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'usd';
+  let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'cad';
   let ethPrices = {};
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
