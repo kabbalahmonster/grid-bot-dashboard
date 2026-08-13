@@ -563,7 +563,7 @@ DASHBOARD_HTML = """\
       d.sells = d.sells ?? 0;
 
       const metrics = [
-        ['P&L', 'profit_percent'],
+        ['AVG P&L', 'profit_percent'],
         ['Session Profit', 'session_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
       ];
