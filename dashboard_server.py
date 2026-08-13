@@ -549,6 +549,11 @@ DASHBOARD_HTML = """\
   const openRawJson = new Set();
   const openCharts = new Set();
   const rawJsonScroll = new Map();
+  const chainMetadata = {
+    1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
+    8453: { name: 'Base', explorer: 'https://base.blockscout.com/address/' },
+    4663: { name: 'Robinhood', explorer: 'https://robinhoodchain.blockscout.com/address/' },
+  };
 
   let evtSource = null;
   let reconnectDelay = 1000;
@@ -616,6 +621,11 @@ DASHBOARD_HTML = """\
     return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>';
   }
 
+  function shortenAddress(address) {
+    const value = String(address || '');
+    return value.length > 9 ? value.slice(0, 5) + '…' + value.slice(-3) : value;
+  }
+
   function render() {
     // Preserve expansion state before live updates rebuild the cards.
     container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
@@ -652,7 +662,8 @@ DASHBOARD_HTML = """\
     let html = '<div class="grid">';
     botIds.forEach(function(botId) {
       const d = bots[botId];
-      const status = d.status || 'unknown';
+      const receivedAt = Date.parse(d.received_at || '');
+      const status = d.status || (receivedAt && Date.now() - receivedAt < 120000 ? 'running' : 'stale');
       const botKey = encodeURIComponent(botId);
       const moreOpen = openMoreInfo.has(botKey);
       const positionsOpen = openPositions.has(botKey);
@@ -674,8 +685,14 @@ DASHBOARD_HTML = """\
         ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
+        ['Wallet', 'wallet_link'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
+
+      const chain = chainMetadata[Number(d.chain_id)];
+      d.wallet_link = d.wallet_address && chain
+        ? '<a href="' + esc(chain.explorer + d.wallet_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.wallet_address) + '">' + esc(shortenAddress(d.wallet_address)) + '</a>'
+        : (d.wallet_address ? esc(shortenAddress(d.wallet_address)) : null);
 
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
@@ -703,7 +720,8 @@ DASHBOARD_HTML = """\
           } else if (key === 'eth_balance' || key === 'token_balance') {
             val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : 0);
           }
-          return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(val) + '</span></div>';
+          const renderedValue = key === 'wallet_link' ? val : esc(val);
+          return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + renderedValue + '</span></div>';
         }
         return '';
       }
