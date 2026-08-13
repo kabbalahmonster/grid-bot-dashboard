@@ -780,6 +780,11 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
+    const longestUptime = states.reduce(function(longest, d) { return Math.max(longest, Number(d.uptime_seconds) || 0); }, 0);
+    const uptimeDays = Math.floor(longestUptime / 86400);
+    const uptimeHours = Math.floor((longestUptime % 86400) / 3600);
+    const uptimeMinutes = Math.floor((longestUptime % 3600) / 60);
+    const uptimeText = uptimeDays > 0 ? uptimeDays + 'd ' + uptimeHours + 'h' : (uptimeHours > 0 ? uptimeHours + 'h ' + uptimeMinutes + 'm' : uptimeMinutes + 'm');
     const fiatRate = ethPrices[profitCurrency];
     const fiatCode = profitCurrency.toUpperCase();
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
@@ -788,7 +793,8 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
-      '<span class="summary-item">Filled positions: ' + filled + '</span>';
+      '<span class="summary-item">Filled positions: ' + filled + '</span>' +
+      '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
   }
 
   function fetchEthPrices() {
