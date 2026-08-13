@@ -558,9 +558,14 @@ DASHBOARD_HTML = """\
       const metrics = [
         ['Price', 'price'], ['ETH Balance', 'eth_balance'],
         ['Token Balance', 'token_balance'], ['P&L', 'profit_percent'],
+        ['Filled / Max Positions', 'position_capacity'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
+
+      d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
+        ? d.filled_positions + ' / ' + d.max_positions
+        : null;
 
       metrics.forEach(function(pair) {
         const label = pair[0], key = pair[1];
@@ -607,7 +612,7 @@ DASHBOARD_HTML = """\
           html += '</div>';
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(parseFloat(pos.buy_amount_token || 0).toFixed(0)) + ' | ';
-          html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(6)) + ' ETH';
+          html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(8)) + ' ETH';
           html += '</div></div>';
         });
         if (sorted.length > showCount) {
