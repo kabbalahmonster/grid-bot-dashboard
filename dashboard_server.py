@@ -57,6 +57,7 @@ SSE_KEEPALIVE_INTERVAL = 15     # seconds
 SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
 DEXSCREENER_TIMEOUT = 8
 DEXSCREENER_CACHE_TTL = 300
+STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
 
 # Patterns that suggest private key material (checked against keys AND values)
@@ -112,6 +113,42 @@ _rate_lock = threading.Lock()
 _dexscreener_pair_cache: dict[tuple[int, str], tuple[float, str]] = {}
 _dexscreener_lock = threading.Lock()
 
+
+def _persist_state_locked():
+    """Atomically persist current state and bounded history. Caller holds _lock."""
+    directory = os.path.dirname(STATE_FILE)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temp_file = STATE_FILE + ".tmp"
+    payload = {
+        "bot_states": bot_states,
+        "bot_history": {bot_id: list(entries) for bot_id, entries in bot_history.items()},
+    }
+    with open(temp_file, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle)
+    os.replace(temp_file, STATE_FILE)
+
+
+def _load_persisted_state():
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        states = payload.get("bot_states", {})
+        histories = payload.get("bot_history", {})
+        if isinstance(states, dict):
+            bot_states.update(states)
+        if isinstance(histories, dict):
+            for bot_id, entries in histories.items():
+                bot_history[bot_id].extend(entries[-MAX_HISTORY_PER_BOT:])
+        logger.info("Restored %d bots from %s", len(bot_states), STATE_FILE)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError, TypeError) as exc:
+        logger.warning("Could not restore dashboard state: %s", exc)
+
+
+_load_persisted_state()
+
 # ---------------------------------------------------------------------------
 # Rate limiter
 # ---------------------------------------------------------------------------
@@ -162,6 +199,10 @@ def _contains_private_key(obj, depth: int = 0) -> bool:
         for k, v in obj.items():
             if _contains_private_key(k, depth + 1):
                 return True
+            # Transaction hashes and raw private keys share the same 0x +
+            # 64-hex shape. Permit that shape only under the explicit tx_hash key.
+            if str(k).lower() == "tx_hash" and isinstance(v, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", v):
+                continue
             if _contains_private_key(v, depth + 1):
                 return True
     if isinstance(obj, (list, tuple)):
@@ -264,6 +305,10 @@ def receive_status():
     with _lock:
         bot_states[bot_id] = data
         bot_history[bot_id].append(entry)
+        try:
+            _persist_state_locked()
+        except OSError as exc:
+            logger.warning("Could not persist dashboard state: %s", exc)
 
     _broadcast("update", entry)
     logger.info("Status update from bot=%s", bot_id)
@@ -316,6 +361,10 @@ def remove_bot(bot_id: str):
             return jsonify({"error": f"Bot '{bot_id}' not found"}), 404
         del bot_states[bot_id]
         bot_history.pop(bot_id, None)
+        try:
+            _persist_state_locked()
+        except OSError as exc:
+            logger.warning("Could not persist dashboard state: %s", exc)
     _broadcast("remove", {"bot_id": bot_id})
     logger.info("Bot removed: %s", bot_id)
     return jsonify({"ok": True, "bot_id": bot_id}), 200
@@ -477,6 +526,10 @@ DASHBOARD_HTML = """\
   .status-dot.connected { background: #22c55e; }
   .status-dot.disconnected { background: #ef4444; }
   .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+  .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
+  .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
+  .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
+  .chain-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
   .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
@@ -520,6 +573,9 @@ DASHBOARD_HTML = """\
   details.more-info[open] summary { margin-bottom: 0.35rem; }
   details.chart-panel { margin-top: 0.75rem; }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
+  .trades { margin-top: 0.75rem; }
+  .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
+  .trade .buy { color: #22c55e; } .trade .sell { color: #ef4444; }
 </style>
 </head>
 <body>
@@ -533,6 +589,13 @@ DASHBOARD_HTML = """\
 </div>
 
 <div class="container">
+  <div class="summary-bar" id="summary-bar"></div>
+  <div class="toolbar">
+    <input id="bot-filter" placeholder="Filter bots or groups">
+    <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
+    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&L</option><option value="profit">Session profit</option><option value="status">Status</option></select>
+    <button id="notifications">Enable offline alerts</button>
+  </div>
   <div id="bots-container">
     <div class="empty" id="empty-state">
       <p>No bots reporting yet</p>
@@ -547,12 +610,19 @@ DASHBOARD_HTML = """\
   const emptyState = document.getElementById('empty-state');
   const dot = document.getElementById('dot');
   const connStatus = document.getElementById('connection-status');
+  const summaryBar = document.getElementById('summary-bar');
+  const botFilter = document.getElementById('bot-filter');
+  const chainFilter = document.getElementById('chain-filter');
+  const sortBots = document.getElementById('sort-bots');
+  const notificationsButton = document.getElementById('notifications');
   const bots = {};
   const openMoreInfo = new Set();
   const openPositions = new Set();
   const openRawJson = new Set();
   const openCharts = new Set();
+  const openTrades = new Set();
   const rawJsonScroll = new Map();
+  const notifiedOffline = new Set();
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
     8453: { name: 'Base', explorer: 'https://base.blockscout.com/address/' },
@@ -645,7 +715,25 @@ DASHBOARD_HTML = """\
         badge.className = 'badge ' + age.status;
         badge.textContent = age.status;
       }
+      const card = el.closest('.card');
+      const botId = card ? card.dataset.botId : '';
+      if (age.status === 'offline' && botId && !notifiedOffline.has(botId)) {
+        notifiedOffline.add(botId);
+        if (Notification.permission === 'granted') new Notification(botId + ' is offline', { body: 'Last report ' + age.text });
+      } else if (age.status === 'running') notifiedOffline.delete(botId);
     });
+  }
+
+  function updateSummary(botIds) {
+    const states = botIds.map(function(id) { return bots[id]; });
+    const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
+    const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
+    const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
+    const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
+    summaryBar.innerHTML = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
+      '<span class="summary-item">Offline: ' + offline + '</span>' +
+      '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH</span>' +
+      '<span class="summary-item">Filled positions: ' + filled + '</span>';
   }
 
   function shortenAddress(address) {
@@ -674,10 +762,28 @@ DASHBOARD_HTML = """\
       if (el.open) openCharts.add(el.dataset.chartKey);
       else openCharts.delete(el.dataset.chartKey);
     });
+    container.querySelectorAll('details.trades[data-trades-key]').forEach(function(el) {
+      if (el.open) openTrades.add(el.dataset.tradesKey);
+      else openTrades.delete(el.dataset.tradesKey);
+    });
     // Avoid reloading an open third-party iframe on every bot status update.
     if (openCharts.size > 0) return;
 
-    const botIds = Object.keys(bots).sort();
+    const query = botFilter.value.trim().toLowerCase();
+    const wantedChain = chainFilter.value;
+    const rank = { running: 0, stale: 1, offline: 2, unknown: 3 };
+    const botIds = Object.keys(bots).filter(function(id) {
+      const d = bots[id];
+      const haystack = [id, d.display_name, d.group].join(' ').toLowerCase();
+      return (!query || haystack.includes(query)) && (!wantedChain || String(d.chain_id) === wantedChain);
+    }).sort(function(a, b) {
+      const av = bots[a], bv = bots[b], mode = sortBots.value;
+      if (mode === 'pnl') return (parseFloat(bv.profit_percent) || 0) - (parseFloat(av.profit_percent) || 0);
+      if (mode === 'profit') return (parseFloat(bv.session_profit_eth) || 0) - (parseFloat(av.session_profit_eth) || 0);
+      if (mode === 'status') return rank[reportAge(av.received_at).status] - rank[reportAge(bv.received_at).status];
+      return a.localeCompare(b);
+    });
+    updateSummary(botIds);
     if (botIds.length === 0) {
       container.innerHTML = '';
       container.appendChild(emptyState);
@@ -696,9 +802,12 @@ DASHBOARD_HTML = """\
       const positionsOpen = openPositions.has(botKey);
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
-      html += '<div class="card">';
+      html += '<div class="card" data-bot-id="' + esc(botId) + '">';
       html += '<h2>Bot</h2>';
-      html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') + '</div>';
+      const chain = chainMetadata[Number(d.chain_id)];
+      html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
+        (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
+        (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
@@ -716,7 +825,6 @@ DASHBOARD_HTML = """\
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
 
-      const chain = chainMetadata[Number(d.chain_id)];
       d.wallet_link = d.wallet_address && chain
         ? '<a href="' + esc(chain.explorer + d.wallet_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.wallet_address) + '">' + esc(shortenAddress(d.wallet_address)) + '</a>'
         : (d.wallet_address ? esc(shortenAddress(d.wallet_address)) : null);
@@ -769,6 +877,18 @@ DASHBOARD_HTML = """\
         });
         html += '<details class="chart-panel" data-chart-key="' + esc(botKey) + '"' + (chartOpen ? ' open' : '') + '><summary class="toggle-raw">Dexscreener chart</summary>';
         html += '<iframe class="dex-chart" loading="lazy" data-resolver="/api/dexscreener/chart-url?' + esc(chartParams.toString()) + '" title="Dexscreener chart"></iframe></details>';
+      }
+
+      if (d.trades_history && d.trades_history.length) {
+        const recentTrades = d.trades_history.slice().reverse();
+        html += '<details class="trades" data-trades-key="' + esc(botKey) + '"' + (openTrades.has(botKey) ? ' open' : '') + '><summary class="toggle-raw">Trade history (' + recentTrades.length + ')</summary>';
+        recentTrades.forEach(function(trade) {
+          const txUrl = chain && trade.tx_hash ? chain.explorer.replace('/address/', '/tx/') + trade.tx_hash : '';
+          html += '<div class="trade"><strong class="' + esc(trade.side) + '">' + esc(String(trade.side).toUpperCase()) + '</strong>' +
+            '<span>' + esc(parseFloat(trade.eth_amount || 0).toFixed(8)) + ' ETH · ' + esc(parseFloat(trade.token_amount || 0).toFixed(2)) + ' tokens</span>' +
+            (txUrl ? '<a href="' + esc(txUrl) + '" target="_blank" rel="noopener noreferrer">tx</a>' : '') + '</div>';
+        });
+        html += '</details>';
       }
 
       // Display positions if available (show 3, expandable)
@@ -834,6 +954,12 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  [botFilter, chainFilter, sortBots].forEach(function(control) { control.addEventListener('input', render); });
+  notificationsButton.addEventListener('click', function() {
+    if (!window.isSecureContext) { notificationsButton.textContent = 'HTTPS required for system alerts'; return; }
+    if (!('Notification' in window)) { notificationsButton.textContent = 'Alerts unsupported'; return; }
+    Notification.requestPermission().then(function(permission) { notificationsButton.textContent = permission === 'granted' ? 'Offline alerts enabled' : 'Offline alerts blocked'; });
+  });
   setInterval(refreshReportAges, 1000);
 })();
 </script>

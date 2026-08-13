@@ -18,6 +18,11 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Live SSE updates with keepalives
 - Multiple bots identified by `bot_id`
 - Latest state plus 100 in-memory history entries per bot
+- Latest state and bounded history persisted across dashboard restarts
+- Aggregate active-bot, session-profit, and filled-position totals
+- Bot filtering and sorting by name, chain, P&L, profit, or status
+- Optional bot display names/groups and chain badges
+- Bounded ETH-denominated bot trade history with explorer links
 - `X-API-Key` authentication for writes and deletion
 - 100 API requests/minute/IP rate limit
 - Recursive private-key detection and rejection
@@ -152,6 +157,8 @@ Optional:
 
 ```dotenv
 BOT_ID=MERD
+DASHBOARD_NAME=MERD Main
+DASHBOARD_GROUP=Robinhood Farm
 ```
 
 `BOT_ID` defaults to `TOKEN_SYMBOL`, then `grid-bot-CHAIN_ID`. Reporting is disabled when `DASHBOARD_URL` is empty. It uses a bounded background thread and does not block trading. Successful POST/response logs appear only at DEBUG; failures remain warnings.
@@ -192,6 +199,8 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 }
 ```
 
+Bots may additionally send `display_name`, `group`, and up to 50 entries in `trades_history`. Trade entries are recorded from swaps the bot already executes, so this adds no RPC or third-party API calls.
+
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
 
 The dashboard displays report age continuously. A bot is inferred as `running` for reports under 2 minutes old, `stale` from 2–5 minutes, and `offline` after 5 minutes. An explicit bot-supplied `status` overrides this inference.
@@ -226,7 +235,7 @@ SSE events:
 
 ## Storage behavior
 
-State and history are memory-only. Restarting the dashboard clears them; running bots repopulate it on their next report. Add persistent storage if long-term analytics are required.
+Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Bot-side trade history is separately capped at 50 entries.
 
 ## Security
 
