@@ -745,7 +745,7 @@ DASHBOARD_HTML = """\
     return value.length > 9 ? value.slice(0, 5) + '…' + value.slice(-3) : value;
   }
 
-  function render() {
+  function render(force) {
     // Preserve expansion state before live updates rebuild the cards.
     container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
       if (el.open) openMoreInfo.add(el.dataset.botKey);
@@ -771,7 +771,7 @@ DASHBOARD_HTML = """\
       else openTrades.delete(el.dataset.tradesKey);
     });
     // Avoid reloading an open third-party iframe on every bot status update.
-    if (openCharts.size > 0) return;
+    if (openCharts.size > 0 && !force) return;
 
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
@@ -960,19 +960,21 @@ DASHBOARD_HTML = """\
   }
 
   connect();
-  [botFilter, chainFilter].forEach(function(control) { control.addEventListener('input', render); });
+  [botFilter, chainFilter].forEach(function(control) {
+    control.addEventListener('input', function() { render(true); });
+  });
   function updateSortDirectionButton() {
     sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
   }
   sortBots.addEventListener('change', function() {
     sortDirectionValue = defaultSortDirections[sortBots.value] || 'asc';
     updateSortDirectionButton();
-    render();
+    render(true);
   });
   sortDirection.addEventListener('click', function() {
     sortDirectionValue = sortDirectionValue === 'asc' ? 'desc' : 'asc';
     updateSortDirectionButton();
-    render();
+    render(true);
   });
   updateSortDirectionButton();
   notificationsButton.addEventListener('click', function() {
