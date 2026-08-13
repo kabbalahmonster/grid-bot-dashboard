@@ -579,6 +579,8 @@ DASHBOARD_HTML = """\
   .trades { margin-top: 0.75rem; }
   .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
   .trade .buy { color: #22c55e; } .trade .sell { color: #ef4444; }
+  .trade a { color: #f1f5f9; text-decoration: none; }
+  .trade a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
