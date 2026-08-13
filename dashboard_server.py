@@ -477,6 +477,7 @@ DASHBOARD_HTML = """\
   const openMoreInfo = new Set();
   const openPositions = new Set();
   const openRawJson = new Set();
+  const rawJsonScroll = new Map();
 
   let evtSource = null;
   let reconnectDelay = 1000;
@@ -557,6 +558,9 @@ DASHBOARD_HTML = """\
     container.querySelectorAll('button[data-raw-key]').forEach(function(el) {
       if (el.dataset.expanded === 'true') openRawJson.add(el.dataset.rawKey);
       else openRawJson.delete(el.dataset.rawKey);
+    });
+    container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
+      rawJsonScroll.set(el.dataset.rawScrollKey, el.scrollTop);
     });
 
     const botIds = Object.keys(bots).sort();
@@ -665,11 +669,14 @@ DASHBOARD_HTML = """\
 
       html += '<div class="timestamp">Updated: ' + esc(d.received_at || '—') + '</div>';
       html += '<button class="toggle-raw" data-raw-key="' + esc(botKey) + '" data-expanded="' + rawOpen + '" onclick="var opening=this.dataset.expanded!==&quot;true&quot;;this.dataset.expanded=String(opening);this.nextElementSibling.style.display=opening?&quot;block&quot;:&quot;none&quot;">Raw JSON</button>';
-      html += '<pre class="raw" style="display:' + (rawOpen ? 'block' : 'none') + '">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
+      html += '<pre class="raw" data-raw-scroll-key="' + esc(botKey) + '" style="display:' + (rawOpen ? 'block' : 'none') + '">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
       html += '</div>';
     });
     html += '</div>';
     container.innerHTML = html;
+    container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
+      el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
+    });
   }
 
   connect();
