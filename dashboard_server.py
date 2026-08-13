@@ -474,6 +474,8 @@ DASHBOARD_HTML = """\
   const dot = document.getElementById('dot');
   const connStatus = document.getElementById('connection-status');
   const bots = {};
+  const openMoreInfo = new Set();
+  const openPositions = new Set();
 
   let evtSource = null;
   let reconnectDelay = 1000;
@@ -542,6 +544,16 @@ DASHBOARD_HTML = """\
   }
 
   function render() {
+    // Preserve expansion state before live updates rebuild the cards.
+    container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
+      if (el.open) openMoreInfo.add(el.dataset.botKey);
+      else openMoreInfo.delete(el.dataset.botKey);
+    });
+    container.querySelectorAll('button[data-pos-key]').forEach(function(el) {
+      if (el.dataset.expanded === 'true') openPositions.add(el.dataset.posKey);
+      else openPositions.delete(el.dataset.posKey);
+    });
+
     const botIds = Object.keys(bots).sort();
     if (botIds.length === 0) {
       container.innerHTML = '';
@@ -555,6 +567,9 @@ DASHBOARD_HTML = """\
     botIds.forEach(function(botId) {
       const d = bots[botId];
       const status = d.status || 'unknown';
+      const botKey = encodeURIComponent(botId);
+      const moreOpen = openMoreInfo.has(botKey);
+      const positionsOpen = openPositions.has(botKey);
       html += '<div class="card">';
       html += '<h2>Bot</h2>';
       html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
@@ -606,7 +621,7 @@ DASHBOARD_HTML = """\
       }
 
       metrics.forEach(function(pair) { html += renderMetric(pair); });
-      html += '<details class="more-info"><summary class="toggle-raw">More info</summary>';
+      html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '</details>';
 
@@ -624,7 +639,8 @@ DASHBOARD_HTML = """\
           const pnl = pos.pnl !== undefined ? pos.pnl : null;
           const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
           const hidden = i >= showCount ? ' pos-hidden' : '';
-          html += '<div class="position' + hidden + '">';
+          const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
+          html += '<div class="position' + hidden + '"' + visibleStyle + '>';
           html += '<div class="pos-header"><span class="pos-id">#' + esc(pos.id || '—') + '</span>';
           if (pnl !== null) {
             html += '<span class="pos-pnl ' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
@@ -636,7 +652,7 @@ DASHBOARD_HTML = """\
           html += '</div></div>';
         });
         if (sorted.length > showCount) {
-          html += '<button class="toggle-raw" onclick="var h=this.parentElement.querySelectorAll(&quot;.pos-hidden&quot;);var opening=this.textContent.indexOf(&quot;Show all&quot;)===0;h.forEach(function(e){e.style.display=opening?&quot;block&quot;:&quot;none&quot;});this.textContent=opening?&quot;Show less&quot;:&quot;Show all (' + sorted.length + ')&quot;">Show all (' + sorted.length + ')</button>';
+          html += '<button class="toggle-raw" data-pos-key="' + esc(botKey) + '" data-expanded="' + positionsOpen + '" onclick="var h=this.parentElement.querySelectorAll(&quot;.pos-hidden&quot;);var opening=this.dataset.expanded!==&quot;true&quot;;h.forEach(function(e){e.style.display=opening?&quot;block&quot;:&quot;none&quot;});this.dataset.expanded=String(opening);this.textContent=opening?&quot;Show less&quot;:&quot;Show all (' + sorted.length + ')&quot;">' + (positionsOpen ? 'Show less' : 'Show all (' + sorted.length + ')') + '</button>';
         }
         html += '</div>';
       }
