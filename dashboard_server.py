@@ -577,7 +577,7 @@ DASHBOARD_HTML = """\
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(2) + '%';
           } else if (key === 'price') {
             const n = parseFloat(val);
-            val = Math.abs(n) < 0.0001 && n !== 0 ? n.toExponential(8) : n.toFixed(8);
+            val = n.toFixed(10);
           } else if (key === 'uptime_seconds') {
             const s = parseInt(val);
             if (s < 60) val = s + 's';
