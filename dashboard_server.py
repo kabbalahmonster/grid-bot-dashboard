@@ -638,9 +638,9 @@ DASHBOARD_HTML = """\
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
         const sorted = d.positions.slice().sort(function(a, b) {
-          const at = Date.parse(a.timestamp || '') || 0;
-          const bt = Date.parse(b.timestamp || '') || 0;
-          if (at !== bt) return bt - at;
+          const ap = Number.isFinite(parseFloat(a.pnl)) ? parseFloat(a.pnl) : -Infinity;
+          const bp = Number.isFinite(parseFloat(b.pnl)) ? parseFloat(b.pnl) : -Infinity;
+          if (ap !== bp) return bp - ap;
           return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
         });
         const showCount = 3;
