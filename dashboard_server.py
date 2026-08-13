@@ -508,6 +508,8 @@ DASHBOARD_HTML = """\
   .badge.stopped { background: #991b1b; color: #fecaca; }
   .badge.paused { background: #a16207; color: #fef08a; }
   .badge.error { background: #7f1d1d; color: #fca5a5; }
+  .badge.stale { background: #a16207; color: #fef08a; }
+  .badge.offline { background: #7f1d1d; color: #fecaca; }
   .badge.unknown { background: #334155; color: #94a3b8; }
   pre.raw { background: #0f172a; padding: 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; overflow-x: auto; max-height: 200px; overflow-y: auto; margin-top: 0.5rem; color: #94a3b8; }
   .toggle-raw { background: none; border: 1px solid #334155; color: #94a3b8; padding: 0.2rem 0.6rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem; margin-top: 0.5rem; }
@@ -623,6 +625,29 @@ DASHBOARD_HTML = """\
     return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>';
   }
 
+  function reportAge(receivedAt) {
+    const timestamp = Date.parse(receivedAt || '');
+    if (!Number.isFinite(timestamp)) return { status: 'unknown', text: 'unknown' };
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    let text;
+    if (seconds < 60) text = seconds + 's ago';
+    else if (seconds < 3600) text = Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago';
+    else text = Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm ago';
+    return { status: seconds < 120 ? 'running' : (seconds < 300 ? 'stale' : 'offline'), text: text };
+  }
+
+  function refreshReportAges() {
+    container.querySelectorAll('[data-received-at]').forEach(function(el) {
+      const age = reportAge(el.dataset.receivedAt);
+      el.textContent = 'Updated ' + age.text;
+      const badge = el.closest('.card').querySelector('.badge');
+      if (badge && badge.dataset.inferred === 'true') {
+        badge.className = 'badge ' + age.status;
+        badge.textContent = age.status;
+      }
+    });
+  }
+
   function shortenAddress(address) {
     const value = String(address || '');
     return value.length > 9 ? value.slice(0, 5) + '…' + value.slice(-3) : value;
@@ -664,8 +689,8 @@ DASHBOARD_HTML = """\
     let html = '<div class="grid">';
     botIds.forEach(function(botId) {
       const d = bots[botId];
-      const receivedAt = Date.parse(d.received_at || '');
-      const status = d.status || (receivedAt && Date.now() - receivedAt < 120000 ? 'running' : 'stale');
+      const age = reportAge(d.received_at);
+      const status = d.status || age.status;
       const botKey = encodeURIComponent(botId);
       const moreOpen = openMoreInfo.has(botKey);
       const positionsOpen = openPositions.has(botKey);
@@ -673,7 +698,7 @@ DASHBOARD_HTML = """\
       const chartOpen = openCharts.has(botKey);
       html += '<div class="card">';
       html += '<h2>Bot</h2>';
-      html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
+      html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') + '</div>';
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
@@ -778,7 +803,7 @@ DASHBOARD_HTML = """\
         html += '</div>';
       }
 
-      html += '<div class="timestamp">Updated: ' + esc(d.received_at || '—') + '</div>';
+      html += '<div class="timestamp" data-received-at="' + esc(d.received_at || '') + '" title="' + esc(d.received_at || '') + '">Updated ' + esc(age.text) + '</div>';
       html += '<button class="toggle-raw" data-raw-key="' + esc(botKey) + '" data-expanded="' + rawOpen + '" onclick="var opening=this.dataset.expanded!==&quot;true&quot;;this.dataset.expanded=String(opening);this.nextElementSibling.style.display=opening?&quot;block&quot;:&quot;none&quot;">Raw JSON</button>';
       html += '<pre class="raw" data-raw-scroll-key="' + esc(botKey) + '" style="display:' + (rawOpen ? 'block' : 'none') + '">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
       html += '</div>';
@@ -809,6 +834,7 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  setInterval(refreshReportAges, 1000);
 })();
 </script>
 

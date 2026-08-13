@@ -168,6 +168,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 
 ```json
 {
+  "dashboard_schema_version": 1,
   "bot_id": "MERD",
   "timestamp": "2026-08-13T08:26:28.236502+00:00",
   "uptime_seconds": 215.1,
@@ -191,7 +192,9 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 }
 ```
 
-Only `bot_id` is required by the generic server. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
+Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
+
+The dashboard displays report age continuously. A bot is inferred as `running` for reports under 2 minutes old, `stale` from 2–5 minutes, and `offline` after 5 minutes. An explicit bot-supplied `status` overrides this inference.
 
 Manual test:
 
