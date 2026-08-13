@@ -476,6 +476,7 @@ DASHBOARD_HTML = """\
   const bots = {};
   const openMoreInfo = new Set();
   const openPositions = new Set();
+  const openRawJson = new Set();
 
   let evtSource = null;
   let reconnectDelay = 1000;
@@ -553,6 +554,10 @@ DASHBOARD_HTML = """\
       if (el.dataset.expanded === 'true') openPositions.add(el.dataset.posKey);
       else openPositions.delete(el.dataset.posKey);
     });
+    container.querySelectorAll('button[data-raw-key]').forEach(function(el) {
+      if (el.dataset.expanded === 'true') openRawJson.add(el.dataset.rawKey);
+      else openRawJson.delete(el.dataset.rawKey);
+    });
 
     const botIds = Object.keys(bots).sort();
     if (botIds.length === 0) {
@@ -570,6 +575,7 @@ DASHBOARD_HTML = """\
       const botKey = encodeURIComponent(botId);
       const moreOpen = openMoreInfo.has(botKey);
       const positionsOpen = openPositions.has(botKey);
+      const rawOpen = openRawJson.has(botKey);
       html += '<div class="card">';
       html += '<h2>Bot</h2>';
       html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
@@ -658,8 +664,8 @@ DASHBOARD_HTML = """\
       }
 
       html += '<div class="timestamp">Updated: ' + esc(d.received_at || '—') + '</div>';
-      html += '<button class="toggle-raw" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\\'none\\'?\\'block\\':\\'none\\'">Raw JSON</button>';
-      html += '<pre class="raw" style="display:none">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
+      html += '<button class="toggle-raw" data-raw-key="' + esc(botKey) + '" data-expanded="' + rawOpen + '" onclick="var opening=this.dataset.expanded!==&quot;true&quot;;this.dataset.expanded=String(opening);this.nextElementSibling.style.display=opening?&quot;block&quot;:&quot;none&quot;">Raw JSON</button>';
+      html += '<pre class="raw" style="display:' + (rawOpen ? 'block' : 'none') + '">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
       html += '</div>';
     });
     html += '</div>';
