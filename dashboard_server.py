@@ -1,0 +1,589 @@
+#!/usr/bin/env python3
+"""
+Grid Bot Dashboard Server
+=========================
+Flask application that receives status updates from grid trading bots,
+stores them in memory, and broadcasts live updates to browsers via SSE.
+
+Endpoints:
+    GET  /                        — Serve the dashboard HTML
+    POST /api/status              — Receive bot status updates (API key auth)
+    GET  /api/bots                — Return all current bot states
+    GET  /api/bots/<id>           — Return a single bot's state
+    GET  /api/bots/<id>/history   — Return history for one bot
+    DELETE /api/bots/<id>         — Remove a bot (API key auth)
+    GET  /api/stream              — SSE endpoint for live browser updates
+    GET  /api/health              — Health check
+
+Security:
+    - API key authentication via X-API-Key header
+    - Rate limiting: 100 requests/minute per IP
+    - Private key pattern detection (keys and values)
+"""
+
+import json
+import logging
+import os
+import queue
+import re
+import threading
+import time
+import uuid
+from collections import defaultdict, deque
+from datetime import datetime, timezone
+from functools import wraps
+
+from flask import Flask, Response, jsonify, request
+from flask_cors import CORS
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+
+API_KEY = os.environ.get("API_KEY", "")
+PORT = int(os.environ.get("PORT", "5000"))
+HOST = os.environ.get("HOST", "0.0.0.0")
+
+MAX_HISTORY_PER_BOT = 100
+RATE_LIMIT_WINDOW = 60          # seconds
+RATE_LIMIT_MAX_REQUESTS = 100   # per window per IP
+SSE_KEEPALIVE_INTERVAL = 15     # seconds
+SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
+
+# Patterns that suggest private key material (checked against keys AND values)
+_PRIVATE_KEY_PATTERNS = [
+    re.compile(r"-----BEGIN\s+(RSA|EC|DSA|OPENSSH|PGP|ENCRYPTED)?\s*PRIVATE\s+KEY", re.IGNORECASE),
+    re.compile(r"\bprivate[_-]?key\b", re.IGNORECASE),
+    re.compile(r"\bsecret[_-]?key\b", re.IGNORECASE),
+    re.compile(r"\bapi[_-]?secret\b", re.IGNORECASE),
+    re.compile(r"\bwallet[_-]?seed\b", re.IGNORECASE),
+    re.compile(r"\bmnemonic\b", re.IGNORECASE),
+    re.compile(r"\b0x[0-9a-fA-F]{64}\b"),                    # raw hex private key
+    re.compile(r"\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b"),    # WIF bitcoin key
+]
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("dashboard")
+
+# ---------------------------------------------------------------------------
+# Flask app
+# ---------------------------------------------------------------------------
+
+app = Flask(__name__)
+CORS(app)
+
+# ---------------------------------------------------------------------------
+# In-memory storage (thread-safe via locks)
+# ---------------------------------------------------------------------------
+
+_lock = threading.Lock()
+
+# bot_id → latest payload dict
+bot_states: dict[str, dict] = {}
+
+# bot_id → deque of recent payloads (max 100)
+bot_history: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_HISTORY_PER_BOT))
+
+# SSE subscriber queues
+_sse_subscribers: list[queue.Queue] = []
+_sse_lock = threading.Lock()
+
+# Rate-limit store: ip → deque of timestamps
+_rate_store: dict[str, deque] = defaultdict(lambda: deque(maxlen=RATE_LIMIT_MAX_REQUESTS + 1))
+_rate_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# Rate limiter
+# ---------------------------------------------------------------------------
+
+def _is_rate_limited(ip: str) -> bool:
+    """Return True if *ip* has exceeded the rate limit."""
+    now = time.monotonic()
+    with _rate_lock:
+        dq = _rate_store[ip]
+        while dq and now - dq[0] > RATE_LIMIT_WINDOW:
+            dq.popleft()
+        if len(dq) >= RATE_LIMIT_MAX_REQUESTS:
+            return True
+        dq.append(now)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Auth decorator
+# ---------------------------------------------------------------------------
+
+def require_api_key(f):
+    """Enforce X-API-Key header authentication."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not API_KEY:
+            logger.error("API_KEY environment variable is not set")
+            return jsonify({"error": "Server misconfigured: API_KEY not set"}), 500
+        key = request.headers.get("X-API-Key", "")
+        if not key or key != API_KEY:
+            return jsonify({"error": "Unauthorized"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ---------------------------------------------------------------------------
+# Private-key scanner (checks dict keys AND values recursively)
+# ---------------------------------------------------------------------------
+
+def _contains_private_key(obj, depth: int = 0) -> bool:
+    """Recursively scan *obj* for anything that looks like a private key.
+    Checks both dictionary keys and string values."""
+    if depth > 10:
+        return False
+    if isinstance(obj, str):
+        return any(p.search(obj) for p in _PRIVATE_KEY_PATTERNS)
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if _contains_private_key(k, depth + 1):
+                return True
+            if _contains_private_key(v, depth + 1):
+                return True
+    if isinstance(obj, (list, tuple)):
+        return any(_contains_private_key(item, depth + 1) for item in obj)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+def _validate_status_payload(data) -> tuple[bool, str]:
+    """Validate incoming bot status payload. Returns (ok, error_msg)."""
+    if not isinstance(data, dict):
+        return False, "Payload must be a JSON object"
+
+    bot_id = data.get("bot_id")
+    if not bot_id or not isinstance(bot_id, str) or not bot_id.strip():
+        return False, "Missing or invalid 'bot_id' (must be a non-empty string)"
+
+    if len(bot_id.strip()) > 128:
+        return False, "'bot_id' too long (max 128 chars)"
+
+    if _contains_private_key(data):
+        return False, "Payload rejected: appears to contain private key material"
+
+    return True, ""
+
+
+# ---------------------------------------------------------------------------
+# SSE helpers
+# ---------------------------------------------------------------------------
+
+def _sse_format(data: dict, event: str = "update") -> str:
+    """Format a dict as an SSE message string."""
+    payload = json.dumps(data, default=str)
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+def _broadcast(event: str, data: dict):
+    """Push an SSE message to every connected subscriber."""
+    msg = _sse_format(data, event)
+    with _sse_lock:
+        dead = []
+        for q in _sse_subscribers:
+            try:
+                q.put_nowait(msg)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            _sse_subscribers.remove(q)
+
+
+# ---------------------------------------------------------------------------
+# Middleware: rate limiting on /api/ routes
+# ---------------------------------------------------------------------------
+
+@app.before_request
+def rate_limit():
+    if request.path.startswith("/api/"):
+        ip = request.remote_addr or "unknown"
+        if _is_rate_limited(ip):
+            return jsonify({"error": "Rate limit exceeded. Max 100 requests/minute."}), 429
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    """Serve the dashboard HTML."""
+    return DASHBOARD_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/api/status", methods=["POST"])
+@require_api_key
+def receive_status():
+    """Receive a bot status update."""
+    data = request.get_json(silent=True)
+    if data is None:
+        return jsonify({"error": "Invalid or missing JSON body"}), 400
+
+    ok, err = _validate_status_payload(data)
+    if not ok:
+        logger.warning("Rejected payload from %s: %s", request.remote_addr, err)
+        return jsonify({"error": err}), 400
+
+    bot_id = data["bot_id"].strip()
+    now = datetime.now(timezone.utc).isoformat()
+    data["received_at"] = now
+
+    entry = {
+        "id": str(uuid.uuid4()),
+        "bot_id": bot_id,
+        "received_at": now,
+        "data": data,
+    }
+
+    with _lock:
+        bot_states[bot_id] = data
+        bot_history[bot_id].append(entry)
+
+    _broadcast("update", entry)
+    logger.info("Status update from bot=%s", bot_id)
+
+    return jsonify({"ok": True, "id": entry["id"], "received_at": now}), 200
+
+
+@app.route("/api/bots", methods=["GET"])
+def list_bots():
+    """Return all current bot states."""
+    with _lock:
+        result = {}
+        for bot_id, state in bot_states.items():
+            result[bot_id] = {
+                "state": state,
+                "history_count": len(bot_history.get(bot_id, [])),
+            }
+    return jsonify({"bots": result, "count": len(result)}), 200
+
+
+@app.route("/api/bots/<bot_id>", methods=["GET"])
+def get_bot(bot_id: str):
+    """Return a single bot's current state."""
+    with _lock:
+        if bot_id not in bot_states:
+            return jsonify({"error": f"Bot '{bot_id}' not found"}), 404
+        return jsonify({
+            "bot_id": bot_id,
+            "state": bot_states[bot_id],
+            "history_count": len(bot_history.get(bot_id, [])),
+        }), 200
+
+
+@app.route("/api/bots/<bot_id>/history", methods=["GET"])
+def get_bot_history(bot_id: str):
+    """Return history for a specific bot."""
+    with _lock:
+        if bot_id not in bot_history:
+            return jsonify({"error": f"Bot '{bot_id}' not found"}), 404
+        history = list(bot_history[bot_id])
+    return jsonify({"bot_id": bot_id, "history": history, "count": len(history)}), 200
+
+
+@app.route("/api/bots/<bot_id>", methods=["DELETE"])
+@require_api_key
+def remove_bot(bot_id: str):
+    """Remove a bot from the dashboard."""
+    with _lock:
+        if bot_id not in bot_states:
+            return jsonify({"error": f"Bot '{bot_id}' not found"}), 404
+        del bot_states[bot_id]
+        bot_history.pop(bot_id, None)
+    _broadcast("remove", {"bot_id": bot_id})
+    logger.info("Bot removed: %s", bot_id)
+    return jsonify({"ok": True, "bot_id": bot_id}), 200
+
+
+@app.route("/api/stream")
+def sse_stream():
+    """SSE endpoint for live browser updates."""
+    q: queue.Queue = queue.Queue(maxsize=SSE_CLIENT_QUEUE_SIZE)
+
+    with _sse_lock:
+        _sse_subscribers.append(q)
+    logger.info("SSE client connected from %s (%d total)",
+                request.remote_addr, len(_sse_subscribers))
+
+    def generate():
+        try:
+            # Send initial snapshot of all bots
+            with _lock:
+                snapshot = {bid: state for bid, state in bot_states.items()}
+            yield _sse_format({"type": "snapshot", "bots": snapshot}, event="snapshot")
+
+            while True:
+                try:
+                    msg = q.get(timeout=SSE_KEEPALIVE_INTERVAL)
+                    yield msg
+                except queue.Empty:
+                    yield ": keepalive\n\n"
+        except GeneratorExit:
+            pass
+        finally:
+            with _sse_lock:
+                if q in _sse_subscribers:
+                    _sse_subscribers.remove(q)
+            logger.info("SSE client disconnected (%d remaining)", len(_sse_subscribers))
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    with _lock:
+        bot_count = len(bot_states)
+    with _sse_lock:
+        sse_count = len(_sse_subscribers)
+    return jsonify({
+        "status": "ok",
+        "bots_tracked": bot_count,
+        "sse_clients": sse_count,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }), 200
+
+
+# ---------------------------------------------------------------------------
+# Error handlers
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(404)
+def not_found(e):
+    return jsonify({"error": "Not found"}), 404
+
+
+@app.errorhandler(405)
+def method_not_allowed(e):
+    return jsonify({"error": "Method not allowed"}), 405
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    logger.exception("Internal server error")
+    return jsonify({"error": "Internal server error"}), 500
+
+
+# ---------------------------------------------------------------------------
+# Dashboard HTML (inline for self-contained deployment)
+# ---------------------------------------------------------------------------
+
+DASHBOARD_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grid Bot Dashboard</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+  .header { background: #1e293b; padding: 1rem 2rem; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #334155; }
+  .header h1 { font-size: 1.25rem; font-weight: 600; }
+  .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.connected { background: #22c55e; }
+  .status-dot.disconnected { background: #ef4444; }
+  .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
+  .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
+  .card .bot-id { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.75rem; }
+  .metric { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
+  .metric:last-child { border-bottom: none; }
+  .metric .label { color: #94a3b8; }
+  .metric .value { color: #f1f5f9; font-weight: 500; }
+  .metric .value.positive { color: #22c55e; }
+  .metric .value.negative { color: #ef4444; }
+  .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
+  .empty { text-align: center; padding: 4rem 1rem; color: #64748b; }
+  .empty p { font-size: 1.1rem; margin-bottom: 0.5rem; }
+  #connection-status { font-size: 0.8rem; color: #94a3b8; }
+  .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+  .badge.running { background: #166534; color: #bbf7d0; }
+  .badge.stopped { background: #991b1b; color: #fecaca; }
+  .badge.paused { background: #a16207; color: #fef08a; }
+  .badge.error { background: #7f1d1d; color: #fca5a5; }
+  .badge.unknown { background: #334155; color: #94a3b8; }
+  pre.raw { background: #0f172a; padding: 0.75rem; border-radius: 0.375rem; font-size: 0.75rem; overflow-x: auto; max-height: 200px; overflow-y: auto; margin-top: 0.5rem; color: #94a3b8; }
+  .toggle-raw { background: none; border: 1px solid #334155; color: #94a3b8; padding: 0.2rem 0.6rem; border-radius: 0.25rem; cursor: pointer; font-size: 0.75rem; margin-top: 0.5rem; }
+  .toggle-raw:hover { border-color: #64748b; color: #e2e8f0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ Grid Bot Dashboard</h1>
+  <div>
+    <span class="status-dot disconnected" id="dot"></span>
+    <span id="connection-status">Connecting…</span>
+  </div>
+</div>
+
+<div class="container">
+  <div id="bots-container">
+    <div class="empty" id="empty-state">
+      <p>No bots reporting yet</p>
+      <span>Waiting for status updates…</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const container = document.getElementById('bots-container');
+  const emptyState = document.getElementById('empty-state');
+  const dot = document.getElementById('dot');
+  const connStatus = document.getElementById('connection-status');
+  const bots = {};
+
+  let evtSource = null;
+  let reconnectDelay = 1000;
+  const maxReconnectDelay = 30000;
+
+  function connect() {
+    evtSource = new EventSource('/api/stream');
+
+    evtSource.onopen = function() {
+      dot.className = 'status-dot connected';
+      connStatus.textContent = 'Live';
+      reconnectDelay = 1000;
+    };
+
+    evtSource.onerror = function() {
+      dot.className = 'status-dot disconnected';
+      connStatus.textContent = 'Reconnecting…';
+      evtSource.close();
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+    };
+
+    evtSource.addEventListener('snapshot', function(e) {
+      const data = JSON.parse(e.data);
+      if (data.bots) {
+        Object.keys(data.bots).forEach(function(botId) {
+          bots[botId] = data.bots[botId];
+        });
+        render();
+      }
+    });
+
+    evtSource.addEventListener('update', function(e) {
+      const entry = JSON.parse(e.data);
+      bots[entry.bot_id] = entry.data || entry;
+      render();
+    });
+
+    evtSource.addEventListener('remove', function(e) {
+      const data = JSON.parse(e.data);
+      if (data.bot_id && bots[data.bot_id]) {
+        delete bots[data.bot_id];
+        render();
+      }
+    });
+  }
+
+  function esc(str) {
+    const div = document.createElement('div');
+    div.textContent = String(str || '');
+    return div.innerHTML;
+  }
+
+  function formatVal(val) {
+    if (val === null || val === undefined) return '—';
+    if (typeof val === 'number') {
+      return val % 1 !== 0 ? val.toFixed(6).replace(/0+$/, '').replace(/\\.$/, '') : val.toLocaleString();
+    }
+    if (typeof val === 'boolean') return val ? 'Yes' : 'No';
+    return String(val);
+  }
+
+  function statusBadge(status) {
+    const s = (status || 'unknown').toLowerCase();
+    return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>';
+  }
+
+  function render() {
+    const botIds = Object.keys(bots).sort();
+    if (botIds.length === 0) {
+      container.innerHTML = '';
+      container.appendChild(emptyState);
+      emptyState.style.display = '';
+      return;
+    }
+    emptyState.style.display = 'none';
+
+    let html = '<div class="grid">';
+    botIds.forEach(function(botId) {
+      const d = bots[botId];
+      const status = d.status || 'unknown';
+      const pnl = d.pnl !== undefined ? d.pnl : (d.total_pnl !== undefined ? d.total_pnl : null);
+      const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
+
+      html += '<div class="card">';
+      html += '<h2>Bot</h2>';
+      html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
+
+      const metrics = [
+        ['Status', 'status'], ['Pair', 'pair'], ['Exchange', 'exchange'],
+        ['PnL', 'pnl'], ['Total PnL', 'total_pnl'], ['Grid Levels', 'grid_levels'],
+        ['Active Orders', 'active_orders'], ['Investment', 'investment'],
+        ['Current Price', 'current_price'], ['Upper Price', 'upper_price'],
+        ['Lower Price', 'lower_price'], ['Uptime', 'uptime'], ['Strategy', 'strategy'],
+      ];
+
+      metrics.forEach(function(pair) {
+        const label = pair[0], key = pair[1];
+        if (d[key] !== undefined && d[key] !== null) {
+          const cls = (key === 'pnl' || key === 'total_pnl') ? pnlClass : '';
+          html += '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(formatVal(d[key])) + '</span></div>';
+        }
+      });
+
+      html += '<div class="timestamp">Updated: ' + esc(d.received_at || '—') + '</div>';
+      html += '<button class="toggle-raw" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\\'none\\'?\\'block\\':\\'none\\'">Raw JSON</button>';
+      html += '<pre class="raw" style="display:none">' + esc(JSON.stringify(d, null, 2)) + '</pre>';
+      html += '</div>';
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  connect();
+})();
+</script>
+
+</body>
+</html>
+"""
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    if not API_KEY:
+        logger.warning("⚠️  API_KEY environment variable is not set!")
+        logger.warning("   Set it before starting: export API_KEY=your-secret-key")
+    logger.info("Starting Grid Bot Dashboard on %s:%d", HOST, PORT)
+    app.run(host=HOST, port=PORT, debug=False, threaded=True)
