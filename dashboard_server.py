@@ -523,7 +523,7 @@ DASHBOARD_HTML = """\
 
   function esc(str) {
     const div = document.createElement('div');
-    div.textContent = String(str || '');
+    div.textContent = String(str === null || str === undefined ? '' : str);
     return div.innerHTML;
   }
 
