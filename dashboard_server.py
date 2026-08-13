@@ -35,6 +35,10 @@ from functools import wraps
 
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
+from dotenv import load_dotenv
+
+# Load .env file if present
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -415,6 +419,16 @@ DASHBOARD_HTML = """\
   .metric .value { color: #f1f5f9; font-weight: 500; }
   .metric .value.positive { color: #22c55e; }
   .metric .value.negative { color: #ef4444; }
+  .positions { margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
+  .positions h3 { font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.5rem; }
+  .position { background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
+  .position .pos-header { display: flex; justify-content: space-between; margin-bottom: 0.25rem; }
+  .position .pos-id { color: #64748b; font-size: 0.7rem; }
+  .position .pos-pnl { font-weight: 600; }
+  .position .pos-pnl.positive { color: #22c55e; }
+  .position .pos-pnl.negative { color: #ef4444; }
+  .position .pos-details { color: #94a3b8; font-size: 0.75rem; }
+  .position.pos-hidden { display: none; }
   .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
   .empty { text-align: center; padding: 4rem 1rem; color: #64748b; }
   .empty p { font-size: 1.1rem; margin-bottom: 0.5rem; }
@@ -537,28 +551,70 @@ DASHBOARD_HTML = """\
     botIds.forEach(function(botId) {
       const d = bots[botId];
       const status = d.status || 'unknown';
-      const pnl = d.pnl !== undefined ? d.pnl : (d.total_pnl !== undefined ? d.total_pnl : null);
-      const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
-
       html += '<div class="card">';
       html += '<h2>Bot</h2>';
       html += '<div class="bot-id">' + esc(botId) + ' ' + statusBadge(status) + '</div>';
 
       const metrics = [
-        ['Status', 'status'], ['Pair', 'pair'], ['Exchange', 'exchange'],
-        ['PnL', 'pnl'], ['Total PnL', 'total_pnl'], ['Grid Levels', 'grid_levels'],
-        ['Active Orders', 'active_orders'], ['Investment', 'investment'],
-        ['Current Price', 'current_price'], ['Upper Price', 'upper_price'],
-        ['Lower Price', 'lower_price'], ['Uptime', 'uptime'], ['Strategy', 'strategy'],
+        ['Price', 'price'], ['ETH Balance', 'eth_balance'],
+        ['Token Balance', 'token_balance'], ['P&L', 'profit_percent'],
+        ['Buys', 'buys'], ['Sells', 'sells'],
+        ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
 
       metrics.forEach(function(pair) {
         const label = pair[0], key = pair[1];
         if (d[key] !== undefined && d[key] !== null) {
-          const cls = (key === 'pnl' || key === 'total_pnl') ? pnlClass : '';
-          html += '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(formatVal(d[key])) + '</span></div>';
+          let val = d[key];
+          let cls = '';
+          if (key === 'profit_percent') {
+            cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
+            val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(2) + '%';
+          } else if (key === 'price') {
+            const n = parseFloat(val);
+            val = Math.abs(n) < 0.0001 && n !== 0 ? n.toExponential(8) : n.toFixed(8);
+          } else if (key === 'uptime_seconds') {
+            const s = parseInt(val);
+            if (s < 60) val = s + 's';
+            else if (s < 3600) val = Math.floor(s/60) + 'm ' + (s%60) + 's';
+            else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+          } else if (key === 'eth_balance' || key === 'token_balance') {
+            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : 0);
+          }
+          html += '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + esc(val) + '</span></div>';
         }
       });
+
+      // Display positions if available (show 3, expandable)
+      if (d.positions && d.positions.length > 0) {
+        const sorted = d.positions.slice().sort(function(a, b) {
+          const at = Date.parse(a.timestamp || '') || 0;
+          const bt = Date.parse(b.timestamp || '') || 0;
+          if (at !== bt) return bt - at;
+          return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
+        });
+        const showCount = 3;
+        html += '<div class="positions"><h3>Positions (' + sorted.length + ')</h3>';
+        sorted.forEach(function(pos, i) {
+          const pnl = pos.pnl !== undefined ? pos.pnl : null;
+          const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
+          const hidden = i >= showCount ? ' pos-hidden' : '';
+          html += '<div class="position' + hidden + '">';
+          html += '<div class="pos-header"><span class="pos-id">#' + esc(pos.id || '—') + '</span>';
+          if (pnl !== null) {
+            html += '<span class="pos-pnl ' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
+          }
+          html += '</div>';
+          html += '<div class="pos-details">';
+          html += 'Amount: ' + esc(parseFloat(pos.buy_amount_token || 0).toFixed(0)) + ' | ';
+          html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(6)) + ' ETH';
+          html += '</div></div>';
+        });
+        if (sorted.length > showCount) {
+          html += '<button class="toggle-raw" onclick="var h=this.parentElement.querySelectorAll(\'.pos-hidden\');var opening=this.textContent.indexOf(\'Show all\')===0;h.forEach(function(e){e.style.display=opening?\'block\':\'none\'});this.textContent=opening?\'Show less\':\'Show all (' + sorted.length + ')\'">Show all (' + sorted.length + ')</button>';
+        }
+        html += '</div>';
+      }
 
       html += '<div class="timestamp">Updated: ' + esc(d.received_at || '—') + '</div>';
       html += '<button class="toggle-raw" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\\'none\\'?\\'block\\':\\'none\\'">Raw JSON</button>';
