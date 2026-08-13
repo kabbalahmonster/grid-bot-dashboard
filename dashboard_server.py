@@ -564,6 +564,7 @@ DASHBOARD_HTML = """\
 
       const metrics = [
         ['Price', 'price'], ['P&L', 'profit_percent'],
+        ['Session Profit', 'session_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
         ['Buys', 'buys'], ['Sells', 'sells'],
       ];
@@ -584,6 +585,9 @@ DASHBOARD_HTML = """\
           if (key === 'profit_percent') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(2) + '%';
+          } else if (key === 'session_profit_eth') {
+            cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
+            val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(8) + ' ETH';
           } else if (key === 'price') {
             const n = parseFloat(val);
             val = n.toFixed(10);
