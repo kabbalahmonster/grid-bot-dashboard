@@ -485,6 +485,8 @@ DASHBOARD_HTML = """\
   .metric:last-child { border-bottom: none; }
   .metric .label { color: #94a3b8; }
   .metric .value { color: #f1f5f9; font-weight: 500; }
+  .metric .value a { color: inherit; text-decoration: none; }
+  .metric .value a:hover { text-decoration: underline; }
   .metric .value.positive { color: #22c55e; }
   .metric .value.negative { color: #ef4444; }
   .positions { margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
