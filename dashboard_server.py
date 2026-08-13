@@ -644,6 +644,7 @@ DASHBOARD_HTML = """\
   const maxReconnectDelay = 30000;
 
   function connect() {
+    if (evtSource) evtSource.close();
     evtSource = new EventSource('/api/stream');
 
     evtSource.onopen = function() {
@@ -966,6 +967,14 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible') {
+      dot.className = 'status-dot disconnected';
+      connStatus.textContent = 'Reconnecting…';
+      reconnectDelay = 1000;
+      connect();
+    }
+  });
   botFilter.addEventListener('input', function() {
     clearFilter.style.display = botFilter.value ? 'block' : 'none';
     render(true);
