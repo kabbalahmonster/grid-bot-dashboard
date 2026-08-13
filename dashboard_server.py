@@ -611,7 +611,7 @@ DASHBOARD_HTML = """\
           html += '</div></div>';
         });
         if (sorted.length > showCount) {
-          html += '<button class="toggle-raw" onclick="var h=this.parentElement.querySelectorAll(\'.pos-hidden\');var opening=this.textContent.indexOf(\'Show all\')===0;h.forEach(function(e){e.style.display=opening?\'block\':\'none\'});this.textContent=opening?\'Show less\':\'Show all (' + sorted.length + ')\'">Show all (' + sorted.length + ')</button>';
+          html += '<button class="toggle-raw" onclick="var h=this.parentElement.querySelectorAll(&quot;.pos-hidden&quot;);var opening=this.textContent.indexOf(&quot;Show all&quot;)===0;h.forEach(function(e){e.style.display=opening?&quot;block&quot;:&quot;none&quot;});this.textContent=opening?&quot;Show less&quot;:&quot;Show all (' + sorted.length + ')&quot;">Show all (' + sorted.length + ')</button>';
         }
         html += '</div>';
       }
