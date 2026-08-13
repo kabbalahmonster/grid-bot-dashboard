@@ -687,7 +687,7 @@ DASHBOARD_HTML = """\
         ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
-        ['Wallet', 'wallet_link'],
+        ['Wallet', 'wallet_link'], ['Token', 'token_link'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
 
@@ -695,6 +695,9 @@ DASHBOARD_HTML = """\
       d.wallet_link = d.wallet_address && chain
         ? '<a href="' + esc(chain.explorer + d.wallet_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.wallet_address) + '">' + esc(shortenAddress(d.wallet_address)) + '</a>'
         : (d.wallet_address ? esc(shortenAddress(d.wallet_address)) : null);
+      d.token_link = d.token_address && chain
+        ? '<a href="' + esc(chain.explorer + d.token_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.token_address) + '">' + esc(shortenAddress(d.token_address)) + '</a>'
+        : (d.token_address ? esc(shortenAddress(d.token_address)) : null);
 
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
@@ -722,7 +725,7 @@ DASHBOARD_HTML = """\
           } else if (key === 'eth_balance' || key === 'token_balance') {
             val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : 0);
           }
-          const renderedValue = key === 'wallet_link' ? val : esc(val);
+          const renderedValue = key === 'wallet_link' || key === 'token_link' ? val : esc(val);
           return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + renderedValue + '</span></div>';
         }
         return '';
