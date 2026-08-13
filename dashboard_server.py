@@ -594,6 +594,7 @@ DASHBOARD_HTML = """\
     <input id="bot-filter" placeholder="Filter bots or groups">
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&L</option><option value="profit">Session profit</option><option value="status">Status</option></select>
+    <button id="sort-direction" type="button" title="Reverse sort direction">Ascending ↑</button>
     <button id="notifications">Enable offline alerts</button>
   </div>
   <div id="bots-container">
@@ -614,6 +615,7 @@ DASHBOARD_HTML = """\
   const botFilter = document.getElementById('bot-filter');
   const chainFilter = document.getElementById('chain-filter');
   const sortBots = document.getElementById('sort-bots');
+  const sortDirection = document.getElementById('sort-direction');
   const notificationsButton = document.getElementById('notifications');
   const bots = {};
   const openMoreInfo = new Set();
@@ -623,6 +625,8 @@ DASHBOARD_HTML = """\
   const openTrades = new Set();
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
+  const defaultSortDirections = { name: 'asc', pnl: 'desc', profit: 'desc', status: 'asc' };
+  let sortDirectionValue = defaultSortDirections.name;
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
     8453: { name: 'Base', explorer: 'https://base.blockscout.com/address/' },
@@ -778,10 +782,12 @@ DASHBOARD_HTML = """\
       return (!query || haystack.includes(query)) && (!wantedChain || String(d.chain_id) === wantedChain);
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
-      if (mode === 'pnl') return (parseFloat(bv.profit_percent) || 0) - (parseFloat(av.profit_percent) || 0);
-      if (mode === 'profit') return (parseFloat(bv.session_profit_eth) || 0) - (parseFloat(av.session_profit_eth) || 0);
-      if (mode === 'status') return rank[reportAge(av.received_at).status] - rank[reportAge(bv.received_at).status];
-      return a.localeCompare(b);
+      let result;
+      if (mode === 'pnl') result = (parseFloat(av.profit_percent) || 0) - (parseFloat(bv.profit_percent) || 0);
+      else if (mode === 'profit') result = (parseFloat(av.session_profit_eth) || 0) - (parseFloat(bv.session_profit_eth) || 0);
+      else if (mode === 'status') result = rank[reportAge(av.received_at).status] - rank[reportAge(bv.received_at).status];
+      else result = a.localeCompare(b);
+      return sortDirectionValue === 'asc' ? result : -result;
     });
     updateSummary(botIds);
     if (botIds.length === 0) {
@@ -954,7 +960,21 @@ DASHBOARD_HTML = """\
   }
 
   connect();
-  [botFilter, chainFilter, sortBots].forEach(function(control) { control.addEventListener('input', render); });
+  [botFilter, chainFilter].forEach(function(control) { control.addEventListener('input', render); });
+  function updateSortDirectionButton() {
+    sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
+  }
+  sortBots.addEventListener('change', function() {
+    sortDirectionValue = defaultSortDirections[sortBots.value] || 'asc';
+    updateSortDirectionButton();
+    render();
+  });
+  sortDirection.addEventListener('click', function() {
+    sortDirectionValue = sortDirectionValue === 'asc' ? 'desc' : 'asc';
+    updateSortDirectionButton();
+    render();
+  });
+  updateSortDirectionButton();
   notificationsButton.addEventListener('click', function() {
     if (!window.isSecureContext) { notificationsButton.textContent = 'HTTPS required for system alerts'; return; }
     if (!('Notification' in window)) { notificationsButton.textContent = 'Alerts unsupported'; return; }
