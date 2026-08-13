@@ -35,7 +35,7 @@ from functools import wraps
 from urllib.parse import urlencode
 
 import requests as http_requests
-from flask import Flask, Response, jsonify, redirect, request
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 
@@ -378,9 +378,9 @@ def health():
     }), 200
 
 
-@app.route("/api/dexscreener/embed", methods=["GET"])
-def dexscreener_embed():
-    """Resolve the preferred WETH pair and redirect to its embedded chart."""
+@app.route("/api/dexscreener/chart-url", methods=["GET"])
+def dexscreener_chart_url():
+    """Resolve the preferred WETH pair and return its direct embed URL."""
     try:
         chain_id = int(request.args.get("chain_id", ""))
     except ValueError:
@@ -433,10 +433,8 @@ def dexscreener_embed():
     params = {"embed": "1", "theme": "dark", "info": "0"}
     if wallet_address:
         params["maker"] = wallet_address
-    return redirect(
-        f"https://dexscreener.com/{chain_slug}/{pair_address}?{urlencode(params)}",
-        code=302,
-    )
+    chart_url = f"https://dexscreener.com/{chain_slug}/{pair_address}?{urlencode(params)}"
+    return jsonify({"chart_url": chart_url, "pair_address": pair_address}), 200
 
 
 # ---------------------------------------------------------------------------
@@ -722,7 +720,7 @@ DASHBOARD_HTML = """\
           wallet_address: String(d.wallet_address),
         });
         html += '<details class="chart-panel" data-chart-key="' + esc(botKey) + '"' + (chartOpen ? ' open' : '') + '><summary class="toggle-raw">Dexscreener chart</summary>';
-        html += '<iframe class="dex-chart" loading="lazy" referrerpolicy="no-referrer" src="/api/dexscreener/embed?' + esc(chartParams.toString()) + '"></iframe></details>';
+        html += '<iframe class="dex-chart" loading="lazy" data-resolver="/api/dexscreener/chart-url?' + esc(chartParams.toString()) + '" title="Dexscreener chart"></iframe></details>';
       }
 
       // Display positions if available (show 3, expandable)
@@ -766,6 +764,24 @@ DASHBOARD_HTML = """\
     container.innerHTML = html;
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
+    });
+    container.querySelectorAll('details.chart-panel').forEach(function(panel) {
+      const loadChart = function() {
+        if (!panel.open) return;
+        const frame = panel.querySelector('iframe.dex-chart');
+        if (!frame || frame.src) return;
+        fetch(frame.dataset.resolver)
+          .then(function(response) {
+            if (!response.ok) throw new Error('Chart lookup failed: ' + response.status);
+            return response.json();
+          })
+          .then(function(data) { frame.src = data.chart_url; })
+          .catch(function(error) {
+            frame.replaceWith(document.createTextNode(error.message));
+          });
+      };
+      panel.addEventListener('toggle', loadChart);
+      loadChart();
     });
   }
 
