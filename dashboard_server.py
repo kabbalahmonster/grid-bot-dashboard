@@ -752,10 +752,12 @@ DASHBOARD_HTML = """\
 
   function eventDisplay(message) {
     const raw = String(message || 'Unknown event');
-    if ((/uniswap/i.test(raw) || /resourceNotFound/i.test(raw) || /^Response:\\s*\{/i.test(raw)) && /no quotes? available/i.test(raw)) {
+    const normalized = raw.trim().toLowerCase();
+    const providerResponse = normalized.startsWith('response: {') || normalized.startsWith('response: [');
+    if ((/uniswap/i.test(raw) || /resourceNotFound/i.test(raw) || providerResponse) && /no quotes? available/i.test(raw)) {
       return { summary: 'Uniswap: no quote available' };
     }
-    if (/request[_-]?id/i.test(raw) || /^Response:\\s*[\[{]/i.test(raw)) {
+    if (/request[_-]?id/i.test(raw) || providerResponse) {
       return { summary: 'Provider request failed' };
     }
     return { summary: raw };
