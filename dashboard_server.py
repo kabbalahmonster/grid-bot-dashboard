@@ -626,8 +626,11 @@ DASHBOARD_HTML = """\
   .event-header { display: flex; justify-content: space-between; gap: 0.5rem; color: #94a3b8; margin-bottom: 0.2rem; }
   .event-level { color: #fbbf24; font-weight: 700; text-transform: uppercase; }
   .event.error .event-level { color: #f87171; }
-  .event-message { color: #e2e8f0; }
-  .event-code { color: #64748b; margin-top: 0.2rem; font-family: monospace; }
+  .event-message { color: #e2e8f0; overflow-wrap: anywhere; word-break: break-word; }
+  .event-code { color: #64748b; margin-top: 0.2rem; font-family: monospace; overflow-wrap: anywhere; }
+  .event-details { margin-top: 0.3rem; color: #64748b; }
+  .event-details summary { cursor: pointer; user-select: none; }
+  .event-raw { margin-top: 0.3rem; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: monospace; color: #94a3b8; }
   .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
 </style>
 </head>
@@ -741,6 +744,14 @@ DASHBOARD_HTML = """\
     const div = document.createElement('div');
     div.textContent = String(str === null || str === undefined ? '' : str);
     return div.innerHTML;
+  }
+
+  function eventDisplay(message) {
+    const raw = String(message || 'Unknown event');
+    if (/uniswap/i.test(raw) && /no quotes? available/i.test(raw)) {
+      return { summary: 'Uniswap: no quote available', details: raw };
+    }
+    return { summary: raw, details: '' };
   }
 
   function formatVal(val) {
@@ -988,8 +999,10 @@ DASHBOARD_HTML = """\
           const level = event.level === 'error' ? 'error' : 'warning';
           const repeats = parseInt(event.count, 10) || 1;
           const eventTime = event.timestamp ? new Date(event.timestamp).toLocaleString() : '';
+          const display = eventDisplay(event.message);
           html += '<div class="event ' + level + '"><div class="event-header"><span class="event-level">' + esc(level) + (repeats > 1 ? ' ×' + repeats : '') + '</span><span>' + esc(eventTime) + '</span></div>' +
-            '<div class="event-message">' + esc(event.message || 'Unknown event') + '</div>' +
+            '<div class="event-message">' + esc(display.summary) + '</div>' +
+            (display.details ? '<details class="event-details"><summary>Technical details</summary><div class="event-raw">' + esc(display.details) + '</div></details>' : '') +
             '<div class="event-code">' + esc(event.code || 'unknown') + '</div></div>';
         });
         html += '</details>';
