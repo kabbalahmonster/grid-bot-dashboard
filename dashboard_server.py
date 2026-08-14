@@ -623,11 +623,15 @@ DASHBOARD_HTML = """\
   .events { margin-top: 0.75rem; }
   .event { background: #0f172a; border-left: 3px solid #f59e0b; border-radius: 0.25rem; padding: 0.5rem 0.6rem; margin-top: 0.4rem; font-size: 0.75rem; }
   .event.error { border-left-color: #ef4444; }
+  .event.success { border-left-color: #22c55e; }
   .event-header { display: flex; justify-content: space-between; gap: 0.5rem; color: #94a3b8; margin-bottom: 0.2rem; }
   .event-level { color: #fbbf24; font-weight: 700; text-transform: uppercase; }
   .event.error .event-level { color: #f87171; }
+  .event.success .event-level { color: #4ade80; }
   .event-message { color: #e2e8f0; overflow-wrap: anywhere; word-break: break-word; }
   .event-code { color: #64748b; margin-top: 0.2rem; font-family: monospace; overflow-wrap: anywhere; }
+  .event-tx { color: #f8fafc; text-decoration: none; }
+  .event-tx:hover { text-decoration: underline; }
   .event-details { margin-top: 0.3rem; color: #64748b; }
   .event-details summary { cursor: pointer; user-select: none; }
   .event-raw { margin-top: 0.3rem; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: monospace; color: #94a3b8; }
@@ -1005,14 +1009,16 @@ DASHBOARD_HTML = """\
         }, 0);
         html += '<details class="events" data-events-key="' + esc(botKey) + '"' + (openEvents.has(botKey) ? ' open' : '') + '><summary class="toggle-raw">Events (' + recentEvents.length + (errorCount ? ' · ' + errorCount + ' errors' : '') + ')</summary>';
         recentEvents.forEach(function(event) {
-          const level = event.level === 'error' ? 'error' : 'warning';
+          const level = event.level === 'error' ? 'error' : (event.level === 'success' ? 'success' : 'warning');
           const repeats = parseInt(event.count, 10) || 1;
           const eventTime = event.timestamp ? new Date(event.timestamp).toLocaleString() : '';
           const display = eventDisplay(event.message);
+          const eventTxUrl = chain && event.tx_hash ? chain.explorer.replace('/address/', '/tx/') + event.tx_hash : '';
+          const eventTx = eventTxUrl ? ' · <a class="event-tx" href="' + esc(eventTxUrl) + '" target="_blank" rel="noopener noreferrer">tx ' + esc(shortenAddress(event.tx_hash)) + '</a>' : '';
           html += '<div class="event ' + level + '"><div class="event-header"><span class="event-level">' + esc(level) + (repeats > 1 ? ' ×' + repeats : '') + '</span><span>' + esc(eventTime) + '</span></div>' +
             '<div class="event-message">' + esc(display.summary) + '</div>' +
             (display.details ? '<details class="event-details"><summary>Technical details</summary><div class="event-raw">' + esc(display.details) + '</div></details>' : '') +
-            '<div class="event-code">' + esc(event.code || 'unknown') + '</div></div>';
+            '<div class="event-code">' + esc(event.code || 'unknown') + eventTx + '</div></div>';
         });
         html += '</details>';
       }
