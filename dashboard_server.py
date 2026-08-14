@@ -571,9 +571,7 @@ DASHBOARD_HTML = """\
   .chain-badge, .provider-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
-  .card.capacity-warning { border-color: #f59e0b; animation: capacity-flash 1.6s ease-in-out infinite; }
-  @keyframes capacity-flash { 0%, 100% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); } 50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.55); } }
-  @media (prefers-reduced-motion: reduce) { .card.capacity-warning { animation: none; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45); } }
+  .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
   .capacity-alert { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
   .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
