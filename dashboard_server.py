@@ -620,6 +620,14 @@ DASHBOARD_HTML = """\
   .trade .buy { color: #22c55e; } .trade .sell { color: #ef4444; }
   .trade a { color: #f1f5f9; text-decoration: none; }
   .trade a:hover { text-decoration: underline; }
+  .events { margin-top: 0.75rem; }
+  .event { background: #0f172a; border-left: 3px solid #f59e0b; border-radius: 0.25rem; padding: 0.5rem 0.6rem; margin-top: 0.4rem; font-size: 0.75rem; }
+  .event.error { border-left-color: #ef4444; }
+  .event-header { display: flex; justify-content: space-between; gap: 0.5rem; color: #94a3b8; margin-bottom: 0.2rem; }
+  .event-level { color: #fbbf24; font-weight: 700; text-transform: uppercase; }
+  .event.error .event-level { color: #f87171; }
+  .event-message { color: #e2e8f0; }
+  .event-code { color: #64748b; margin-top: 0.2rem; font-family: monospace; }
   .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
 </style>
 </head>
@@ -669,6 +677,7 @@ DASHBOARD_HTML = """\
   const openRawJson = new Set();
   const openCharts = new Set();
   const openTrades = new Set();
+  const openEvents = new Set();
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const defaultSortDirections = { name: 'asc', pnl: 'desc', profit: 'desc', status: 'asc' };
@@ -840,6 +849,10 @@ DASHBOARD_HTML = """\
       if (el.open) openTrades.add(el.dataset.tradesKey);
       else openTrades.delete(el.dataset.tradesKey);
     });
+    container.querySelectorAll('details.events[data-events-key]').forEach(function(el) {
+      if (el.open) openEvents.add(el.dataset.eventsKey);
+      else openEvents.delete(el.dataset.eventsKey);
+    });
     // Avoid reloading an open third-party iframe on every bot status update.
     if (openCharts.size > 0 && !force) return;
 
@@ -963,6 +976,23 @@ DASHBOARD_HTML = """\
         });
         html += '<details class="chart-panel" data-chart-key="' + esc(botKey) + '"' + (chartOpen ? ' open' : '') + '><summary class="toggle-raw">Dexscreener chart</summary>';
         html += '<iframe class="dex-chart" loading="lazy" data-resolver="/api/dexscreener/chart-url?' + esc(chartParams.toString()) + '" title="Dexscreener chart"></iframe></details>';
+      }
+
+      if (d.events && d.events.length) {
+        const recentEvents = d.events.slice().reverse();
+        const errorCount = recentEvents.reduce(function(total, event) {
+          return total + (event.level === 'error' ? (parseInt(event.count, 10) || 1) : 0);
+        }, 0);
+        html += '<details class="events" data-events-key="' + esc(botKey) + '"' + (openEvents.has(botKey) ? ' open' : '') + '><summary class="toggle-raw">Events (' + recentEvents.length + (errorCount ? ' · ' + errorCount + ' errors' : '') + ')</summary>';
+        recentEvents.forEach(function(event) {
+          const level = event.level === 'error' ? 'error' : 'warning';
+          const repeats = parseInt(event.count, 10) || 1;
+          const eventTime = event.timestamp ? new Date(event.timestamp).toLocaleString() : '';
+          html += '<div class="event ' + level + '"><div class="event-header"><span class="event-level">' + esc(level) + (repeats > 1 ? ' ×' + repeats : '') + '</span><span>' + esc(eventTime) + '</span></div>' +
+            '<div class="event-message">' + esc(event.message || 'Unknown event') + '</div>' +
+            '<div class="event-code">' + esc(event.code || 'unknown') + '</div></div>';
+        });
+        html += '</details>';
       }
 
       if (d.trades_history && d.trades_history.length) {
