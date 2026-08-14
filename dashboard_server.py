@@ -936,7 +936,7 @@ DASHBOARD_HTML = """\
         ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
-        ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
+        ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Token Balance', 'token_balance'],
         ['Wallet', 'wallet_link'], ['Token', 'token_link'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
@@ -974,8 +974,8 @@ DASHBOARD_HTML = """\
             if (s < 60) val = s + 's';
             else if (s < 3600) val = Math.floor(s/60) + 'm ' + (s%60) + 's';
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
-          } else if (key === 'eth_balance' || key === 'token_balance') {
-            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : 0);
+          } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'token_balance') {
+            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : (key === 'usdg_balance' ? 2 : 0));
           }
           const renderedValue = key === 'wallet_link' || key === 'token_link' ? val : esc(val);
           return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + renderedValue + '</span></div>';
