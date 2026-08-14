@@ -571,6 +571,11 @@ DASHBOARD_HTML = """\
   .chain-badge, .provider-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
+  .card.capacity-warning { border-color: #f59e0b; animation: capacity-flash 1.6s ease-in-out infinite; }
+  @keyframes capacity-flash { 0%, 100% { box-shadow: 0 0 0 rgba(245, 158, 11, 0); } 50% { box-shadow: 0 0 20px rgba(245, 158, 11, 0.55); } }
+  @media (prefers-reduced-motion: reduce) { .card.capacity-warning { animation: none; box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.45); } }
+  .capacity-alert { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
+  .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
   .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .card .bot-id { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.75rem; }
   .metric { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
@@ -875,13 +880,22 @@ DASHBOARD_HTML = """\
       const positionsOpen = openPositions.has(botKey);
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
-      html += '<div class="card" data-bot-id="' + esc(botId) + '">';
+      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
+
+      if (d.capacity_warning) {
+        const warningPnl = parseFloat(d.capacity_warning.highest_position_pnl);
+        const warningThreshold = parseFloat(d.capacity_warning.buy_threshold);
+        html += '<div class="capacity-alert"><strong>⚠ ADD POSITIONS</strong>' +
+          'Buy point reached, but all ' + esc(d.capacity_warning.max_positions) + ' position slots are filled. ' +
+          'Highest P&amp;L: ' + esc(Number.isFinite(warningPnl) ? warningPnl.toFixed(1) : '?') +
+          '% · Buy point: ' + esc(Number.isFinite(warningThreshold) ? warningThreshold.toFixed(1) : '?') + '%</div>';
+      }
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
