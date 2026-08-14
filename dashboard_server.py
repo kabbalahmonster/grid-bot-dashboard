@@ -752,10 +752,13 @@ DASHBOARD_HTML = """\
 
   function eventDisplay(message) {
     const raw = String(message || 'Unknown event');
-    if (/uniswap/i.test(raw) && /no quotes? available/i.test(raw)) {
-      return { summary: 'Uniswap: no quote available', details: raw };
+    if ((/uniswap/i.test(raw) || /resourceNotFound/i.test(raw) || /^Response:\\s*\{/i.test(raw)) && /no quotes? available/i.test(raw)) {
+      return { summary: 'Uniswap: no quote available' };
     }
-    return { summary: raw, details: '' };
+    if (/request[_-]?id/i.test(raw) || /^Response:\\s*[\[{]/i.test(raw)) {
+      return { summary: 'Provider request failed' };
+    }
+    return { summary: raw };
   }
 
   function formatVal(val) {
@@ -1017,7 +1020,6 @@ DASHBOARD_HTML = """\
           const eventTx = eventTxUrl ? ' · <a class="event-tx" href="' + esc(eventTxUrl) + '" target="_blank" rel="noopener noreferrer">tx ' + esc(shortenAddress(event.tx_hash)) + '</a>' : '';
           html += '<div class="event ' + level + '"><div class="event-header"><span class="event-level">' + esc(level) + (repeats > 1 ? ' ×' + repeats : '') + '</span><span>' + esc(eventTime) + '</span></div>' +
             '<div class="event-message">' + esc(display.summary) + '</div>' +
-            (display.details ? '<details class="event-details"><summary>Technical details</summary><div class="event-raw">' + esc(display.details) + '</div></details>' : '') +
             '<div class="event-code">' + esc(event.code || 'unknown') + eventTx + '</div></div>';
         });
         html += '</details>';
