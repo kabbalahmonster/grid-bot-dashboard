@@ -120,6 +120,22 @@ _eth_price_cache: tuple[float, dict[str, float]] = (0.0, {})
 _eth_price_lock = threading.Lock()
 
 
+def _sanitize_provider_events(data):
+    """Remove opaque provider response metadata from public event payloads."""
+    if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+        return data
+    for event in data["events"]:
+        if not isinstance(event, dict):
+            continue
+        message = str(event.get("message", ""))
+        lowered = message.lower()
+        if "requestid" in lowered or "request_id" in lowered or message.lstrip().startswith(("Response: {", "Response: [")):
+            event["message"] = "Uniswap: no quote available" if "no quotes available" in lowered else "Provider request failed"
+        event.pop("requestId", None)
+        event.pop("request_id", None)
+    return data
+
+
 def _persist_state_locked():
     """Atomically persist current state and bounded history. Caller holds _lock."""
     directory = os.path.dirname(STATE_FILE)
@@ -142,10 +158,14 @@ def _load_persisted_state():
         states = payload.get("bot_states", {})
         histories = payload.get("bot_history", {})
         if isinstance(states, dict):
-            bot_states.update(states)
+            bot_states.update({bot_id: _sanitize_provider_events(state) for bot_id, state in states.items()})
         if isinstance(histories, dict):
             for bot_id, entries in histories.items():
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        _sanitize_provider_events(entry.get("data"))
                 bot_history[bot_id].extend(entries[-MAX_HISTORY_PER_BOT:])
+        _persist_state_locked()
         logger.info("Restored %d bots from %s", len(bot_states), STATE_FILE)
     except FileNotFoundError:
         pass
@@ -296,6 +316,8 @@ def receive_status():
     if not ok:
         logger.warning("Rejected payload from %s: %s", request.remote_addr, err)
         return jsonify({"error": err}), 400
+
+    _sanitize_provider_events(data)
 
     bot_id = data["bot_id"].strip()
     now = datetime.now(timezone.utc).isoformat()
