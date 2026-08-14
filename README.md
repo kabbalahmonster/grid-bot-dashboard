@@ -236,7 +236,7 @@ Bots may also send up to 50 structured `events`. The dashboard renders them newe
 
 Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_started_at`. Realized profit is shown beside session profit on each card and aggregated fleet-wide in ETH plus the selected CAD/USD currency. A bot-side baseline reset starts a new displayed accounting period without deleting cumulative totals or transaction-hash deduplication. Older bots remain compatible and contribute zero until updated.
 
-`usdg_balance` is an optional read-only ERC-20 balance. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge.
+`usdg_balance` is an optional read-only ERC-20 balance. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
 
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
 
