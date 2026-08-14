@@ -21,7 +21,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Latest state plus 100 in-memory history entries per bot
 - Latest state and bounded history persisted across dashboard restarts
 - Aggregate active-bot, session-profit, persistent realized-profit, and filled-position totals
-- Bot filtering and sorting by name, chain, P&L, profit, or status
+- Bot filtering and sorting by name, chain, AVG P&L, session or realized profit,
+  position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
 - Optional bot display names/groups and chain badges
 - Bounded ETH-denominated bot trade history with explorer links
@@ -277,7 +278,11 @@ Latest state and the 100-entry status history are persisted atomically to `STATE
 
 Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is opened. The server resolves the token's preferred WETH pair without an API key and caches the pair for five minutes. Routine SSE updates do not reload an open chart.
 
-The fleet toolbar can search bot IDs, display names, and groups; filter by chain; and sort by name, AVG P&L, session profit, or status. Default directions are name ascending, P&L/profit descending, and status running-to-offline. The direction button reverses the active sort.
+The fleet toolbar can search bot IDs, display names, and groups; filter by chain;
+and sort by name, AVG P&L, session profit, realized profit, position utilization
+(`filled_positions / max_positions`), ETH balance, USDG balance, or status.
+Default directions are name ascending, numeric metrics descending, and status
+running-to-offline. The direction button reverses the active sort.
 
 ## Security
 
