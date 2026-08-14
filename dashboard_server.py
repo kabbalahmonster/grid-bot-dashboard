@@ -791,6 +791,7 @@ DASHBOARD_HTML = """\
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
+    const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
     const longestUptime = states.reduce(function(longest, d) { return Math.max(longest, Number(d.uptime_seconds) || 0); }, 0);
     const uptimeDays = Math.floor(longestUptime / 86400);
@@ -800,11 +801,14 @@ DASHBOARD_HTML = """\
     const fiatRate = ethPrices[profitCurrency];
     const fiatCode = profitCurrency.toUpperCase();
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
+    const fiatRealizedProfit = Number.isFinite(fiatRate) ? realizedProfit * fiatRate : null;
     summaryBar.innerHTML = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
+      '<span class="summary-item">Realized profit: ' + (realizedProfit >= 0 ? '+' : '') + realizedProfit.toFixed(8) + ' ETH' +
+      (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) + '</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
   }
@@ -914,11 +918,13 @@ DASHBOARD_HTML = """\
       const metrics = [
         ['AVG P&L', 'profit_percent'],
         ['Session Profit', 'session_profit_eth'],
+        ['Realized Profit', 'realized_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
       ];
       const moreMetrics = [
         ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
+        ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['ETH Balance', 'eth_balance'], ['Token Balance', 'token_balance'],
         ['Wallet', 'wallet_link'], ['Token', 'token_link'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
@@ -943,9 +949,12 @@ DASHBOARD_HTML = """\
           if (key === 'profit_percent') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(2) + '%';
-          } else if (key === 'session_profit_eth') {
+          } else if (key === 'session_profit_eth' || key === 'realized_profit_eth') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(8) + ' ETH';
+          } else if (key === 'profit_tracking_started_at') {
+            const timestamp = Date.parse(val);
+            val = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : val;
           } else if (key === 'price') {
             const n = parseFloat(val);
             val = n.toFixed(10);

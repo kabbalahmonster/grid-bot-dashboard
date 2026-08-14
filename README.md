@@ -209,6 +209,8 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 
 Bots may also send up to 50 structured `events`. The dashboard renders them newest-first in a collapsible Events panel, distinguishes warnings from errors, and shows a repeat count for deduplicated events. This feed is intended for operational failures and meaningful blocked actions, not raw bot output or routine no-trade polling.
 
+Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_started_at`. Realized profit is shown beside session profit on each card and aggregated fleet-wide in ETH plus the selected CAD/USD currency. Older bots remain compatible and contribute zero until updated.
+
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
 
 The dashboard displays report age continuously. A bot is inferred as `running` for reports under 2 minutes old, `stale` from 2–5 minutes, and `offline` after 5 minutes. An explicit bot-supplied `status` overrides this inference.
