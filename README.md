@@ -95,8 +95,13 @@ gunicorn dashboard_server:app \
   --bind 127.0.0.1:5000 \
   --workers 1 \
   --threads 8 \
-  --worker-class gthread
+  --worker-class gthread \
+  --timeout 0 \
+  --graceful-timeout 30
 ```
+
+The unlimited worker timeout keeps long-lived SSE connections alive. Systemd
+still owns the process lifecycle, and `--graceful-timeout 30` bounds shutdowns.
 
 ## Persistent systemd user service
 
@@ -111,11 +116,14 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/absolute/path/grid-bot-dashboard
-ExecStart=/absolute/path/grid-bot-dashboard/.venv/bin/python dashboard_server.py
+ExecStart=/absolute/path/grid-bot-dashboard/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 1 --worker-class gthread --threads 8 --timeout 0 --graceful-timeout 30 --access-logfile - --error-logfile - dashboard_server:app
 Restart=always
 RestartSec=5
+TimeoutStopSec=40
+KillSignal=SIGTERM
 Environment=HOST=127.0.0.1
 Environment=PORT=5000
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=default.target
@@ -155,7 +163,9 @@ sudo firewall-cmd --reload
 sudo systemctl enable --now caddy
 ```
 
-The production deployment for this project is `https://doomdash.ca`, with Flask listening only on `127.0.0.1:5000` behind Caddy.
+The production deployment for this project is `https://doomdash.ca`, with a
+single threaded Gunicorn worker serving the Flask app on `127.0.0.1:5000`
+behind Caddy.
 
 ## Configure bots
 
