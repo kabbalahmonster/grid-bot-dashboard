@@ -675,6 +675,7 @@ DASHBOARD_HTML = """\
   <div class="toolbar">
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
+    <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <button id="notifications">Enable offline alerts</button>
@@ -697,6 +698,7 @@ DASHBOARD_HTML = """\
   const botFilter = document.getElementById('bot-filter');
   const clearFilter = document.getElementById('clear-filter');
   const chainFilter = document.getElementById('chain-filter');
+  const providerFilter = document.getElementById('provider-filter');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
   const notificationsButton = document.getElementById('notifications');
@@ -907,11 +909,16 @@ DASHBOARD_HTML = """\
 
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
+    const wantedProvider = providerFilter.value;
     const rank = { running: 0, stale: 1, offline: 2, unknown: 3 };
     const botIds = Object.keys(bots).filter(function(id) {
       const d = bots[id];
-      const haystack = [id, d.display_name, d.group].join(' ').toLowerCase();
-      return (!query || haystack.includes(query)) && (!wantedChain || String(d.chain_id) === wantedChain);
+      const provider = String(d.swap_provider || '').toLowerCase();
+      const haystack = [id, d.display_name, d.group, provider].join(' ').toLowerCase();
+      const providerMatches = !wantedProvider ||
+        (wantedProvider === '__unreported' ? !provider : provider === wantedProvider);
+      return (!query || haystack.includes(query)) &&
+        (!wantedChain || String(d.chain_id) === wantedChain) && providerMatches;
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
       let result;
@@ -1164,6 +1171,7 @@ DASHBOARD_HTML = """\
     render(true);
   });
   chainFilter.addEventListener('input', function() { render(true); });
+  providerFilter.addEventListener('input', function() { render(true); });
   function updateSortDirectionButton() {
     sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
   }
