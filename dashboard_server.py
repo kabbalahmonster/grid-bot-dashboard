@@ -21,6 +21,7 @@ Security:
     - Private key pattern detection (keys and values)
 """
 
+import atexit
 import json
 import logging
 import os
@@ -60,6 +61,7 @@ DEXSCREENER_CACHE_TTL = 300
 ETH_PRICE_TIMEOUT = 8
 ETH_PRICE_CACHE_TTL = 60
 STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
+STATE_FLUSH_INTERVAL = float(os.environ.get("STATE_FLUSH_INTERVAL", "15"))
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
 
 # Patterns that suggest private key material (checked against keys AND values)
@@ -119,6 +121,14 @@ _dexscreener_lock = threading.Lock()
 _eth_price_cache: tuple[float, dict[str, float]] = (0.0, {})
 _eth_price_lock = threading.Lock()
 
+# Status updates arrive continuously, so rewriting the complete bounded history
+# for every request is needlessly expensive.  A single background writer
+# coalesces updates while shutdown flushing keeps normal restarts durable.
+_state_dirty_generation = 0
+_state_persisted_generation = 0
+_state_shutdown = threading.Event()
+_state_flush_lock = threading.Lock()
+
 
 def _sanitize_provider_events(data):
     """Remove opaque provider response metadata from public event payloads."""
@@ -136,19 +146,57 @@ def _sanitize_provider_events(data):
     return data
 
 
-def _persist_state_locked():
-    """Atomically persist current state and bounded history. Caller holds _lock."""
+def _state_snapshot_locked():
+    """Return a stable persistence snapshot. Caller holds _lock."""
+    return {
+        "bot_states": dict(bot_states),
+        "bot_history": {bot_id: list(entries) for bot_id, entries in bot_history.items()},
+    }
+
+
+def _persist_state(snapshot):
+    """Atomically persist a previously captured state snapshot."""
     directory = os.path.dirname(STATE_FILE)
     if directory:
         os.makedirs(directory, exist_ok=True)
     temp_file = STATE_FILE + ".tmp"
-    payload = {
-        "bot_states": bot_states,
-        "bot_history": {bot_id: list(entries) for bot_id, entries in bot_history.items()},
-    }
     with open(temp_file, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle)
+        json.dump(snapshot, handle)
     os.replace(temp_file, STATE_FILE)
+
+
+def _mark_state_dirty_locked():
+    """Record an in-memory mutation. Caller holds _lock."""
+    global _state_dirty_generation
+    _state_dirty_generation += 1
+
+
+def _flush_state_if_dirty():
+    """Persist one coherent snapshot without holding the request-path lock."""
+    global _state_persisted_generation
+    with _state_flush_lock:
+        with _lock:
+            generation = _state_dirty_generation
+            if generation <= _state_persisted_generation:
+                return False
+            snapshot = _state_snapshot_locked()
+        try:
+            _persist_state(snapshot)
+        except OSError as exc:
+            logger.warning("Could not persist dashboard state: %s", exc)
+            return False
+        _state_persisted_generation = generation
+        return True
+
+
+def _state_writer():
+    while not _state_shutdown.wait(STATE_FLUSH_INTERVAL):
+        _flush_state_if_dirty()
+
+
+def _shutdown_state_writer():
+    _state_shutdown.set()
+    _flush_state_if_dirty()
 
 
 def _load_persisted_state():
@@ -165,7 +213,6 @@ def _load_persisted_state():
                     if isinstance(entry, dict):
                         _sanitize_provider_events(entry.get("data"))
                 bot_history[bot_id].extend(entries[-MAX_HISTORY_PER_BOT:])
-        _persist_state_locked()
         logger.info("Restored %d bots from %s", len(bot_states), STATE_FILE)
     except FileNotFoundError:
         pass
@@ -174,6 +221,8 @@ def _load_persisted_state():
 
 
 _load_persisted_state()
+threading.Thread(target=_state_writer, name="dashboard-state-writer", daemon=True).start()
+atexit.register(_shutdown_state_writer)
 
 # ---------------------------------------------------------------------------
 # Rate limiter
@@ -333,10 +382,7 @@ def receive_status():
     with _lock:
         bot_states[bot_id] = data
         bot_history[bot_id].append(entry)
-        try:
-            _persist_state_locked()
-        except OSError as exc:
-            logger.warning("Could not persist dashboard state: %s", exc)
+        _mark_state_dirty_locked()
 
     _broadcast("update", entry)
     logger.info("Status update from bot=%s", bot_id)
@@ -389,10 +435,7 @@ def remove_bot(bot_id: str):
             return jsonify({"error": f"Bot '{bot_id}' not found"}), 404
         del bot_states[bot_id]
         bot_history.pop(bot_id, None)
-        try:
-            _persist_state_locked()
-        except OSError as exc:
-            logger.warning("Could not persist dashboard state: %s", exc)
+        _mark_state_dirty_locked()
     _broadcast("remove", {"bot_id": bot_id})
     logger.info("Bot removed: %s", bot_id)
     return jsonify({"ok": True, "bot_id": bot_id}), 200

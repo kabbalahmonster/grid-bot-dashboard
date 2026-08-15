@@ -62,6 +62,7 @@ API_KEY=replace-with-a-long-random-secret
 HOST=127.0.0.1
 PORT=5000
 STATE_FILE=data/dashboard_state.json
+STATE_FLUSH_INTERVAL=15
 RATE_LIMIT_MAX_REQUESTS=600
 ```
 
@@ -116,7 +117,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/absolute/path/grid-bot-dashboard
-ExecStart=/absolute/path/grid-bot-dashboard/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 1 --worker-class gthread --threads 8 --timeout 0 --graceful-timeout 30 --access-logfile - --error-logfile - dashboard_server:app
+ExecStart=/absolute/path/grid-bot-dashboard/.venv/bin/gunicorn --bind 127.0.0.1:5000 --workers 1 --worker-class gthread --threads 8 --timeout 30 --graceful-timeout 30 --access-logfile - --error-logfile - dashboard_server:app
 Restart=always
 RestartSec=5
 TimeoutStopSec=40
@@ -284,7 +285,7 @@ SSE events:
 
 ## Storage behavior
 
-Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Bot-side trade and Event histories are separately persisted and capped at 50 entries each. Persistent profit accounting lives in the bot's `data/profit_totals.json`.
+Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Frequent updates are coalesced and flushed every `STATE_FLUSH_INTERVAL` seconds (default 15), with a final flush on normal shutdown, avoiding a complete history rewrite for every status request. Bot-side trade and Event histories are separately persisted and capped at 50 entries each. Persistent profit accounting lives in the bot's `data/profit_totals.json`.
 
 Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is opened. The server resolves the token's preferred WETH pair without an API key and caches the pair for five minutes. Routine SSE updates do not reload an open chart.
 
