@@ -629,6 +629,9 @@ DASHBOARD_HTML = """\
   .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
   .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
   .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
+  .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
+  .summary-item.needs-positions .bot-names { color: #fbbf24; }
+  @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
   .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
@@ -878,6 +881,11 @@ DASHBOARD_HTML = """\
 
   function updateSummary(botIds) {
     const states = botIds.map(function(id) { return bots[id]; });
+    const needsPositions = Object.keys(bots).filter(function(id) {
+      const state = bots[id];
+      return Boolean(state.capacity_warning) && reportAge(state.received_at).status === 'running';
+    });
+    const needsPositionNames = needsPositions.map(function(id) { return bots[id].display_name || id; });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
@@ -894,6 +902,10 @@ DASHBOARD_HTML = """\
     const fiatRealizedProfit = Number.isFinite(fiatRate) ? realizedProfit * fiatRate : null;
     summaryBar.innerHTML = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
+      (needsPositions.length
+        ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
+          ' <span class="bot-names">(' + needsPositionNames.map(esc).join(', ') + ')</span></span>'
+        : '<span class="summary-item">Needs new positions: 0</span>') +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
