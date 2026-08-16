@@ -642,6 +642,12 @@ DASHBOARD_HTML = """\
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
   .capacity-alert { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
+  .sell-attempt { display: flex; align-items: center; gap: 0.65rem; background: linear-gradient(90deg, rgba(14, 116, 144, 0.22), rgba(15, 23, 42, 0.3)); border: 1px solid #0e7490; color: #cffafe; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
+  .sell-attempt-dot { width: 0.55rem; height: 0.55rem; flex: 0 0 auto; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); animation: sell-pulse 1.7s ease-out infinite; }
+  .sell-attempt-copy { min-width: 0; flex: 1; }
+  .sell-attempt-copy strong { display: block; color: #67e8f9; font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.1rem; }
+  .sell-attempt-detail { color: #94a3b8; font-size: 0.7rem; white-space: nowrap; }
+  @keyframes sell-pulse { 70%, 100% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); } }
   .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .card .bot-id { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.75rem; }
   .metric { display: flex; justify-content: space-between; padding: 0.35rem 0; border-bottom: 1px solid #1e293b; font-size: 0.875rem; }
@@ -1040,6 +1046,17 @@ DASHBOARD_HTML = """\
           'Buy point reached, but all ' + esc(d.capacity_warning.max_positions) + ' position slots are filled. ' +
           'Highest P&amp;L: ' + esc(Number.isFinite(warningPnl) ? warningPnl.toFixed(1) : '?') +
           '% · Buy point: ' + esc(Number.isFinite(warningThreshold) ? warningThreshold.toFixed(1) : '?') + '%</div>';
+      }
+
+      if (d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum') {
+        const quoted = parseFloat(d.sell_attempt.quoted_profit_eth);
+        const minimum = parseFloat(d.sell_attempt.minimum_profit_eth);
+        const detail = Number.isFinite(quoted) && Number.isFinite(minimum)
+          ? '<span class="sell-attempt-detail" title="Quoted profit / minimum profit">' + esc(quoted.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH</span>'
+          : '';
+        html += '<div class="sell-attempt" role="status" aria-label="Sell attempted; quote is below minimum">' +
+          '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
+          '<span class="sell-attempt-copy"><strong>SELL CHECK ACTIVE</strong>Waiting for minimum quote</span>' + detail + '</div>';
       }
 
       d.buys = d.buys ?? 0;
