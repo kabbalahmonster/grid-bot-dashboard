@@ -12,7 +12,7 @@ Each bot card shows:
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
 - The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
-Each position shows token amount, ETH cost basis, and P&L percentage. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, and structured Events.
+Each position shows token amount, ETH cost basis, and P&L percentage. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
 
 ## Features
 
@@ -26,7 +26,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Reversible ascending/descending sorting with sensible per-field defaults
 - Optional bot display names/groups and chain badges
 - Bounded ETH-denominated bot trade history with explorer links
-- Bounded structured warning/error history with repeat counts and expandable provider details
+- Bounded structured success/warning/error history with repeat counts and expandable provider details
+- Round-scoped sell-check indication that clears automatically with the next report that omits it
 - Persistent realized-profit totals with non-destructive accounting baselines
 - Per-cycle USDG balances when reported by current bots
 - Lazy-loaded Dexscreener WETH-pair charts filtered to the bot wallet
@@ -232,6 +233,13 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "filled_positions": 12,
   "max_positions": 12,
   "capacity_warning": null,
+  "sell_attempt": {
+    "status": "quote_below_minimum",
+    "position_id": "11",
+    "pnl_percent": 8.4,
+    "quoted_profit_eth": 0.000087,
+    "minimum_profit_eth": 0.0001
+  },
   "chain_id": 4663,
   "swap_provider": "uniswap",
   "token_address": "0x0000000000000000000000000000000000000001",
@@ -249,6 +257,8 @@ Bots may also send up to 50 structured `events`. The dashboard renders them newe
 Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_started_at`. Realized profit is shown beside session profit on each card and aggregated fleet-wide in ETH plus the selected CAD/USD currency. A bot-side baseline reset starts a new displayed accounting period without deleting cumulative totals or transaction-hash deduplication. Older bots remain compatible and contribute zero until updated.
 
 `usdg_balance` is an optional read-only ERC-20 balance. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
+
+`sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, compact quoted/minimum ETH values. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
 
@@ -336,7 +346,7 @@ The bot's `DASHBOARD_API_KEY` must exactly match server `API_KEY`. Check quotes,
 
 ### Missing or stale fields
 
-Pull and restart the bot so it reports the current schema. Refresh the browser when dashboard HTML changes.
+Pull and restart the bot so it reports the current schema. Refresh the browser when dashboard HTML changes. If **SELL CHECK ACTIVE** never appears, inspect the latest `/api/bots/<bot_id>` payload for `sell_attempt`; an absent field means that bot is either running older code or did not hit the below-minimum quote path during its latest reported cycle.
 
 ## Update
 
@@ -356,6 +366,16 @@ git switch main
 git pull --ff-only origin main
 python grid_bot.py
 ```
+
+Fleet bot repositories laid out under `~/bot-farm/rh-bots` can all be updated to `main` at once while the fleet is stopped:
+
+```bash
+find ~/bot-farm/rh-bots -mindepth 3 -maxdepth 3 -type d -name .git \
+  -execdir git switch main \; \
+  -execdir git pull --ff-only origin main \;
+```
+
+Restart the fleet with its normal supervisor/launcher after every repository has updated successfully.
 
 ## License
 
