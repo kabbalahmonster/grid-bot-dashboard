@@ -777,28 +777,43 @@ DASHBOARD_HTML = """\
   };
 
   let evtSource = null;
+  let reconnectTimer = null;
+  let connectionGeneration = 0;
   let reconnectDelay = 1000;
   const maxReconnectDelay = 30000;
 
   function connect() {
+    connectionGeneration += 1;
+    const generation = connectionGeneration;
+    if (reconnectTimer !== null) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (evtSource) evtSource.close();
-    evtSource = new EventSource('/api/stream');
+    const source = new EventSource('/api/stream');
+    evtSource = source;
 
-    evtSource.onopen = function() {
+    source.onopen = function() {
+      if (generation !== connectionGeneration) return;
       dot.className = 'status-dot connected';
       connStatus.textContent = 'Live';
       reconnectDelay = 1000;
     };
 
-    evtSource.onerror = function() {
+    source.onerror = function() {
+      if (generation !== connectionGeneration) return;
       dot.className = 'status-dot disconnected';
       connStatus.textContent = 'Reconnecting…';
-      evtSource.close();
-      setTimeout(connect, reconnectDelay);
+      source.close();
+      reconnectTimer = setTimeout(function() {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelay);
       reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
     };
 
-    evtSource.addEventListener('snapshot', function(e) {
+    source.addEventListener('snapshot', function(e) {
+      if (generation !== connectionGeneration) return;
       const data = JSON.parse(e.data);
       if (data.bots) {
         Object.keys(data.bots).forEach(function(botId) {
@@ -808,19 +823,28 @@ DASHBOARD_HTML = """\
       }
     });
 
-    evtSource.addEventListener('update', function(e) {
+    source.addEventListener('update', function(e) {
+      if (generation !== connectionGeneration) return;
       const entry = JSON.parse(e.data);
       bots[entry.bot_id] = entry.data || entry;
       render();
     });
 
-    evtSource.addEventListener('remove', function(e) {
+    source.addEventListener('remove', function(e) {
+      if (generation !== connectionGeneration) return;
       const data = JSON.parse(e.data);
       if (data.bot_id && bots[data.bot_id]) {
         delete bots[data.bot_id];
         render();
       }
     });
+  }
+
+  function reconnectNow() {
+    dot.className = 'status-dot disconnected';
+    connStatus.textContent = 'Reconnecting…';
+    reconnectDelay = 1000;
+    connect();
   }
 
   function esc(str) {
@@ -1239,13 +1263,14 @@ DASHBOARD_HTML = """\
   });
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
-      dot.className = 'status-dot disconnected';
-      connStatus.textContent = 'Reconnecting…';
-      reconnectDelay = 1000;
-      connect();
+      reconnectNow();
       fetchEthPrices();
     }
   });
+  window.addEventListener('pageshow', function(event) {
+    if (event.persisted) reconnectNow();
+  });
+  window.addEventListener('online', reconnectNow);
   botFilter.addEventListener('input', function() {
     clearFilter.style.display = botFilter.value ? 'block' : 'none';
     render(true);
