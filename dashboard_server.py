@@ -920,6 +920,7 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
     const longestUptime = states.reduce(function(longest, d) { return Math.max(longest, Number(d.uptime_seconds) || 0); }, 0);
     const uptimeDays = Math.floor(longestUptime / 86400);
@@ -941,6 +942,7 @@ DASHBOARD_HTML = """\
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<span class="summary-item">Realized profit: ' + (realizedProfit >= 0 ? '+' : '') + realizedProfit.toFixed(8) + ' ETH' +
       (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) + '</span>' +
+      '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
   }
@@ -1096,7 +1098,7 @@ DASHBOARD_HTML = """\
         ['Price', 'price'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
-        ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Token Balance', 'token_balance'],
+        ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Treasury Sent', 'treasury_sent_usdg'], ['Token Balance', 'token_balance'],
         ['Wallet', 'wallet_link'], ['Token', 'token_link'],
         ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
       ];
@@ -1134,8 +1136,8 @@ DASHBOARD_HTML = """\
             if (s < 60) val = s + 's';
             else if (s < 3600) val = Math.floor(s/60) + 'm ' + (s%60) + 's';
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
-          } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'token_balance') {
-            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : (key === 'usdg_balance' ? 2 : 0));
+          } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {
+            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : ((key === 'usdg_balance' || key === 'treasury_sent_usdg') ? 2 : 0));
           }
           const renderedValue = key === 'wallet_link' || key === 'token_link' ? val : esc(val);
           return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + renderedValue + '</span></div>';

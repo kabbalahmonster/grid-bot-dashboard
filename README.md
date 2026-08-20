@@ -12,7 +12,7 @@ Each bot card shows:
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
 - The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
-Each position shows token amount, ETH cost basis, and P&L percentage. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
+Each position shows token amount, ETH cost basis, and P&L percentage. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
 
 ## Features
 
@@ -20,7 +20,7 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Multiple bots identified by `bot_id`
 - Latest state plus 100 in-memory history entries per bot
 - Latest state and bounded history persisted across dashboard restarts
-- Aggregate active-bot, session-profit, persistent realized-profit, and filled-position totals
+- Aggregate active-bot, session-profit, persistent realized-profit, confirmed USDG treasury-sent, and filled-position totals
 - Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session or realized profit,
   position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
@@ -215,6 +215,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "price": 0.0000000624,
   "eth_balance": 0.00099309,
   "usdg_balance": 12.34,
+  "treasury_sent_usdg": 125.50,
   "token_balance": 328902.93,
   "positions": [{
     "id": "11",
@@ -256,7 +257,7 @@ Bots may also send up to 50 structured `events`. The dashboard renders them newe
 
 Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_started_at`. Realized profit is shown beside session profit on each card and aggregated fleet-wide in ETH plus the selected CAD/USD currency. A bot-side baseline reset starts a new displayed accounting period without deleting cumulative totals or transaction-hash deduplication. Older bots remain compatible and contribute zero until updated.
 
-`usdg_balance` is an optional read-only ERC-20 balance. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
+`usdg_balance` is an optional read-only ERC-20 balance. `treasury_sent_usdg` is the bot's all-time total of successful USDG treasury sweeps from its local receipt log; the dashboard renders it in **More info** and sums it in the fleet header. Older bots remain compatible and contribute zero until updated. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
 
 `sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, compact quoted/minimum ETH values. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
