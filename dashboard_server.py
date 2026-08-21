@@ -728,7 +728,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
-    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <button id="notifications">Enable offline alerts</button>
   </div>
@@ -764,7 +764,7 @@ DASHBOARD_HTML = """\
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const defaultSortDirections = {
-    name: 'asc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', 'realized-profit': 'desc',
+    name: 'asc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
   };
   let sortDirectionValue = defaultSortDirections.profit;
@@ -1026,6 +1026,7 @@ DASHBOARD_HTML = """\
       }
       else if (mode === 'profit') result = (parseFloat(av.session_profit_eth) || 0) - (parseFloat(bv.session_profit_eth) || 0);
       else if (mode === 'realized-profit') result = (parseFloat(av.realized_profit_eth) || 0) - (parseFloat(bv.realized_profit_eth) || 0);
+      else if (mode === 'treasury-sent') result = (parseFloat(av.treasury_sent_usdg) || 0) - (parseFloat(bv.treasury_sent_usdg) || 0);
       else if (mode === 'position-utilization') {
         const aMax = parseFloat(av.max_positions) || 0, bMax = parseFloat(bv.max_positions) || 0;
         const aUtilization = aMax > 0 ? (parseFloat(av.filled_positions) || 0) / aMax : 0;
