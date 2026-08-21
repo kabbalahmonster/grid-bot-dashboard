@@ -988,6 +988,7 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
     const longestUptime = states.reduce(function(longest, d) { return Math.max(longest, Number(d.uptime_seconds) || 0); }, 0);
@@ -1010,6 +1011,7 @@ DASHBOARD_HTML = """\
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<span class="summary-item">Realized profit: ' + (realizedProfit >= 0 ? '+' : '') + realizedProfit.toFixed(8) + ' ETH' +
       (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) + '</span>' +
+      '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
