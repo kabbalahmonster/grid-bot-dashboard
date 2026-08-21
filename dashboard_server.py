@@ -76,6 +76,30 @@ _PRIVATE_KEY_PATTERNS = [
     re.compile(r"\b[5KL][1-9A-HJ-NP-Za-km-z]{50,51}\b"),    # WIF bitcoin key
 ]
 
+# The dashboard is a public display, not a general-purpose data sink. Keep the
+# accepted schema deliberately narrow so a bot-side regression cannot persist
+# arbitrary config or secret material merely because it has the ingest key.
+_STATUS_FIELDS = frozenset({
+    "dashboard_schema_version", "bot_id", "timestamp", "uptime_seconds",
+    "price", "eth_balance", "usdg_balance", "treasury_sent_usdg", "token_balance",
+    "positions", "profit_percent", "session_profit_eth", "realized_profit_eth",
+    "realized_sales", "profit_tracking_started_at", "buys", "sells",
+    "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
+    "chain_id", "swap_provider", "token_address", "wallet_address",
+    "display_name", "group", "trades_history", "events", "rpc_status",
+})
+_POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
+_TRADE_FIELDS = frozenset({"timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash", "profit_eth"})
+_EVENT_FIELDS = frozenset({
+    "timestamp", "level", "code", "message", "count", "tx_hash",
+    "source_amount", "source_asset", "usdg_amount",
+})
+_CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
+_SELL_ATTEMPT_FIELDS = frozenset({"status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth"})
+_MAX_POSITIONS = 100
+_MAX_TRADES = 50
+_MAX_EVENTS = 50
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -285,6 +309,39 @@ def _contains_private_key(obj, depth: int = 0) -> bool:
     return False
 
 
+def _allowlisted_mapping(value, allowed_fields):
+    """Copy only known fields from one public nested payload object."""
+    if not isinstance(value, dict):
+        return None
+    return {key: value[key] for key in allowed_fields if key in value}
+
+
+def _allowlisted_status_payload(data):
+    """Drop unrecognized top-level and nested fields before persistence/publication."""
+    filtered = {key: data[key] for key in _STATUS_FIELDS if key in data}
+
+    for field, allowed, maximum in (
+        ("positions", _POSITION_FIELDS, _MAX_POSITIONS),
+        ("trades_history", _TRADE_FIELDS, _MAX_TRADES),
+        ("events", _EVENT_FIELDS, _MAX_EVENTS),
+    ):
+        value = filtered.get(field)
+        if not isinstance(value, list):
+            continue
+        filtered[field] = [item for item in (
+            _allowlisted_mapping(entry, allowed) for entry in value[:maximum]
+        ) if item is not None]
+
+    for field, allowed in (
+        ("capacity_warning", _CAPACITY_WARNING_FIELDS),
+        ("sell_attempt", _SELL_ATTEMPT_FIELDS),
+    ):
+        if field in filtered and filtered[field] is not None:
+            filtered[field] = _allowlisted_mapping(filtered[field], allowed)
+
+    return filtered
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -366,6 +423,7 @@ def receive_status():
         logger.warning("Rejected payload from %s: %s", request.remote_addr, err)
         return jsonify({"error": err}), 400
 
+    data = _allowlisted_status_payload(data)
     _sanitize_provider_events(data)
 
     bot_id = data["bot_id"].strip()
