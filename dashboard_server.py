@@ -87,7 +87,7 @@ _STATUS_FIELDS = frozenset({
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
     "chain_id", "swap_provider", "token_address", "wallet_address",
-    "display_name", "group", "trades_history", "events", "rpc_status",
+    "display_name", "group", "poll_interval_seconds", "trades_history", "events", "rpc_status",
 })
 _POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
 _TRADE_FIELDS = frozenset({"timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash", "profit_eth"})
@@ -1171,7 +1171,7 @@ DASHBOARD_HTML = """\
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Treasury Sent', 'treasury_sent_usdg'], ['Token Balance', 'token_balance'],
         ['Wallet', 'wallet_link'], ['Token', 'token_link'],
-        ['RPC', 'rpc_status'], ['Uptime', 'uptime_seconds'],
+        ['RPC', 'rpc_status'], ['Polling', 'poll_interval_seconds'], ['Uptime', 'uptime_seconds'],
       ];
 
       d.wallet_link = d.wallet_address && chain
@@ -1207,6 +1207,8 @@ DASHBOARD_HTML = """\
             if (s < 60) val = s + 's';
             else if (s < 3600) val = Math.floor(s/60) + 'm ' + (s%60) + 's';
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
+          } else if (key === 'poll_interval_seconds') {
+            val = parseFloat(val) + 's';
           } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {
             val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : ((key === 'usdg_balance' || key === 'treasury_sent_usdg') ? 2 : 0));
           }
