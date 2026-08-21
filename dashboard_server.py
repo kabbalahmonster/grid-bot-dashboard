@@ -63,6 +63,7 @@ ETH_PRICE_CACHE_TTL = 60
 STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
 STATE_FLUSH_INTERVAL = float(os.environ.get("STATE_FLUSH_INTERVAL", "15"))
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
+MAX_STATUS_REQUEST_BYTES = 128 * 1024
 
 # Patterns that suggest private key material (checked against keys AND values)
 _PRIVATE_KEY_PATTERNS = [
@@ -115,6 +116,10 @@ logger = logging.getLogger("dashboard")
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+# Normal fleet reports are far smaller than this. A hard ceiling prevents a
+# keyed (or accidental) client from making the public dashboard parse/store an
+# unbounded JSON document.
+app.config["MAX_CONTENT_LENGTH"] = MAX_STATUS_REQUEST_BYTES
 CORS(app)
 
 # ---------------------------------------------------------------------------
@@ -657,6 +662,11 @@ def not_found(e):
 @app.errorhandler(405)
 def method_not_allowed(e):
     return jsonify({"error": "Method not allowed"}), 405
+
+
+@app.errorhandler(413)
+def request_too_large(e):
+    return jsonify({"error": f"Request body exceeds {MAX_STATUS_REQUEST_BYTES} byte limit"}), 413
 
 
 @app.errorhandler(500)
