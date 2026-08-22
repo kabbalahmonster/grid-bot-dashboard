@@ -833,7 +833,9 @@ DASHBOARD_HTML = """\
   const openPositions = new Set();
   const openRawJson = new Set();
   const openCharts = new Set();
-  const openSigils = new Set();
+  // Sigils begin open. Remember only explicit closures so new bot
+  // incarnations reveal their new working without requiring a click.
+  const closedSigils = new Set();
   const openTrades = new Set();
   const openEvents = new Set();
   const rawJsonScroll = new Map();
@@ -1100,8 +1102,8 @@ DASHBOARD_HTML = """\
       else openCharts.delete(el.dataset.chartKey);
     });
     container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(el) {
-      if (el.open) openSigils.add(el.dataset.sigilKey);
-      else openSigils.delete(el.dataset.sigilKey);
+      if (el.open) closedSigils.delete(el.dataset.sigilKey);
+      else closedSigils.add(el.dataset.sigilKey);
     });
     container.querySelectorAll('details.trades[data-trades-key]').forEach(function(el) {
       if (el.open) openTrades.add(el.dataset.tradesKey);
@@ -1176,7 +1178,7 @@ DASHBOARD_HTML = """\
       const positionsOpen = openPositions.has(botKey);
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
-      const sigilOpen = openSigils.has(botKey);
+      const sigilOpen = !closedSigils.has(botKey);
       html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
