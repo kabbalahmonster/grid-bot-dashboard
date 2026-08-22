@@ -86,7 +86,7 @@ _STATUS_FIELDS = frozenset({
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
-    "chain_id", "swap_provider", "token_address", "wallet_address",
+    "chain_id", "swap_provider", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "poll_interval_seconds", "trades_history", "events", "rpc_status",
 })
 _POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
@@ -796,7 +796,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
-    <select id="sort-bots"><option value="name">Sort: name</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Sort: name</option><option value="symbol">Symbol</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <button id="notifications">Enable offline alerts</button>
   </div>
@@ -1086,7 +1086,12 @@ DASHBOARD_HTML = """\
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
       let result;
-      if (mode === 'pnl') result = (parseFloat(av.profit_percent) || 0) - (parseFloat(bv.profit_percent) || 0);
+      if (mode === 'symbol') {
+        const aSymbol = String(av.token_symbol || a).toLowerCase();
+        const bSymbol = String(bv.token_symbol || b).toLowerCase();
+        result = aSymbol.localeCompare(bSymbol) || a.localeCompare(b);
+      }
+      else if (mode === 'pnl') result = (parseFloat(av.profit_percent) || 0) - (parseFloat(bv.profit_percent) || 0);
       else if (mode === 'top-position-pnl') {
         const aTop = topPositionPnl(av), bTop = topPositionPnl(bv);
         if (aTop === null && bTop === null) return a.localeCompare(b);

@@ -22,6 +22,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertEqual(response.status_code, 413)
         self.assertIn("byte limit", response.get_json()["error"])
 
+    def test_dashboard_offers_symbol_sort(self):
+        response = self.client.get("/")
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<option value="symbol">Symbol</option>', body)
+        self.assertIn("mode === 'symbol'", body)
+
 
 if __name__ == "__main__":
     unittest.main()

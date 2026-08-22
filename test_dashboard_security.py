@@ -7,6 +7,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
     def test_drops_unknown_top_level_and_nested_fields(self):
         payload = {
             "bot_id": "test-bot",
+            "token_symbol": "TENDIES",
             "eth_balance": 1.0,
             "private_config": "do-not-persist",
             "positions": [{"id": "1", "pnl": 5.0, "private_note": "nope"}],
@@ -20,6 +21,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             _allowlisted_status_payload(payload),
             {
                 "bot_id": "test-bot",
+                "token_symbol": "TENDIES",
                 "eth_balance": 1.0,
                 "positions": [{"id": "1", "pnl": 5.0}],
                 "trades_history": [{"side": "buy", "tx_hash": "0xabc"}],
