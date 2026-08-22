@@ -759,9 +759,12 @@ DASHBOARD_HTML = """\
   details.more-info[open] summary { margin-bottom: 0.35rem; }
   details.chart-panel { margin-top: 0.75rem; }
   details.sigil-panel { margin-top: 0.75rem; }
-  .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
+  .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; contain: layout paint style; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
+  @media (max-width: 640px), (pointer: coarse) {
+    .sigil-stage svg { filter: none; }
+  }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
   .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
@@ -836,6 +839,8 @@ DASHBOARD_HTML = """\
   // Sigils begin open. Remember only explicit closures so new bot
   // incarnations reveal their new working without requiring a click.
   const closedSigils = new Set();
+  const sigilSvgCache = new Map();
+  let sigilObserver = null;
   const openTrades = new Set();
   const openEvents = new Set();
   const rawJsonScroll = new Map();
@@ -960,6 +965,25 @@ DASHBOARD_HTML = """\
       '<g fill="#fde68a" stroke="#facc15">' + satellites + '<circle cx="' + first[0].toFixed(1) + '" cy="' + first[1].toFixed(1) + '" r="4" fill="none" stroke-width="2"/>' +
       '<path d="M ' + (last[0] - 4).toFixed(1) + ' ' + last[1].toFixed(1) + ' h 8 M ' + last[0].toFixed(1) + ' ' + (last[1] - 4).toFixed(1) + ' v 8" stroke-width="1.5"/></g>' +
       '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></svg>';
+  }
+
+  function cachedSigilSvg(sigil) {
+    const cacheKey = [sigil && sigil.method, sigil && sigil.key, sigil && sigil.seed].join(':');
+    if (sigilSvgCache.has(cacheKey)) return sigilSvgCache.get(cacheKey);
+    const svg = sigilSvg(sigil);
+    if (sigilSvgCache.size >= 128) sigilSvgCache.delete(sigilSvgCache.keys().next().value);
+    sigilSvgCache.set(cacheKey, svg);
+    return svg;
+  }
+
+  function drawSigilPanel(panel) {
+    if (!panel || !panel.open) return;
+    const stage = panel.querySelector('.sigil-stage');
+    if (!stage || stage.dataset.rendered === 'true') return;
+    const botId = decodeURIComponent(panel.dataset.sigilKey || '');
+    const svg = bots[botId] ? cachedSigilSvg(bots[botId].sigil) : '';
+    stage.innerHTML = svg || '<span class="empty">Invalid sigil</span>';
+    stage.dataset.rendered = 'true';
   }
 
   function eventDisplay(message) {
@@ -1360,6 +1384,10 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
+    if (sigilObserver) {
+      sigilObserver.disconnect();
+      sigilObserver = null;
+    }
     container.innerHTML = html;
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
@@ -1382,18 +1410,31 @@ DASHBOARD_HTML = """\
       panel.addEventListener('toggle', loadChart);
       loadChart();
     });
-    container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
-      const drawSigil = function() {
-        if (!panel.open) return;
-        const stage = panel.querySelector('.sigil-stage');
-        if (!stage || stage.dataset.rendered === 'true') return;
-        const botId = decodeURIComponent(panel.dataset.sigilKey || '');
-        const svg = bots[botId] ? sigilSvg(bots[botId].sigil) : '';
-        stage.innerHTML = svg || '<span class="empty">Invalid sigil</span>';
-        stage.dataset.rendered = 'true';
-      };
-      panel.addEventListener('toggle', drawSigil);
-      drawSigil();
+    const sigilPanels = container.querySelectorAll('details.sigil-panel');
+    if ('IntersectionObserver' in window) {
+      const observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (!entry.isIntersecting) return;
+          drawSigilPanel(entry.target);
+          if (entry.target.querySelector('.sigil-stage[data-rendered="true"]')) {
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { rootMargin: '400px 0px' });
+      sigilObserver = observer;
+    }
+    sigilPanels.forEach(function(panel) {
+      panel.addEventListener('toggle', function() {
+        if (!panel.open) {
+          if (sigilObserver) sigilObserver.unobserve(panel);
+          return;
+        }
+        // A user-opened panel is necessarily onscreen, so draw immediately.
+        drawSigilPanel(panel);
+      });
+      if (!panel.open) return;
+      if (sigilObserver) sigilObserver.observe(panel);
+      else drawSigilPanel(panel);
     });
   }
 
