@@ -865,6 +865,8 @@ DASHBOARD_HTML = """\
   let viewportMotionAt = 0;
   let viewportIdleTimer = null;
   let renderPendingForViewport = false;
+  let renderPendingForce = false;
+  let touchInteractionActive = false;
 
   function markViewportBusy() {
     viewportBusy = true;
@@ -872,6 +874,10 @@ DASHBOARD_HTML = """\
     if (viewportIdleTimer !== null) return;
 
     const finishWhenIdle = function() {
+      if (touchInteractionActive) {
+        viewportIdleTimer = setTimeout(finishWhenIdle, 180);
+        return;
+      }
       const remaining = 180 - (performance.now() - viewportMotionAt);
       if (remaining > 0) {
         viewportIdleTimer = setTimeout(finishWhenIdle, remaining);
@@ -880,8 +886,10 @@ DASHBOARD_HTML = """\
       viewportIdleTimer = null;
       viewportBusy = false;
       if (renderPendingForViewport) {
+        const force = renderPendingForce;
         renderPendingForViewport = false;
-        render();
+        renderPendingForce = false;
+        render(force);
       }
     };
     viewportIdleTimer = setTimeout(finishWhenIdle, 180);
@@ -1112,11 +1120,13 @@ DASHBOARD_HTML = """\
     // Replacing the full fleet DOM during a touch-scroll causes visible frame
     // drops. Status objects continue updating; coalesce their visual refresh
     // until the viewport has been still for a brief moment.
-    if (!force && viewportBusy) {
+    if (viewportBusy) {
       renderPendingForViewport = true;
+      renderPendingForce = renderPendingForce || Boolean(force);
       return;
     }
     renderPendingForViewport = false;
+    renderPendingForce = false;
 
     // Preserve expansion state before live updates rebuild the cards.
     container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
@@ -1442,6 +1452,21 @@ DASHBOARD_HTML = """\
   connect();
   window.addEventListener('scroll', markViewportBusy, { passive: true });
   window.addEventListener('touchmove', markViewportBusy, { passive: true });
+  window.addEventListener('touchstart', function() {
+    touchInteractionActive = true;
+    markViewportBusy();
+  }, { passive: true });
+  const finishTouchInteraction = function(event) {
+    if (event.touches && event.touches.length > 0) return;
+    touchInteractionActive = false;
+    markViewportBusy();
+  };
+  window.addEventListener('touchend', finishTouchInteraction, { passive: true });
+  window.addEventListener('touchcancel', finishTouchInteraction, { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('scroll', markViewportBusy, { passive: true });
+    window.visualViewport.addEventListener('resize', markViewportBusy, { passive: true });
+  }
   fetchEthPrices();
   setInterval(fetchEthPrices, 60000);
   summaryBar.addEventListener('click', function(event) {
