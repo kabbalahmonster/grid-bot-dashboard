@@ -762,6 +762,9 @@ DASHBOARD_HTML = """\
   .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
+  @media (max-width: 640px), (pointer: coarse) {
+    .sigil-stage svg { filter: none; }
+  }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
   .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
@@ -858,6 +861,31 @@ DASHBOARD_HTML = """\
   let connectionGeneration = 0;
   let reconnectDelay = 1000;
   const maxReconnectDelay = 30000;
+  let viewportBusy = false;
+  let viewportMotionAt = 0;
+  let viewportIdleTimer = null;
+  let renderPendingForViewport = false;
+
+  function markViewportBusy() {
+    viewportBusy = true;
+    viewportMotionAt = performance.now();
+    if (viewportIdleTimer !== null) return;
+
+    const finishWhenIdle = function() {
+      const remaining = 180 - (performance.now() - viewportMotionAt);
+      if (remaining > 0) {
+        viewportIdleTimer = setTimeout(finishWhenIdle, remaining);
+        return;
+      }
+      viewportIdleTimer = null;
+      viewportBusy = false;
+      if (renderPendingForViewport) {
+        renderPendingForViewport = false;
+        render();
+      }
+    };
+    viewportIdleTimer = setTimeout(finishWhenIdle, 180);
+  }
 
   function connect() {
     connectionGeneration += 1;
@@ -1081,6 +1109,15 @@ DASHBOARD_HTML = """\
   }
 
   function render(force) {
+    // Replacing the full fleet DOM during a touch-scroll causes visible frame
+    // drops. Status objects continue updating; coalesce their visual refresh
+    // until the viewport has been still for a brief moment.
+    if (!force && viewportBusy) {
+      renderPendingForViewport = true;
+      return;
+    }
+    renderPendingForViewport = false;
+
     // Preserve expansion state before live updates rebuild the cards.
     container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
       if (el.open) openMoreInfo.add(el.dataset.botKey);
@@ -1398,6 +1435,8 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  window.addEventListener('scroll', markViewportBusy, { passive: true });
+  window.addEventListener('touchmove', markViewportBusy, { passive: true });
   fetchEthPrices();
   setInterval(fetchEthPrices, 60000);
   summaryBar.addEventListener('click', function(event) {
