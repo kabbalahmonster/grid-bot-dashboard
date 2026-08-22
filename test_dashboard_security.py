@@ -15,6 +15,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "events": [{"level": "warning", "message": "safe", "provider_response": "nope"}],
             "capacity_warning": {"max_positions": 10, "internal_reason": "nope"},
             "sell_attempt": {"status": "quote_below_minimum", "trace": "nope"},
+            "sigil": {"version": 1, "method": "spare-wheel-v1", "key": "PRSTY", "seed": "ab" * 32, "intent": "private"},
         }
 
         self.assertEqual(
@@ -28,6 +29,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "events": [{"level": "warning", "message": "safe"}],
                 "capacity_warning": {"max_positions": 10},
                 "sell_attempt": {"status": "quote_below_minimum"},
+                "sigil": {"version": 1, "method": "spare-wheel-v1", "key": "PRSTY", "seed": "ab" * 32},
             },
         )
 

@@ -87,7 +87,7 @@ _STATUS_FIELDS = frozenset({
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
     "chain_id", "swap_provider", "token_symbol", "token_address", "wallet_address",
-    "display_name", "group", "poll_interval_seconds", "trades_history", "events", "rpc_status",
+    "display_name", "group", "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
 _TRADE_FIELDS = frozenset({"timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash", "profit_eth"})
@@ -97,6 +97,7 @@ _EVENT_FIELDS = frozenset({
 })
 _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
 _SELL_ATTEMPT_FIELDS = frozenset({"status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth"})
+_SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
 _MAX_TRADES = 50
 _MAX_EVENTS = 50
@@ -340,6 +341,7 @@ def _allowlisted_status_payload(data):
     for field, allowed in (
         ("capacity_warning", _CAPACITY_WARNING_FIELDS),
         ("sell_attempt", _SELL_ATTEMPT_FIELDS),
+        ("sigil", _SIGIL_FIELDS),
     ):
         if field in filtered and filtered[field] is not None:
             filtered[field] = _allowlisted_mapping(filtered[field], allowed)
@@ -756,6 +758,10 @@ DASHBOARD_HTML = """\
   details.more-info summary::-webkit-details-marker { display: none; }
   details.more-info[open] summary { margin-bottom: 0.35rem; }
   details.chart-panel { margin-top: 0.75rem; }
+  details.sigil-panel { margin-top: 0.75rem; }
+  .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
+  .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
+  .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
   .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
@@ -827,6 +833,7 @@ DASHBOARD_HTML = """\
   const openPositions = new Set();
   const openRawJson = new Set();
   const openCharts = new Set();
+  const openSigils = new Set();
   const openTrades = new Set();
   const openEvents = new Set();
   const rawJsonScroll = new Map();
@@ -919,6 +926,38 @@ DASHBOARD_HTML = """\
     const div = document.createElement('div');
     div.textContent = String(str === null || str === undefined ? '' : str);
     return div.innerHTML;
+  }
+
+  function sigilSvg(sigil) {
+    const seed = sigil && String(sigil.seed || '').toLowerCase();
+    const key = sigil && String(sigil.key || '').toUpperCase();
+    if (!/^[0-9a-f]{64}$/.test(seed) || !/^[B-DF-HJ-NP-TV-Z]{3,21}$/.test(key)) return '';
+    const bytes = [];
+    for (let i = 0; i < seed.length; i += 2) bytes.push(parseInt(seed.slice(i, i + 2), 16));
+    const points = [];
+    for (let i = 0; i < key.length; i++) {
+      const letter = key.charCodeAt(i) - 65;
+      const angle = ((letter / 26) * Math.PI * 2) - Math.PI / 2 + ((bytes[i] % 13) - 6) * 0.008;
+      const radius = 50 + (bytes[(i + 13) % bytes.length] % 43);
+      points.push([128 + Math.cos(angle) * radius, 128 + Math.sin(angle) * radius]);
+    }
+    let path = 'M ' + points.map(function(point) { return point[0].toFixed(1) + ' ' + point[1].toFixed(1); }).join(' L ');
+    if (bytes[30] % 2) path += ' Z';
+    const symmetry = 2 + (bytes[31] % 3);
+    let strokes = '';
+    for (let turn = 0; turn < symmetry; turn++) {
+      strokes += '<path d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
+    }
+    const first = points[0], last = points[points.length - 1];
+    const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point) {
+      return '<circle cx="' + point[0].toFixed(1) + '" cy="' + point[1].toFixed(1) + '" r="2.2"/>';
+    }).join('');
+    return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil">' +
+      '<g fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.86">' +
+      '<circle cx="128" cy="128" r="106" opacity="0.22"/><circle cx="128" cy="128" r="42" opacity="0.16"/>' + strokes + '</g>' +
+      '<g fill="#fde68a" stroke="#facc15">' + satellites + '<circle cx="' + first[0].toFixed(1) + '" cy="' + first[1].toFixed(1) + '" r="4" fill="none" stroke-width="2"/>' +
+      '<path d="M ' + (last[0] - 4).toFixed(1) + ' ' + last[1].toFixed(1) + ' h 8 M ' + last[0].toFixed(1) + ' ' + (last[1] - 4).toFixed(1) + ' v 8" stroke-width="1.5"/></g>' +
+      '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></svg>';
   }
 
   function eventDisplay(message) {
@@ -1060,6 +1099,10 @@ DASHBOARD_HTML = """\
       if (el.open) openCharts.add(el.dataset.chartKey);
       else openCharts.delete(el.dataset.chartKey);
     });
+    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(el) {
+      if (el.open) openSigils.add(el.dataset.sigilKey);
+      else openSigils.delete(el.dataset.sigilKey);
+    });
     container.querySelectorAll('details.trades[data-trades-key]').forEach(function(el) {
       if (el.open) openTrades.add(el.dataset.tradesKey);
       else openTrades.delete(el.dataset.tradesKey);
@@ -1133,6 +1176,7 @@ DASHBOARD_HTML = """\
       const positionsOpen = openPositions.has(botKey);
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
+      const sigilOpen = openSigils.has(botKey);
       html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
@@ -1238,6 +1282,12 @@ DASHBOARD_HTML = """\
         html += '<iframe class="dex-chart" loading="lazy" data-resolver="/api/dexscreener/chart-url?' + esc(chartParams.toString()) + '" title="Dexscreener chart"></iframe></details>';
       }
 
+      if (d.sigil && d.sigil.method === 'spare-wheel-v1') {
+        html += '<details class="sigil-panel" data-sigil-key="' + esc(botKey) + '"' + (sigilOpen ? ' open' : '') + '><summary class="toggle-raw">Sigil</summary>';
+        html += '<div class="sigil-stage" data-sigil-seed="' + esc(d.sigil.seed || '') + '"></div>';
+        html += '<div class="sigil-meta">' + esc(d.sigil.method) + ' · ' + esc(d.sigil.key || '') + '</div></details>';
+      }
+
       if (d.events && d.events.length) {
         const recentEvents = d.events.slice().reverse();
         const errorCount = recentEvents.reduce(function(total, event) {
@@ -1329,6 +1379,19 @@ DASHBOARD_HTML = """\
       };
       panel.addEventListener('toggle', loadChart);
       loadChart();
+    });
+    container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
+      const drawSigil = function() {
+        if (!panel.open) return;
+        const stage = panel.querySelector('.sigil-stage');
+        if (!stage || stage.dataset.rendered === 'true') return;
+        const botId = decodeURIComponent(panel.dataset.sigilKey || '');
+        const svg = bots[botId] ? sigilSvg(bots[botId].sigil) : '';
+        stage.innerHTML = svg || '<span class="empty">Invalid sigil</span>';
+        stage.dataset.rendered = 'true';
+      };
+      panel.addEventListener('toggle', drawSigil);
+      drawSigil();
     });
   }
 
