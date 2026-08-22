@@ -805,7 +805,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
-    <select id="sort-bots"><option value="name">Sort: name</option><option value="symbol">Symbol</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <button id="notifications">Enable offline alerts</button>
   </div>
@@ -1172,6 +1172,11 @@ DASHBOARD_HTML = """\
         const aSymbol = String(av.token_symbol || a).toLowerCase();
         const bSymbol = String(bv.token_symbol || b).toLowerCase();
         result = aSymbol.localeCompare(bSymbol) || a.localeCompare(b);
+      }
+      else if (mode === 'name') {
+        const aName = String(av.display_name || a).toLowerCase();
+        const bName = String(bv.display_name || b).toLowerCase();
+        result = aName.localeCompare(bName) || a.localeCompare(b);
       }
       else if (mode === 'pnl') result = (parseFloat(av.profit_percent) || 0) - (parseFloat(bv.profit_percent) || 0);
       else if (mode === 'top-position-pnl') {
