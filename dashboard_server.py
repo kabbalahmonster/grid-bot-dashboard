@@ -843,13 +843,14 @@ DASHBOARD_HTML = """\
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
-  .sigil-stage.animation-enabled .sigil-stroke { stroke-dasharray: 1; animation: sigil-inscribe var(--sigil-draw-duration) ease-in-out var(--sigil-phase) infinite alternate; }
-  .sigil-stage.animation-enabled .sigil-stroke-field { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear var(--sigil-phase) infinite; }
-  .sigil-stage.animation-enabled .sigil-rings { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out var(--sigil-phase) infinite alternate; }
-  .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-phase)) infinite alternate; }
+  .sigil-stroke-base { opacity: 0.28; }
+  .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
+  .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
+  .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled:not(.is-visible) *,
   .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
-  @keyframes sigil-inscribe { from { stroke-dashoffset: 1; opacity: 0.22; } to { stroke-dashoffset: 0; opacity: 0.92; } }
+  @keyframes sigil-current { from { stroke-dashoffset: 0; opacity: 0.58; } to { stroke-dashoffset: -0.22; opacity: 1; } }
   @keyframes sigil-turn { to { transform: rotate(360deg); } }
   @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
@@ -1091,9 +1092,11 @@ DASHBOARD_HTML = """\
     let path = 'M ' + points.map(function(point) { return point[0].toFixed(1) + ' ' + point[1].toFixed(1); }).join(' L ');
     if (bytes[30] % 2) path += ' Z';
     const symmetry = 2 + (bytes[31] % 3);
-    let strokes = '';
+    let baseStrokes = '', currentStrokes = '';
     for (let turn = 0; turn < symmetry; turn++) {
-      strokes += '<path class="sigil-stroke" pathLength="1" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
+      const transformedPath = ' pathLength="1" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
+      baseStrokes += '<path class="sigil-stroke-base"' + transformedPath;
+      currentStrokes += '<path class="sigil-stroke-current"' + transformedPath;
     }
     const first = points[0], last = points[points.length - 1];
     const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point, index) {
@@ -1101,13 +1104,14 @@ DASHBOARD_HTML = """\
     }).join('');
     const animationStyle = '--sigil-draw-duration:' + (5 + bytes[26] % 5) + 's;--sigil-spin-duration:' + (42 + bytes[27] % 39) +
       's;--sigil-breathe-duration:' + (4 + bytes[28] % 4) + 's;--sigil-pulse-duration:' + (2 + (bytes[29] % 15) / 10).toFixed(1) +
-      's;--sigil-phase:-' + (bytes[30] % 40) / 10 + 's';
+      's;--sigil-seed-phase:-' + (bytes[30] % 40) / 10 + 's;--sigil-clock-phase:0s';
     return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil" style="' + animationStyle + '">' +
+      '<g class="sigil-glyph">' +
       '<g class="sigil-rings" fill="none" stroke="#facc15" stroke-width="2"><circle cx="128" cy="128" r="106" opacity="0.22"/><circle cx="128" cy="128" r="42" opacity="0.16"/></g>' +
-      '<g class="sigil-stroke-field" fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.86">' + strokes + '</g>' +
+      '<g fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + baseStrokes + currentStrokes + '</g>' +
       '<g fill="#fde68a" stroke="#facc15">' + satellites + '<circle cx="' + first[0].toFixed(1) + '" cy="' + first[1].toFixed(1) + '" r="4" fill="none" stroke-width="2"/>' +
       '<path d="M ' + (last[0] - 4).toFixed(1) + ' ' + last[1].toFixed(1) + ' h 8 M ' + last[0].toFixed(1) + ' ' + (last[1] - 4).toFixed(1) + ' v 8" stroke-width="1.5"/></g>' +
-      '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></svg>';
+      '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></g></svg>';
   }
 
   function applySigilAnimationState() {
@@ -1128,6 +1132,8 @@ DASHBOARD_HTML = """\
   }
 
   function wireSigilAnimation(panel, stage) {
+    const svg = stage.querySelector('svg');
+    if (svg) svg.style.setProperty('--sigil-clock-phase', '-' + (Date.now() / 1000).toFixed(3) + 's');
     if (stage.dataset.animationWired !== 'true') {
       stage.dataset.animationWired = 'true';
       stage.addEventListener('click', toggleSigilAnimation);

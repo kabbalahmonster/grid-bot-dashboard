@@ -279,9 +279,11 @@ closing it. Missing intervals remain neutral and display an em dash.
 
 Experimental bot payloads may include `sigil: {version, method, key, seed}`. For the `spare-wheel-v1` method, each card receives a collapsed **Sigil** panel. Opening it locally constructs a deterministic inline SVG from the reduced consonant key and SHA-256 seed. The panel performs no network request and ignores malformed or unknown methods. The readable intention is never sent to or stored by the dashboard.
 
-Open sigils animate as seed-derived living drawings: strokes inscribe, the
-symmetry field turns slowly, rings breathe, and nodes pulse in a deterministic
-phase unique to that bot. Clicking the sigil or its accessible **Animation:
+Open sigils animate as seed-derived living drawings: a seamless luminous
+current travels along a faint complete inscription while the entire glyph,
+including its rings and terminal marks, turns as one assembly. Rings breathe
+and nodes pulse in a deterministic phase unique to that bot. Clicking the
+sigil or its accessible **Animation:
 On/Off** button changes the global preference for that browser profile and
 stores it in `localStorage`; the choice is therefore device/browser-specific.
 Animation defaults off when the device requests reduced motion. Only open
@@ -289,9 +291,10 @@ sigils near the viewport animate through `IntersectionObserver`, and all sigil
 motion pauses while the page is hidden or during scrolling, touch gestures,
 and pinch-zoom settling. The animation uses existing inline SVG and CSS only:
 no network request, canvas loop, video, or per-frame JavaScript is involved.
-The live SVG node is preserved when status events refresh its card, so the CSS
-animation timeline continues instead of restarting. Stroke lengths are also
-normalized in SVG path units, keeping short and long sigils equally smooth.
+The live SVG node is preserved when status events refresh its card, and its
+animation phase is synchronized to wall-clock time so a browser reattachment
+cannot visibly restart it. Stroke lengths are normalized in SVG path units,
+keeping short and long sigils equally smooth.
 
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
 
