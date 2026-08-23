@@ -980,6 +980,9 @@ DASHBOARD_HTML = """\
   let renderPendingForce = false;
   let touchInteractionActive = false;
   let marketDataTimer = null;
+  let marketDataFetchInFlight = false;
+  let marketDataLastRequestedAt = 0;
+  let marketDataSignature = '';
   let routineRenderTimer = null;
   let routineRenderIdleCallback = null;
   const pendingChangedBotIds = new Set();
@@ -1373,22 +1376,30 @@ DASHBOARD_HTML = """\
 
   function fetchMarketData() {
     marketDataTimer = null;
-    if (!Object.keys(bots).length) return;
+    if (!Object.keys(bots).length || marketDataFetchInFlight) return;
+    marketDataFetchInFlight = true;
+    marketDataLastRequestedAt = Date.now();
     fetch('/api/dexscreener/market-data')
       .then(function(response) { if (!response.ok) throw new Error(response.status); return response.json(); })
       .then(function(data) {
+        const nextSignature = JSON.stringify(data.bots || {});
+        if (nextSignature === marketDataSignature) return;
+        marketDataSignature = nextSignature;
         Object.keys(data.bots || {}).forEach(function(botId) { marketData[botId] = data.bots[botId]; });
         // Market-cap sorting must reorder after the asynchronous values arrive.
         // Other modes mutate only value nodes to avoid unnecessary card rebuilds.
         if (sortBots.value === 'market-cap' || sortBots.value === 'day-movement') render(true);
         else updateMarketDataNodes();
       })
-      .catch(function() {});
+      .catch(function() {})
+      .finally(function() { marketDataFetchInFlight = false; });
   }
 
   function scheduleMarketDataFetch() {
     if (marketDataTimer !== null) return;
-    marketDataTimer = setTimeout(fetchMarketData, 250);
+    const minimumGap = 15000;
+    const delay = Math.max(250, minimumGap - (Date.now() - marketDataLastRequestedAt));
+    marketDataTimer = setTimeout(fetchMarketData, delay);
   }
 
   function topPositionPnl(state) {

@@ -313,6 +313,10 @@ cards containing live panels without detaching them, then reveal and update the
 same nodes when the filter is cleared. Stroke lengths are normalized in SVG
 path units, keeping short and long sigils equally smooth.
 
+Client-side market-data refreshes are limited to one request per 15 seconds and
+identical responses do not trigger DOM work. The regular 60-second refresh
+remains in place; the shorter throttle only coalesces staggered bot reports.
+
 The **View Large** control beside the animation toggle opens a viewport-fitted
 theater view over a darkened dashboard. It renders a wall-clock-synchronized
 copy of the same deterministic SVG, so opening or closing it does not detach or

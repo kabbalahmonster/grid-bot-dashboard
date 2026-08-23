@@ -73,6 +73,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("routineRenderTimer !== null || routineRenderIdleCallback !== null", body)
         self.assertIn("if (card.style.order !== nextOrder)", body)
         self.assertIn("contain: layout paint style", body)
+        self.assertIn("const minimumGap = 15000", body)
+        self.assertIn("nextSignature === marketDataSignature", body)
+        self.assertIn("marketDataFetchInFlight", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
