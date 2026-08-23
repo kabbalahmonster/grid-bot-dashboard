@@ -282,7 +282,9 @@ Experimental bot payloads may include `sigil: {version, method, key, seed}`. For
 Open sigils animate as seed-derived living drawings: a seamless luminous
 current travels along the inscription while the entire glyph, including its
 rings and terminal marks, turns as one assembly. Rings breathe and nodes pulse
-in a deterministic phase unique to that bot. Clicking the
+in a deterministic phase unique to that bot. The traveling line also glimmers
+on an independent alternating brightness cycle, avoiding any reset at the dash
+loop boundary. Clicking the
 sigil or its accessible **Animation:
 On/Off** button changes the global preference for that browser profile and
 stores it in `localStorage`; the choice is therefore device/browser-specific.

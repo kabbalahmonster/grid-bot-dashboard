@@ -843,13 +843,14 @@ DASHBOARD_HTML = """\
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
-  .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
+  .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
   .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled:not(.is-visible) *,
   .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
   @keyframes sigil-current { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -0.22; } }
+  @keyframes sigil-glimmer { from { opacity: 0.58; } to { opacity: 1; } }
   @keyframes sigil-turn { to { transform: rotate(360deg); } }
   @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
@@ -1100,7 +1101,7 @@ DASHBOARD_HTML = """\
     const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point, index) {
       return '<circle class="sigil-node" style="--sigil-node-index:' + index + '" cx="' + point[0].toFixed(1) + '" cy="' + point[1].toFixed(1) + '" r="2.2"/>';
     }).join('');
-    const animationStyle = '--sigil-draw-duration:' + (5 + bytes[26] % 5) + 's;--sigil-spin-duration:' + (42 + bytes[27] % 39) +
+    const animationStyle = '--sigil-draw-duration:' + (5 + bytes[26] % 5) + 's;--sigil-glimmer-duration:' + (3 + bytes[25] % 4) + 's;--sigil-spin-duration:' + (42 + bytes[27] % 39) +
       's;--sigil-breathe-duration:' + (4 + bytes[28] % 4) + 's;--sigil-pulse-duration:' + (2 + (bytes[29] % 15) / 10).toFixed(1) +
       's;--sigil-seed-phase:-' + (bytes[30] % 40) / 10 + 's;--sigil-clock-phase:0s';
     return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil" style="' + animationStyle + '">' +

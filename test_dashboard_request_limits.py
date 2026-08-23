@@ -32,6 +32,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("sigil-current", body)
+        self.assertIn("sigil-glimmer", body)
+        self.assertIn("infinite alternate", body)
         self.assertIn("sigil-turn", body)
         self.assertIn("sigil-node-pulse", body)
         self.assertIn('class="sigil-glyph"', body)
