@@ -633,7 +633,15 @@ def _dexscreener_pair_data(chain_id, token_address):
             value = float(value) if value is not None else None
         except (TypeError, ValueError):
             value = None
-        data = {"pair_address": pair_address, "label": label, "value_usd": value}
+        raw_changes = selected.get("priceChange") if isinstance(selected.get("priceChange"), dict) else {}
+        price_change = {}
+        for window in ("m5", "h1", "h6", "h24"):
+            try:
+                price_change[window] = float(raw_changes[window])
+            except (KeyError, TypeError, ValueError):
+                price_change[window] = None
+        data = {"pair_address": pair_address, "label": label, "value_usd": value,
+                "price_change": price_change}
         with _dexscreener_lock:
             _dexscreener_pair_cache[cache_key] = (now, data)
         return {**data, "cached": False, "stale": False}
@@ -789,6 +797,16 @@ DASHBOARD_HTML = """\
   .metric .value a:hover { text-decoration: underline; }
   .metric .value.positive { color: #22c55e; }
   .metric .value.negative { color: #ef4444; }
+  details.market-movement { border-bottom: 1px solid #1e293b; }
+  details.market-movement summary { display: flex; justify-content: space-between; padding: 0.35rem 0; cursor: pointer; list-style: none; font-size: 0.875rem; }
+  details.market-movement summary::-webkit-details-marker { display: none; }
+  details.market-movement summary .label { color: #94a3b8; }
+  details.market-movement summary .label::after { content: ' ▸'; color: #64748b; font-size: 0.7rem; }
+  details.market-movement[open] summary .label::after { content: ' ▾'; }
+  details.market-movement summary .value { color: #f1f5f9; font-weight: 500; }
+  details.market-movement .value.positive { color: #22c55e; }
+  details.market-movement .value.negative { color: #ef4444; }
+  .movement-breakdown { padding-left: 0.75rem; border-left: 1px solid #334155; margin-bottom: 0.25rem; }
   .positions { margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
   .positions h3 { font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .position { background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
@@ -894,6 +912,7 @@ DASHBOARD_HTML = """\
   const notificationsButton = document.getElementById('notifications');
   const bots = {};
   const marketData = {};
+  const openMarketMovements = new Set();
   const openMoreInfo = new Set();
   const openPositions = new Set();
   const openRawJson = new Set();
@@ -1188,6 +1207,20 @@ DASHBOARD_HTML = """\
     return '$' + amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
   }
 
+  function formatMovement(value) {
+    const movement = Number(value);
+    if (!Number.isFinite(movement)) return '—';
+    return (movement >= 0 ? '+' : '') + movement.toFixed(2) + '%';
+  }
+
+  function setMovementValue(element, value) {
+    if (!element) return;
+    const movement = Number(value);
+    element.textContent = formatMovement(value);
+    element.classList.toggle('positive', Number.isFinite(movement) && movement >= 0);
+    element.classList.toggle('negative', Number.isFinite(movement) && movement < 0);
+  }
+
   function updateMarketDataNodes() {
     container.querySelectorAll('[data-market-key]').forEach(function(row) {
       const botId = decodeURIComponent(row.dataset.marketKey || '');
@@ -1196,6 +1229,14 @@ DASHBOARD_HTML = """\
       row.querySelector('.label').textContent = data.label === 'FDV' ? 'FDV' : 'Market Cap';
       row.querySelector('.value').textContent = formatCompactUsd(data.value_usd);
       row.classList.toggle('stale', Boolean(data.stale));
+    });
+    container.querySelectorAll('details.market-movement[data-market-movement-key]').forEach(function(panel) {
+      const botId = decodeURIComponent(panel.dataset.marketMovementKey || '');
+      const changes = (marketData[botId] || {}).price_change || {};
+      setMovementValue(panel.querySelector('[data-market-window="h24"]'), changes.h24);
+      setMovementValue(panel.querySelector('[data-market-window="m5"]'), changes.m5);
+      setMovementValue(panel.querySelector('[data-market-window="h1"]'), changes.h1);
+      setMovementValue(panel.querySelector('[data-market-window="h6"]'), changes.h6);
     });
   }
 
@@ -1240,6 +1281,10 @@ DASHBOARD_HTML = """\
     container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
       if (el.open) openMoreInfo.add(el.dataset.botKey);
       else openMoreInfo.delete(el.dataset.botKey);
+    });
+    container.querySelectorAll('details.market-movement[data-market-movement-key]').forEach(function(el) {
+      if (el.open) openMarketMovements.add(el.dataset.marketMovementKey);
+      else openMarketMovements.delete(el.dataset.marketMovementKey);
     });
     container.querySelectorAll('button[data-pos-key]').forEach(function(el) {
       if (el.dataset.expanded === 'true') openPositions.add(el.dataset.posKey);
@@ -1433,6 +1478,17 @@ DASHBOARD_HTML = """\
       const marketLabel = market.label === 'FDV' ? 'FDV' : 'Market Cap';
       html += '<div class="metric market-data' + (market.stale ? ' stale' : '') + '" data-market-key="' + esc(botKey) + '"><span class="label">' +
         esc(marketLabel) + '</span><span class="value">' + esc(formatCompactUsd(market.value_usd)) + '</span></div>';
+      const changes = market.price_change || {};
+      const movementClass = function(value) {
+        return Number.isFinite(Number(value)) ? (Number(value) >= 0 ? ' positive' : ' negative') : '';
+      };
+      html += '<details class="market-movement" data-market-movement-key="' + esc(botKey) + '"' + (openMarketMovements.has(botKey) ? ' open' : '') + '>' +
+        '<summary><span class="label">Day</span><span class="value' + movementClass(changes.h24) + '" data-market-window="h24">' + esc(formatMovement(changes.h24)) + '</span></summary>' +
+        '<div class="movement-breakdown">' +
+        '<div class="metric"><span class="label">5m</span><span class="value' + movementClass(changes.m5) + '" data-market-window="m5">' + esc(formatMovement(changes.m5)) + '</span></div>' +
+        '<div class="metric"><span class="label">1h</span><span class="value' + movementClass(changes.h1) + '" data-market-window="h1">' + esc(formatMovement(changes.h1)) + '</span></div>' +
+        '<div class="metric"><span class="label">6h</span><span class="value' + movementClass(changes.h6) + '" data-market-window="h6">' + esc(formatMovement(changes.h6)) + '</span></div>' +
+        '</div></details>';
       metrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });

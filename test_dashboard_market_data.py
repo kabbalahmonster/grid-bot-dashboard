@@ -31,12 +31,14 @@ class TestDexscreenerMarketData(unittest.TestCase):
             {"pairAddress": "0x" + "3" * 40, "quoteToken": {"symbol": "USDC"},
              "liquidity": {"usd": 999999}, "marketCap": 900},
             {"pairAddress": PAIR, "quoteToken": {"symbol": "WETH"},
-             "liquidity": {"usd": 10}, "marketCap": 1234567, "fdv": 7654321},
+             "liquidity": {"usd": 10}, "marketCap": 1234567, "fdv": 7654321,
+             "priceChange": {"m5": -0.5, "h1": 1.25, "h6": -3, "h24": 8.43}},
         ])
         data = dashboard_server._dexscreener_pair_data(8453, TOKEN)
         self.assertEqual(data["pair_address"], PAIR)
         self.assertEqual(data["label"], "Market Cap")
         self.assertEqual(data["value_usd"], 1234567.0)
+        self.assertEqual(data["price_change"], {"m5": -0.5, "h1": 1.25, "h6": -3.0, "h24": 8.43})
 
     @patch("dashboard_server.http_requests.get")
     def test_fdv_is_explicit_fallback(self, get):
@@ -85,6 +87,21 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertLess(body.index("data-market-key"), body.index("metrics.forEach"))
         self.assertIn("fetchMarketData", body)
         self.assertIn("setInterval(fetchMarketData, 60000)", body)
+        self.assertIn('data-market-window="h24"', body)
+        self.assertIn('data-market-window="m5"', body)
+        self.assertIn('data-market-window="h1"', body)
+        self.assertIn('data-market-window="h6"', body)
+        self.assertIn("openMarketMovements", body)
+
+    @patch("dashboard_server.http_requests.get")
+    def test_missing_or_invalid_movements_are_null(self, get):
+        get.return_value = response([
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "WETH"},
+             "liquidity": {"usd": 10}, "marketCap": 1000,
+             "priceChange": {"m5": "bad", "h24": None}}
+        ])
+        data = dashboard_server._dexscreener_pair_data(8453, TOKEN)
+        self.assertEqual(data["price_change"], {"m5": None, "h1": None, "h6": None, "h24": None})
 
 
 if __name__ == "__main__":

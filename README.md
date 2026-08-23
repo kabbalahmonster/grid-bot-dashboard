@@ -271,6 +271,12 @@ nodes without rebuilding cards, preserving smooth mobile scrolling and zoom.
 Temporary API failures retain stale successful cache values; unavailable values
 render as an em dash.
 
+Immediately below market cap, **Day** shows Dexscreener's native 24-hour price
+movement in green or red. Clicking that row expands the native **5m**, **1h**,
+and **6h** movements. The disclosure state is remembered across live card
+rebuilds, while refreshed values are patched in place without opening or
+closing it. Missing intervals remain neutral and display an em dash.
+
 Experimental bot payloads may include `sigil: {version, method, key, seed}`. For the `spare-wheel-v1` method, each card receives a collapsed **Sigil** panel. Opening it locally constructs a deterministic inline SVG from the reduced consonant key and SHA-256 seed. The panel performs no network request and ignores malformed or unknown methods. The readable intention is never sent to or stored by the dashboard.
 
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
