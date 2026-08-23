@@ -43,6 +43,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("((marketData[a] || {}).price_change || {}).h24", body)
         self.assertIn("sortBots.value === 'day-movement'", body)
 
+    def test_closing_sigil_does_not_reload_an_open_dexscreener_iframe(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("else if (!container.querySelector('details.chart-panel[open]')) render(true)", body)
+        self.assertIn("if (panel.open) loadChart();", body)
+        self.assertIn("else if (!container.querySelector('details.sigil-panel[open]')) render(true)", body)
+
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("sigil-current", body)

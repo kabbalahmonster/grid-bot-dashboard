@@ -1767,7 +1767,10 @@ DASHBOARD_HTML = """\
             frame.replaceWith(document.createTextNode(error.message));
           });
       };
-      panel.addEventListener('toggle', loadChart);
+      panel.addEventListener('toggle', function() {
+        if (panel.open) loadChart();
+        else if (!container.querySelector('details.sigil-panel[open]')) render(true);
+      });
       loadChart();
     });
     container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
@@ -1785,7 +1788,7 @@ DASHBOARD_HTML = """\
       };
       panel.addEventListener('toggle', function() {
         if (panel.open) drawSigil();
-        else render(true);
+        else if (!container.querySelector('details.chart-panel[open]')) render(true);
       });
       drawSigil();
     });
