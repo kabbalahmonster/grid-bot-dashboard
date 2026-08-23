@@ -29,6 +29,18 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('<option value="symbol">Symbol</option>', body)
         self.assertIn("mode === 'symbol'", body)
 
+    def test_sigil_animation_is_gated_and_user_controllable(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("sigil-inscribe", body)
+        self.assertIn("sigil-turn", body)
+        self.assertIn("sigil-node-pulse", body)
+        self.assertIn("dashboard-sigil-animation", body)
+        self.assertIn("prefers-reduced-motion: reduce", body)
+        self.assertIn("IntersectionObserver", body)
+        self.assertIn("setSigilInteractionPaused(true)", body)
+        self.assertIn("Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off')", body)
+        self.assertIn('aria-label="Toggle sigil animation"', body)
+
 
 if __name__ == "__main__":
     unittest.main()

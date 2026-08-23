@@ -839,7 +839,20 @@ DASHBOARD_HTML = """\
   details.chart-panel { margin-top: 0.75rem; }
   details.sigil-panel { margin-top: 0.75rem; }
   .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
+  .sigil-stage[role="button"] { cursor: pointer; }
+  .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
+  .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
+  .sigil-stage.animation-enabled .sigil-stroke { stroke-dasharray: 720; animation: sigil-inscribe var(--sigil-draw-duration) ease-in-out var(--sigil-phase) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-stroke-field { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear var(--sigil-phase) infinite; }
+  .sigil-stage.animation-enabled .sigil-rings { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out var(--sigil-phase) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-phase)) infinite alternate; }
+  .sigil-stage.animation-enabled:not(.is-visible) *,
+  .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
+  @keyframes sigil-inscribe { from { stroke-dashoffset: 720; opacity: 0.22; } to { stroke-dashoffset: 0; opacity: 0.92; } }
+  @keyframes sigil-turn { to { transform: rotate(360deg); } }
+  @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
+  @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
   @media (max-width: 640px), (pointer: coarse) {
     .sigil-stage svg { filter: none; }
@@ -949,9 +962,20 @@ DASHBOARD_HTML = """\
   let renderPendingForce = false;
   let touchInteractionActive = false;
   let marketDataTimer = null;
+  const sigilMotionPreference = localStorage.getItem('dashboard-sigil-animation');
+  let sigilAnimationEnabled = sigilMotionPreference === 'on' ||
+    (sigilMotionPreference === null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const sigilVisibilityObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) { entry.target.classList.toggle('is-visible', entry.isIntersecting); });
+  }, { rootMargin: '80px 0px', threshold: 0.01 }) : null;
+
+  function setSigilInteractionPaused(paused) {
+    container.classList.toggle('sigil-motion-paused', Boolean(paused));
+  }
 
   function markViewportBusy() {
     viewportBusy = true;
+    setSigilInteractionPaused(true);
     viewportMotionAt = performance.now();
     if (viewportIdleTimer !== null) return;
 
@@ -967,6 +991,7 @@ DASHBOARD_HTML = """\
       }
       viewportIdleTimer = null;
       viewportBusy = false;
+      setSigilInteractionPaused(false);
       if (renderPendingForViewport) {
         const force = renderPendingForce;
         renderPendingForViewport = false;
@@ -1068,18 +1093,54 @@ DASHBOARD_HTML = """\
     const symmetry = 2 + (bytes[31] % 3);
     let strokes = '';
     for (let turn = 0; turn < symmetry; turn++) {
-      strokes += '<path d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
+      strokes += '<path class="sigil-stroke" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
     }
     const first = points[0], last = points[points.length - 1];
-    const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point) {
-      return '<circle cx="' + point[0].toFixed(1) + '" cy="' + point[1].toFixed(1) + '" r="2.2"/>';
+    const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point, index) {
+      return '<circle class="sigil-node" style="--sigil-node-index:' + index + '" cx="' + point[0].toFixed(1) + '" cy="' + point[1].toFixed(1) + '" r="2.2"/>';
     }).join('');
-    return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil">' +
-      '<g fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.86">' +
-      '<circle cx="128" cy="128" r="106" opacity="0.22"/><circle cx="128" cy="128" r="42" opacity="0.16"/>' + strokes + '</g>' +
+    const animationStyle = '--sigil-draw-duration:' + (5 + bytes[26] % 5) + 's;--sigil-spin-duration:' + (42 + bytes[27] % 39) +
+      's;--sigil-breathe-duration:' + (4 + bytes[28] % 4) + 's;--sigil-pulse-duration:' + (2 + (bytes[29] % 15) / 10).toFixed(1) +
+      's;--sigil-phase:-' + (bytes[30] % 40) / 10 + 's';
+    return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil" style="' + animationStyle + '">' +
+      '<g class="sigil-rings" fill="none" stroke="#facc15" stroke-width="2"><circle cx="128" cy="128" r="106" opacity="0.22"/><circle cx="128" cy="128" r="42" opacity="0.16"/></g>' +
+      '<g class="sigil-stroke-field" fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" opacity="0.86">' + strokes + '</g>' +
       '<g fill="#fde68a" stroke="#facc15">' + satellites + '<circle cx="' + first[0].toFixed(1) + '" cy="' + first[1].toFixed(1) + '" r="4" fill="none" stroke-width="2"/>' +
       '<path d="M ' + (last[0] - 4).toFixed(1) + ' ' + last[1].toFixed(1) + ' h 8 M ' + last[0].toFixed(1) + ' ' + (last[1] - 4).toFixed(1) + ' v 8" stroke-width="1.5"/></g>' +
       '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></svg>';
+  }
+
+  function applySigilAnimationState() {
+    container.querySelectorAll('.sigil-stage').forEach(function(stage) {
+      stage.classList.toggle('animation-enabled', sigilAnimationEnabled);
+      stage.setAttribute('aria-pressed', sigilAnimationEnabled ? 'true' : 'false');
+    });
+    container.querySelectorAll('.sigil-animation-toggle').forEach(function(button) {
+      button.textContent = 'Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off');
+      button.setAttribute('aria-pressed', sigilAnimationEnabled ? 'true' : 'false');
+    });
+  }
+
+  function toggleSigilAnimation() {
+    sigilAnimationEnabled = !sigilAnimationEnabled;
+    localStorage.setItem('dashboard-sigil-animation', sigilAnimationEnabled ? 'on' : 'off');
+    applySigilAnimationState();
+  }
+
+  function wireSigilAnimation(panel, stage) {
+    if (stage.dataset.animationWired === 'true') return;
+    stage.dataset.animationWired = 'true';
+    stage.addEventListener('click', toggleSigilAnimation);
+    stage.addEventListener('keydown', function(event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      toggleSigilAnimation();
+    });
+    const button = panel.querySelector('.sigil-animation-toggle');
+    if (button) button.addEventListener('click', toggleSigilAnimation);
+    if (sigilVisibilityObserver) sigilVisibilityObserver.observe(stage);
+    else stage.classList.add('is-visible');
+    applySigilAnimationState();
   }
 
   function eventDisplay(message) {
@@ -1506,7 +1567,8 @@ DASHBOARD_HTML = """\
 
       if (d.sigil && d.sigil.method === 'spare-wheel-v1') {
         html += '<details class="sigil-panel" data-sigil-key="' + esc(botKey) + '"' + (sigilOpen ? ' open' : '') + '><summary class="toggle-raw">Sigil</summary>';
-        html += '<div class="sigil-stage" data-sigil-seed="' + esc(d.sigil.seed || '') + '"></div>';
+        html += '<div class="sigil-stage" role="button" tabindex="0" aria-label="Toggle sigil animation" data-sigil-seed="' + esc(d.sigil.seed || '') + '"></div>';
+        html += '<button class="toggle-raw sigil-animation-toggle" type="button">Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off') + '</button>';
         html += '<div class="sigil-meta">' + esc(d.sigil.method) + ' · ' + esc(d.sigil.key || '') + '</div></details>';
       }
 
@@ -1580,6 +1642,7 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
+    if (sigilVisibilityObserver) sigilVisibilityObserver.disconnect();
     container.innerHTML = html;
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
@@ -1606,11 +1669,14 @@ DASHBOARD_HTML = """\
       const drawSigil = function() {
         if (!panel.open) return;
         const stage = panel.querySelector('.sigil-stage');
-        if (!stage || stage.dataset.rendered === 'true') return;
-        const botId = decodeURIComponent(panel.dataset.sigilKey || '');
-        const svg = bots[botId] ? sigilSvg(bots[botId].sigil) : '';
-        stage.innerHTML = svg || '<span class="empty">Invalid sigil</span>';
-        stage.dataset.rendered = 'true';
+        if (!stage) return;
+        if (stage.dataset.rendered !== 'true') {
+          const botId = decodeURIComponent(panel.dataset.sigilKey || '');
+          const svg = bots[botId] ? sigilSvg(bots[botId].sigil) : '';
+          stage.innerHTML = svg || '<span class="empty">Invalid sigil</span>';
+          stage.dataset.rendered = 'true';
+        }
+        wireSigilAnimation(panel, stage);
       };
       panel.addEventListener('toggle', drawSigil);
       drawSigil();
@@ -1646,10 +1712,11 @@ DASHBOARD_HTML = """\
   });
   document.addEventListener('visibilitychange', function() {
     if (document.visibilityState === 'visible') {
+      setSigilInteractionPaused(viewportBusy);
       reconnectNow();
       fetchEthPrices();
       fetchMarketData();
-    }
+    } else setSigilInteractionPaused(true);
   });
   window.addEventListener('pageshow', function(event) {
     if (event.persisted) reconnectNow();

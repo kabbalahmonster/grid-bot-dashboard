@@ -279,6 +279,17 @@ closing it. Missing intervals remain neutral and display an em dash.
 
 Experimental bot payloads may include `sigil: {version, method, key, seed}`. For the `spare-wheel-v1` method, each card receives a collapsed **Sigil** panel. Opening it locally constructs a deterministic inline SVG from the reduced consonant key and SHA-256 seed. The panel performs no network request and ignores malformed or unknown methods. The readable intention is never sent to or stored by the dashboard.
 
+Open sigils animate as seed-derived living drawings: strokes inscribe, the
+symmetry field turns slowly, rings breathe, and nodes pulse in a deterministic
+phase unique to that bot. Clicking the sigil or its accessible **Animation:
+On/Off** button changes the global preference for that browser profile and
+stores it in `localStorage`; the choice is therefore device/browser-specific.
+Animation defaults off when the device requests reduced motion. Only open
+sigils near the viewport animate through `IntersectionObserver`, and all sigil
+motion pauses while the page is hidden or during scrolling, touch gestures,
+and pinch-zoom settling. The animation uses existing inline SVG and CSS only:
+no network request, canvas loop, video, or per-frame JavaScript is involved.
+
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
 
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `poll_interval_seconds` is rendered as **Polling** in More Info when reported. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.
