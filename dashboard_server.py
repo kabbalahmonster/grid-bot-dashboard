@@ -1392,6 +1392,70 @@ DASHBOARD_HTML = """\
     return values.length ? Math.max.apply(null, values) : null;
   }
 
+  function livePanelKey(element) {
+    if (element.matches('details.chart-panel[open][data-chart-key]')) return 'chart:' + element.dataset.chartKey;
+    if (element.matches('details.sigil-panel[open][data-sigil-key]')) return 'sigil:' + element.dataset.sigilKey;
+    return '';
+  }
+
+  function updateCardAroundLivePanels(currentCard, freshCard) {
+    const livePanels = Array.from(currentCard.children).filter(function(child) { return Boolean(livePanelKey(child)); });
+    if (!livePanels.length) {
+      currentCard.replaceWith(freshCard);
+      return;
+    }
+    const freshChildren = Array.from(freshCard.children);
+    const freshIndexes = livePanels.map(function(livePanel) {
+      const key = livePanelKey(livePanel);
+      return freshChildren.findIndex(function(child) { return livePanelKey(child) === key; });
+    });
+    if (freshIndexes.some(function(index) { return index < 0; })) return;
+    let freshStart = 0;
+    let oldStart = currentCard.firstChild;
+    livePanels.forEach(function(livePanel, panelIndex) {
+      const freshIndex = freshIndexes[panelIndex];
+      let oldNode = oldStart;
+      while (oldNode && oldNode !== livePanel) {
+        const next = oldNode.nextSibling;
+        oldNode.remove();
+        oldNode = next;
+      }
+      for (let index = freshStart; index < freshIndex; index++) currentCard.insertBefore(freshChildren[index], livePanel);
+      oldStart = livePanel.nextSibling;
+      freshStart = freshIndex + 1;
+    });
+    let oldNode = oldStart;
+    while (oldNode) {
+      const next = oldNode.nextSibling;
+      oldNode.remove();
+      oldNode = next;
+    }
+    for (let index = freshStart; index < freshChildren.length; index++) currentCard.appendChild(freshChildren[index]);
+    currentCard.className = freshCard.className;
+  }
+
+  function updateGridPreservingLivePanels(html) {
+    const currentGrid = container.querySelector('.grid');
+    if (!currentGrid || !container.querySelector('details.chart-panel[open], details.sigil-panel[open]')) return false;
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const freshGrid = template.content.querySelector('.grid');
+    if (!freshGrid) return false;
+    const freshCards = new Map();
+    freshGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) { freshCards.set(card.dataset.botId, card); });
+    currentGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) {
+      const freshCard = freshCards.get(card.dataset.botId);
+      if (!freshCard) {
+        if (!card.querySelector('details.chart-panel[open], details.sigil-panel[open]')) card.remove();
+        return;
+      }
+      freshCards.delete(card.dataset.botId);
+      updateCardAroundLivePanels(card, freshCard);
+    });
+    freshCards.forEach(function(card) { currentGrid.appendChild(card); });
+    return true;
+  }
+
   function render(force) {
     // Replacing the full fleet DOM during a touch-scroll causes visible frame
     // drops. Status objects continue updating; coalesce their visual refresh
@@ -1440,15 +1504,6 @@ DASHBOARD_HTML = """\
       if (el.open) openEvents.add(el.dataset.eventsKey);
       else openEvents.delete(el.dataset.eventsKey);
     });
-    // Never replace a living chart or sigil during routine status events. In
-    // particular, detaching an SVG makes browsers restart its CSS timeline.
-    // The latest status remains in memory and renders on the next routine
-    // status event after live panels close, or when the user explicitly
-    // changes a view control (which calls force). Panel closure itself never
-    // forces a full-grid rebuild.
-    const hasOpenSigil = Boolean(container.querySelector('details.sigil-panel[open]'));
-    if ((openCharts.size > 0 || hasOpenSigil) && !force) return;
-
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
     const wantedProvider = providerFilter.value;
@@ -1736,21 +1791,24 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
-    const preservedSigilStages = new Map();
-    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
-      const stage = panel.querySelector('.sigil-stage[data-rendered="true"]');
-      if (!stage) return;
-      stage.remove();
-      preservedSigilStages.set(panel.dataset.sigilKey, stage);
-    });
-    if (sigilVisibilityObserver) sigilVisibilityObserver.disconnect();
-    container.innerHTML = html;
-    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
-      const preservedStage = preservedSigilStages.get(panel.dataset.sigilKey);
-      const placeholder = panel.querySelector('.sigil-stage');
-      if (!preservedStage || !placeholder || preservedStage.dataset.sigilSeed !== placeholder.dataset.sigilSeed) return;
-      placeholder.replaceWith(preservedStage);
-    });
+    const preservedLivePanels = !force && updateGridPreservingLivePanels(html);
+    if (!preservedLivePanels) {
+      const preservedSigilStages = new Map();
+      container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
+        const stage = panel.querySelector('.sigil-stage[data-rendered="true"]');
+        if (!stage) return;
+        stage.remove();
+        preservedSigilStages.set(panel.dataset.sigilKey, stage);
+      });
+      if (sigilVisibilityObserver) sigilVisibilityObserver.disconnect();
+      container.innerHTML = html;
+      container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
+        const preservedStage = preservedSigilStages.get(panel.dataset.sigilKey);
+        const placeholder = panel.querySelector('.sigil-stage');
+        if (!preservedStage || !placeholder || preservedStage.dataset.sigilSeed !== placeholder.dataset.sigilSeed) return;
+        placeholder.replaceWith(preservedStage);
+      });
+    }
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
     });
@@ -1769,7 +1827,10 @@ DASHBOARD_HTML = """\
             frame.replaceWith(document.createTextNode(error.message));
           });
       };
-      panel.addEventListener('toggle', loadChart);
+      if (panel.dataset.chartWired !== 'true') {
+        panel.dataset.chartWired = 'true';
+        panel.addEventListener('toggle', loadChart);
+      }
       loadChart();
     });
     container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
@@ -1785,7 +1846,10 @@ DASHBOARD_HTML = """\
         }
         wireSigilAnimation(panel, stage);
       };
-      panel.addEventListener('toggle', drawSigil);
+      if (panel.dataset.sigilWired !== 'true') {
+        panel.dataset.sigilWired = 'true';
+        panel.addEventListener('toggle', drawSigil);
+      }
       drawSigil();
     });
   }

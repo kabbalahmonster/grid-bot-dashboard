@@ -49,7 +49,17 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("panel.addEventListener('toggle', drawSigil)", body)
         self.assertNotIn("else if (!container.querySelector('details.chart-panel[open]')) render(true)", body)
         self.assertNotIn("else if (!container.querySelector('details.sigil-panel[open]')) render(true)", body)
-        self.assertIn("Panel closure itself never", body)
+
+    def test_live_panels_are_preserved_while_surrounding_card_data_updates(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("updateGridPreservingLivePanels", body)
+        self.assertIn("updateCardAroundLivePanels", body)
+        self.assertIn("!force && updateGridPreservingLivePanels(html)", body)
+        self.assertIn("details.chart-panel[open], details.sigil-panel[open]", body)
+        self.assertIn("currentCard.insertBefore(freshChildren[index], livePanel)", body)
+        self.assertIn("currentCard.appendChild(freshChildren[index])", body)
+        self.assertIn("panel.dataset.chartWired", body)
+        self.assertIn("panel.dataset.sigilWired", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
@@ -60,7 +70,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("sigil-node-pulse", body)
         self.assertIn('class="sigil-glyph"', body)
         self.assertIn("Date.now() / 1000", body)
-        self.assertIn("hasOpenSigil", body)
+        self.assertIn("updateGridPreservingLivePanels", body)
         self.assertNotIn("stroke-dashoffset: -0.22; opacity:", body)
         self.assertNotIn("sigil-stroke-base", body)
         self.assertIn("dashboard-sigil-animation", body)
@@ -70,8 +80,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off')", body)
         self.assertIn('aria-label="Toggle sigil animation"', body)
         self.assertIn('pathLength="1"', body)
-        self.assertIn("const preservedSigilStages = new Map()", body)
-        self.assertIn("placeholder.replaceWith(preservedStage)", body)
+        self.assertIn("updateCardAroundLivePanels", body)
         self.assertNotIn("drop-shadow", body)
 
     def test_sigil_theater_mode_is_accessible_and_viewport_fitted(self):

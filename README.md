@@ -296,12 +296,13 @@ no network request, canvas loop, video, or per-frame JavaScript is involved.
 The animated SVG remains filter-free at every viewport size; the static radial
 stage background supplies ambience without forcing the browser to rerasterize
 a moving drop shadow on every frame.
-While any sigil is open, routine status events update the dashboard's in-memory
-state without rebuilding card DOM; closing the panel or changing a view control
-renders the latest state. This keeps the SVG continuously attached and its CSS
-timeline uninterrupted. Its phase is also synchronized to wall-clock time for
-deliberate view rebuilds. Stroke lengths are normalized in SVG path units,
-keeping short and long sigils equally smooth.
+Routine status events update cards around open sigil and chart panels. The
+living SVG or iframe node remains continuously attached while surrounding
+metrics, sell checks, positions, balances, events, and timestamps refresh.
+Automatic updates keep the current card order while live panels exist so an
+iframe is never reparented; explicit sorting may rebuild the view. Sigil phase
+is synchronized to wall-clock time for deliberate rebuilds. Stroke lengths are
+normalized in SVG path units, keeping short and long sigils equally smooth.
 
 The **View Large** control beside the animation toggle opens a viewport-fitted
 theater view over a darkened dashboard. It renders a wall-clock-synchronized
