@@ -29,6 +29,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('<option value="symbol">Symbol</option>', body)
         self.assertIn("mode === 'symbol'", body)
 
+    def test_dashboard_offers_market_cap_sort(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<option value="market-cap">Market Cap</option>', body)
+        self.assertIn("mode === 'market-cap'", body)
+        self.assertIn("(marketData[a] || {}).value_usd", body)
+        self.assertIn("if (sortBots.value === 'market-cap') render(true)", body)
+
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("sigil-current", body)
