@@ -302,10 +302,13 @@ metrics, sell checks, positions, balances, events, and timestamps refresh.
 Incoming reports are briefly coalesced and routine rendering touches only the
 cards whose bot state changed, preventing fleet-wide layout work from starving
 the CSS animation timeline.
-Automatic updates keep the current card order while live panels exist so an
-iframe is never reparented; explicit sorting may rebuild the view. Sigil phase
-is synchronized to wall-clock time for deliberate rebuilds. Stroke lengths are
-normalized in SVG path units, keeping short and long sigils equally smooth.
+Automatic updates apply the active sort through each grid item's CSS `order`,
+so cards move visually without reparenting their SVG or iframe DOM nodes. Sigil
+phase is synchronized to wall-clock time exactly once per living SVG; routine
+wiring never rewrites that phase or restarts its CSS timeline. Filters hide
+cards containing live panels without detaching them, then reveal and update the
+same nodes when the filter is cleared. Stroke lengths are normalized in SVG
+path units, keeping short and long sigils equally smooth.
 
 The **View Large** control beside the animation toggle opens a viewport-fitted
 theater view over a darkened dashboard. It renders a wall-clock-synchronized

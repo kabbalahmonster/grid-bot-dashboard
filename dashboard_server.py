@@ -1181,7 +1181,10 @@ DASHBOARD_HTML = """\
 
   function wireSigilAnimation(panel, stage) {
     const svg = stage.querySelector('svg');
-    if (svg) svg.style.setProperty('--sigil-clock-phase', '-' + (Date.now() / 1000).toFixed(3) + 's');
+    if (svg && stage.dataset.clockSynced !== 'true') {
+      svg.style.setProperty('--sigil-clock-phase', '-' + (Date.now() / 1000).toFixed(3) + 's');
+      stage.dataset.clockSynced = 'true';
+    }
     if (stage.dataset.animationWired !== 'true') {
       stage.dataset.animationWired = 'true';
       stage.addEventListener('click', toggleSigilAnimation);
@@ -1454,10 +1457,16 @@ DASHBOARD_HTML = """\
     template.innerHTML = html;
     const freshGrid = template.content.querySelector('.grid');
     if (!freshGrid) return false;
+    currentGrid.hidden = false;
     const freshCards = new Map();
     freshGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) { freshCards.set(card.dataset.botId, card); });
     const currentCards = new Map();
     currentGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) { currentCards.set(card.dataset.botId, card); });
+    const visualOrder = new Map();
+    freshGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card, index) { visualOrder.set(card.dataset.botId, index); });
+    currentCards.forEach(function(card, botId) {
+      if (visualOrder.has(botId)) card.style.order = String(visualOrder.get(botId));
+    });
     const botIdsToUpdate = changedBotIds && changedBotIds.size
       ? changedBotIds
       : new Set(Array.from(currentCards.keys()).concat(Array.from(freshCards.keys())));
@@ -1465,13 +1474,19 @@ DASHBOARD_HTML = """\
       const card = currentCards.get(botId);
       const freshCard = freshCards.get(botId);
       if (!card) {
-        if (freshCards.has(botId)) currentGrid.appendChild(freshCards.get(botId));
+        if (freshCards.has(botId)) {
+          const newCard = freshCards.get(botId);
+          newCard.style.order = String(visualOrder.get(botId));
+          currentGrid.appendChild(newCard);
+        }
         return;
       }
       if (!freshCard) {
-        if (!card.querySelector('details.chart-panel[open], details.sigil-panel[open]')) card.remove();
+        if (card.querySelector('details.chart-panel[open], details.sigil-panel[open]')) card.hidden = true;
+        else card.remove();
         return;
       }
+      card.hidden = false;
       updateCardAroundLivePanels(card, freshCard);
     });
     return true;
@@ -1601,6 +1616,13 @@ DASHBOARD_HTML = """\
     });
     updateSummary(botIds);
     if (botIds.length === 0) {
+      const liveGrid = container.querySelector('.grid');
+      if (liveGrid && container.querySelector('details.chart-panel[open], details.sigil-panel[open]')) {
+        liveGrid.hidden = true;
+        if (!emptyState.isConnected) container.appendChild(emptyState);
+        emptyState.style.display = '';
+        return;
+      }
       container.innerHTML = '';
       container.appendChild(emptyState);
       emptyState.style.display = '';
@@ -1817,7 +1839,7 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
-    const preservedLivePanels = !force && updateGridPreservingLivePanels(html, changedBotIds);
+    const preservedLivePanels = updateGridPreservingLivePanels(html, force ? null : changedBotIds);
     if (!preservedLivePanels) {
       const preservedSigilStages = new Map();
       container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {

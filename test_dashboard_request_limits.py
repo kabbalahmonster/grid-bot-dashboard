@@ -54,7 +54,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("updateGridPreservingLivePanels", body)
         self.assertIn("updateCardAroundLivePanels", body)
-        self.assertIn("!force && updateGridPreservingLivePanels(html, changedBotIds)", body)
+        self.assertIn("updateGridPreservingLivePanels(html, force ? null : changedBotIds)", body)
         self.assertIn("details.chart-panel[open], details.sigil-panel[open]", body)
         self.assertIn("currentCard.insertBefore(freshChildren[index], livePanel)", body)
         self.assertIn("currentCard.appendChild(freshChildren[index])", body)
@@ -65,6 +65,10 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("render(false, changedBotIds)", body)
         self.assertIn("updateGridPreservingLivePanels(html, changedBotIds)", body)
         self.assertIn("const card = currentCards.get(botId)", body)
+        self.assertIn("stage.dataset.clockSynced", body)
+        self.assertIn("const visualOrder = new Map()", body)
+        self.assertIn("card.style.order = String(visualOrder.get(botId))", body)
+        self.assertIn("card.hidden = true", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
