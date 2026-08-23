@@ -304,6 +304,10 @@ cards whose bot state changed, preventing fleet-wide layout work from starving
 the CSS animation timeline. When an animated sigil is visible, routine batches
 also wait for browser idle time (with a bounded timeout), and card/stage paint
 containment prevents unrelated dashboard changes from invalidating the sigil.
+Changed cards are morphed in place: equal DOM subtrees are skipped, text and
+attributes change without replacement, and structural edits remain confined to
+the segment where they occurred. Open sigil and chart panels are immutable
+boundaries that the morph never enters.
 Automatic updates apply the active sort through each grid item's CSS `order`,
 so cards move visually without reparenting their SVG or iframe DOM nodes;
 unchanged ranks cause no style mutation at all. Sigil

@@ -1437,15 +1437,60 @@ DASHBOARD_HTML = """\
   }
 
   function livePanelKey(element) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) return '';
     if (element.matches('details.chart-panel[open][data-chart-key]')) return 'chart:' + element.dataset.chartKey;
     if (element.matches('details.sigil-panel[open][data-sigil-key]')) return 'sigil:' + element.dataset.sigilKey;
     return '';
   }
 
+  function preserveRuntimeAttribute(element, name) {
+    if (name === 'style' && element.matches('.card[data-bot-id]')) return true;
+    return name === 'src' && element.matches('iframe.dex-chart') ||
+      name === 'data-chart-wired' || name === 'data-sigil-wired' ||
+      name === 'data-animation-wired' || name === 'data-view-wired' ||
+      name === 'data-rendered' || name === 'data-clock-synced';
+  }
+
+  function morphNode(currentNode, freshNode) {
+    if (currentNode.isEqualNode(freshNode) || livePanelKey(currentNode)) return currentNode;
+    if (currentNode.nodeType !== freshNode.nodeType ||
+        (currentNode.nodeType === Node.ELEMENT_NODE && currentNode.tagName !== freshNode.tagName)) {
+      currentNode.replaceWith(freshNode);
+      return freshNode;
+    }
+    if (currentNode.nodeType === Node.TEXT_NODE) {
+      if (currentNode.nodeValue !== freshNode.nodeValue) currentNode.nodeValue = freshNode.nodeValue;
+      return currentNode;
+    }
+    Array.from(currentNode.attributes).forEach(function(attribute) {
+      if (!freshNode.hasAttribute(attribute.name) && !preserveRuntimeAttribute(currentNode, attribute.name)) {
+        currentNode.removeAttribute(attribute.name);
+      }
+    });
+    Array.from(freshNode.attributes).forEach(function(attribute) {
+      if (preserveRuntimeAttribute(currentNode, attribute.name)) return;
+      if (currentNode.getAttribute(attribute.name) !== attribute.value) currentNode.setAttribute(attribute.name, attribute.value);
+    });
+    const currentChildren = Array.from(currentNode.childNodes);
+    const freshChildren = Array.from(freshNode.childNodes);
+    const sharedLength = Math.min(currentChildren.length, freshChildren.length);
+    for (let index = 0; index < sharedLength; index++) morphNode(currentChildren[index], freshChildren[index]);
+    for (let index = currentChildren.length - 1; index >= freshChildren.length; index--) currentChildren[index].remove();
+    for (let index = sharedLength; index < freshChildren.length; index++) currentNode.appendChild(freshChildren[index]);
+    return currentNode;
+  }
+
+  function morphRange(currentNodes, freshNodes, boundary) {
+    const sharedLength = Math.min(currentNodes.length, freshNodes.length);
+    for (let index = 0; index < sharedLength; index++) morphNode(currentNodes[index], freshNodes[index]);
+    for (let index = currentNodes.length - 1; index >= freshNodes.length; index--) currentNodes[index].remove();
+    for (let index = sharedLength; index < freshNodes.length; index++) boundary.parentNode.insertBefore(freshNodes[index], boundary);
+  }
+
   function updateCardAroundLivePanels(currentCard, freshCard) {
     const livePanels = Array.from(currentCard.children).filter(function(child) { return Boolean(livePanelKey(child)); });
     if (!livePanels.length) {
-      currentCard.replaceWith(freshCard);
+      morphNode(currentCard, freshCard);
       return;
     }
     const freshChildren = Array.from(freshCard.children);
@@ -1458,24 +1503,27 @@ DASHBOARD_HTML = """\
     let oldStart = currentCard.firstChild;
     livePanels.forEach(function(livePanel, panelIndex) {
       const freshIndex = freshIndexes[panelIndex];
+      const currentSegment = [];
       let oldNode = oldStart;
       while (oldNode && oldNode !== livePanel) {
-        const next = oldNode.nextSibling;
-        oldNode.remove();
-        oldNode = next;
+        currentSegment.push(oldNode);
+        oldNode = oldNode.nextSibling;
       }
-      for (let index = freshStart; index < freshIndex; index++) currentCard.insertBefore(freshChildren[index], livePanel);
+      morphRange(currentSegment, freshChildren.slice(freshStart, freshIndex), livePanel);
       oldStart = livePanel.nextSibling;
       freshStart = freshIndex + 1;
     });
+    const trailingCurrent = [];
     let oldNode = oldStart;
     while (oldNode) {
-      const next = oldNode.nextSibling;
-      oldNode.remove();
-      oldNode = next;
+      trailingCurrent.push(oldNode);
+      oldNode = oldNode.nextSibling;
     }
-    for (let index = freshStart; index < freshChildren.length; index++) currentCard.appendChild(freshChildren[index]);
-    currentCard.className = freshCard.className;
+    const trailingBoundary = document.createComment('card-end');
+    currentCard.appendChild(trailingBoundary);
+    morphRange(trailingCurrent, freshChildren.slice(freshStart), trailingBoundary);
+    trailingBoundary.remove();
+    if (currentCard.className !== freshCard.className) currentCard.className = freshCard.className;
   }
 
   function updateGridPreservingLivePanels(html, changedBotIds) {
