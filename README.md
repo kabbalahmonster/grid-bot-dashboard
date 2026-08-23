@@ -261,6 +261,16 @@ Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_star
 
 `sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, compact quoted/minimum ETH values. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
+Each card independently displays Dexscreener **Market Cap** immediately above
+AVG P&L. When Dexscreener does not provide circulating market cap but does
+provide fully diluted valuation, the card says **FDV** instead; the two values
+are never silently conflated. The browser polls one batched dashboard endpoint
+every 60 seconds, and the server deduplicates identical chain/token pairs and
+caches the preferred WETH-pair result. Market values update their existing DOM
+nodes without rebuilding cards, preserving smooth mobile scrolling and zoom.
+Temporary API failures retain stale successful cache values; unavailable values
+render as an em dash.
+
 Experimental bot payloads may include `sigil: {version, method, key, seed}`. For the `spare-wheel-v1` method, each card receives a collapsed **Sigil** panel. Opening it locally constructs a deterministic inline SVG from the reduced consonant key and SHA-256 seed. The panel performs no network request and ignores malformed or unknown methods. The readable intention is never sent to or stored by the dashboard.
 
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
@@ -290,6 +300,7 @@ curl -X POST https://doomdash.ca/api/status \
 | `DELETE` | `/api/bots/<bot_id>` | `X-API-Key` | Remove bot and history |
 | `GET` | `/api/stream` | No | SSE update stream |
 | `GET` | `/api/health` | No | Health and counts |
+| `GET` | `/api/dexscreener/market-data` | No | Batched cached market cap/FDV for reported bots |
 | `GET` | `/api/dexscreener/chart-url` | No | Resolve preferred WETH pair embed URL |
 
 SSE events:
@@ -302,7 +313,11 @@ SSE events:
 
 Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Frequent updates are coalesced and flushed every `STATE_FLUSH_INTERVAL` seconds (default 15), with a final flush on normal shutdown, avoiding a complete history rewrite for every status request. Bot-side trade and Event histories are separately persisted and capped at 50 entries each. Persistent profit accounting lives in the bot's `data/profit_totals.json`.
 
-Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is opened. The server resolves the token's preferred WETH pair without an API key and caches the pair for five minutes. Routine SSE updates do not reload an open chart.
+Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is
+opened. Chart resolution and card market values share the token's preferred
+WETH-pair cache. The cache refreshes at most once per minute per unique
+chain/token pair and serves its last successful value as stale during temporary
+Dexscreener failures. Routine SSE updates do not reload an open chart.
 
 The fleet toolbar can search bot IDs, display names, groups, and provider names;
 filter by chain and swap provider (including older bots with an unreported provider);

@@ -31,6 +31,7 @@ import threading
 import time
 import uuid
 from collections import defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from functools import wraps
 from urllib.parse import urlencode
@@ -57,7 +58,7 @@ RATE_LIMIT_MAX_REQUESTS = int(os.environ.get("RATE_LIMIT_MAX_REQUESTS", "600"))
 SSE_KEEPALIVE_INTERVAL = 15     # seconds
 SSE_CLIENT_QUEUE_SIZE = 200     # max queued messages per SSE client
 DEXSCREENER_TIMEOUT = 8
-DEXSCREENER_CACHE_TTL = 300
+DEXSCREENER_CACHE_TTL = 60
 ETH_PRICE_TIMEOUT = 8
 ETH_PRICE_CACHE_TTL = 60
 STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
@@ -143,8 +144,8 @@ _sse_lock = threading.Lock()
 _rate_store: dict[str, deque] = defaultdict(lambda: deque(maxlen=RATE_LIMIT_MAX_REQUESTS + 1))
 _rate_lock = threading.Lock()
 
-# (chain_id, token_address) -> (cached_at_monotonic, pair_address)
-_dexscreener_pair_cache: dict[tuple[int, str], tuple[float, str]] = {}
+# (chain_id, token_address) -> (cached_at_monotonic, selected pair market data)
+_dexscreener_pair_cache: dict[tuple[int, str], tuple[float, dict]] = {}
 _dexscreener_lock = threading.Lock()
 
 # Cached ETH fiat prices: (cached_at_monotonic, {"usd": float, "cad": float})
@@ -593,6 +594,91 @@ def eth_price():
             return jsonify({"error": "ETH price temporarily unavailable"}), 503
 
 
+def _dexscreener_pair_data(chain_id, token_address):
+    """Return cached preferred-pair data, preserving stale data on API failure."""
+    chain_slug = CHAIN_SLUGS.get(chain_id)
+    if not chain_slug:
+        raise ValueError(f"Unsupported chain_id: {chain_id}")
+    cache_key = (chain_id, token_address.lower())
+    now = time.monotonic()
+    with _dexscreener_lock:
+        cached = _dexscreener_pair_cache.get(cache_key)
+    if cached and now - cached[0] < DEXSCREENER_CACHE_TTL:
+        return {**cached[1], "cached": True, "stale": False}
+
+    api_url = f"https://api.dexscreener.com/token-pairs/v1/{chain_slug}/{token_address}"
+    try:
+        response = http_requests.get(api_url, timeout=DEXSCREENER_TIMEOUT)
+        response.raise_for_status()
+        pairs = response.json()
+        if not isinstance(pairs, list) or not pairs:
+            raise LookupError("No Dexscreener pair found")
+
+        def pair_rank(pair):
+            quote_symbol = str(pair.get("quoteToken", {}).get("symbol", "")).upper()
+            base_symbol = str(pair.get("baseToken", {}).get("symbol", "")).upper()
+            is_weth = quote_symbol == "WETH" or base_symbol == "WETH"
+            liquidity = float(pair.get("liquidity", {}).get("usd") or 0)
+            return (is_weth, liquidity)
+
+        selected = max(pairs, key=pair_rank)
+        pair_address = str(selected.get("pairAddress", ""))
+        if not pair_address:
+            raise LookupError("Dexscreener pair response missing address")
+        market_cap = selected.get("marketCap")
+        fdv = selected.get("fdv")
+        value = market_cap if market_cap is not None else fdv
+        label = "Market Cap" if market_cap is not None else ("FDV" if fdv is not None else "Market Cap")
+        try:
+            value = float(value) if value is not None else None
+        except (TypeError, ValueError):
+            value = None
+        data = {"pair_address": pair_address, "label": label, "value_usd": value}
+        with _dexscreener_lock:
+            _dexscreener_pair_cache[cache_key] = (now, data)
+        return {**data, "cached": False, "stale": False}
+    except (http_requests.RequestException, ValueError, LookupError) as exc:
+        if cached:
+            logger.warning("Dexscreener refresh failed; serving stale pair data: %s", exc)
+            return {**cached[1], "cached": True, "stale": True}
+        raise
+
+
+@app.route("/api/dexscreener/market-data", methods=["GET"])
+def dexscreener_market_data():
+    """Return batched cached market cap/FDV data for currently reported bots."""
+    with _lock:
+        reported = {
+            bot_id: (state.get("chain_id"), str(state.get("token_address", "")).strip())
+            for bot_id, state in bot_states.items()
+        }
+    token_bots = defaultdict(list)
+    for bot_id, (chain_id, token_address) in reported.items():
+        try:
+            chain_id = int(chain_id)
+        except (TypeError, ValueError):
+            continue
+        if chain_id in CHAIN_SLUGS and re.fullmatch(r"0x[0-9a-fA-F]{40}", token_address):
+            token_bots[(chain_id, token_address.lower())].append(bot_id)
+
+    results = {}
+    with ThreadPoolExecutor(max_workers=min(8, max(1, len(token_bots)))) as executor:
+        futures = {
+            executor.submit(_dexscreener_pair_data, chain, token): (chain, token)
+            for chain, token in token_bots
+        }
+        for future in as_completed(futures):
+            key = futures[future]
+            try:
+                data = future.result()
+            except Exception as exc:
+                logger.warning("Dexscreener market-data lookup failed for %s: %s", key, exc)
+                continue
+            for bot_id in token_bots[key]:
+                results[bot_id] = data
+    return jsonify({"bots": results}), 200
+
+
 @app.route("/api/dexscreener/chart-url", methods=["GET"])
 def dexscreener_chart_url():
     """Resolve the preferred WETH pair and return its direct embed URL."""
@@ -607,43 +693,18 @@ def dexscreener_chart_url():
         return jsonify({"error": "Invalid token_address"}), 400
     if wallet_address and not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet_address):
         return jsonify({"error": "Invalid wallet_address"}), 400
-
-    chain_slug = CHAIN_SLUGS.get(chain_id)
-    if not chain_slug:
+    if chain_id not in CHAIN_SLUGS:
         return jsonify({"error": f"Unsupported chain_id: {chain_id}"}), 400
 
-    cache_key = (chain_id, token_address.lower())
-    now = time.monotonic()
-    with _dexscreener_lock:
-        cached = _dexscreener_pair_cache.get(cache_key)
-    pair_address = cached[1] if cached and now - cached[0] < DEXSCREENER_CACHE_TTL else ""
-
-    if not pair_address:
-        api_url = f"https://api.dexscreener.com/token-pairs/v1/{chain_slug}/{token_address}"
-        try:
-            response = http_requests.get(api_url, timeout=DEXSCREENER_TIMEOUT)
-            response.raise_for_status()
-            pairs = response.json()
-        except (http_requests.RequestException, ValueError) as exc:
-            logger.warning("Dexscreener pair lookup failed: %s", exc)
-            return jsonify({"error": "Dexscreener pair lookup failed"}), 502
-
-        if not isinstance(pairs, list) or not pairs:
-            return jsonify({"error": "No Dexscreener pair found"}), 404
-
-        def pair_rank(pair):
-            quote_symbol = str(pair.get("quoteToken", {}).get("symbol", "")).upper()
-            base_symbol = str(pair.get("baseToken", {}).get("symbol", "")).upper()
-            is_weth = quote_symbol == "WETH" or base_symbol == "WETH"
-            liquidity = float(pair.get("liquidity", {}).get("usd") or 0)
-            return (is_weth, liquidity)
-
-        selected = max(pairs, key=pair_rank)
-        pair_address = str(selected.get("pairAddress", ""))
-        if not pair_address:
-            return jsonify({"error": "Dexscreener pair response missing address"}), 502
-        with _dexscreener_lock:
-            _dexscreener_pair_cache[cache_key] = (now, pair_address)
+    try:
+        pair_data = _dexscreener_pair_data(chain_id, token_address)
+    except LookupError:
+        return jsonify({"error": "No Dexscreener pair found"}), 404
+    except (http_requests.RequestException, ValueError) as exc:
+        logger.warning("Dexscreener pair lookup failed: %s", exc)
+        return jsonify({"error": "Dexscreener pair lookup failed"}), 502
+    pair_address = pair_data["pair_address"]
+    chain_slug = CHAIN_SLUGS[chain_id]
 
     params = {"embed": "1", "theme": "dark", "info": "0"}
     if wallet_address:
@@ -832,6 +893,7 @@ DASHBOARD_HTML = """\
   const sortDirection = document.getElementById('sort-direction');
   const notificationsButton = document.getElementById('notifications');
   const bots = {};
+  const marketData = {};
   const openMoreInfo = new Set();
   const openPositions = new Set();
   const openRawJson = new Set();
@@ -867,6 +929,7 @@ DASHBOARD_HTML = """\
   let renderPendingForViewport = false;
   let renderPendingForce = false;
   let touchInteractionActive = false;
+  let marketDataTimer = null;
 
   function markViewportBusy() {
     viewportBusy = true;
@@ -933,6 +996,7 @@ DASHBOARD_HTML = """\
           bots[botId] = data.bots[botId];
         });
         render();
+        scheduleMarketDataFetch();
       }
     });
 
@@ -941,6 +1005,7 @@ DASHBOARD_HTML = """\
       const entry = JSON.parse(e.data);
       bots[entry.bot_id] = entry.data || entry;
       render();
+      scheduleMarketDataFetch();
     });
 
     source.addEventListener('remove', function(e) {
@@ -1107,6 +1172,49 @@ DASHBOARD_HTML = """\
   function shortenAddress(address) {
     const value = String(address || '');
     return value.length > 9 ? value.slice(0, 5) + '…' + value.slice(-3) : value;
+  }
+
+  function formatCompactUsd(value) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount)) return '—';
+    const absolute = Math.abs(amount);
+    const units = [[1e12, 'T'], [1e9, 'B'], [1e6, 'M'], [1e3, 'K']];
+    for (const unit of units) {
+      if (absolute >= unit[0]) {
+        const scaled = amount / unit[0];
+        return '$' + scaled.toFixed(scaled >= 100 ? 0 : (scaled >= 10 ? 1 : 2)).replace(/\\.0+$|(\\.[0-9])0$/, '$1') + unit[1];
+      }
+    }
+    return '$' + amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+
+  function updateMarketDataNodes() {
+    container.querySelectorAll('[data-market-key]').forEach(function(row) {
+      const botId = decodeURIComponent(row.dataset.marketKey || '');
+      const data = marketData[botId];
+      if (!data || !Number.isFinite(Number(data.value_usd))) return;
+      row.querySelector('.label').textContent = data.label === 'FDV' ? 'FDV' : 'Market Cap';
+      row.querySelector('.value').textContent = formatCompactUsd(data.value_usd);
+      row.classList.toggle('stale', Boolean(data.stale));
+    });
+  }
+
+  function fetchMarketData() {
+    marketDataTimer = null;
+    if (!Object.keys(bots).length) return;
+    fetch('/api/dexscreener/market-data')
+      .then(function(response) { if (!response.ok) throw new Error(response.status); return response.json(); })
+      .then(function(data) {
+        Object.keys(data.bots || {}).forEach(function(botId) { marketData[botId] = data.bots[botId]; });
+        // Mutate only these value nodes. Do not rebuild cards during scrolling or zooming.
+        updateMarketDataNodes();
+      })
+      .catch(function() {});
+  }
+
+  function scheduleMarketDataFetch() {
+    if (marketDataTimer !== null) return;
+    marketDataTimer = setTimeout(fetchMarketData, 250);
   }
 
   function topPositionPnl(state) {
@@ -1321,6 +1429,10 @@ DASHBOARD_HTML = """\
         return '';
       }
 
+      const market = marketData[botId] || {};
+      const marketLabel = market.label === 'FDV' ? 'FDV' : 'Market Cap';
+      html += '<div class="metric market-data' + (market.stale ? ' stale' : '') + '" data-market-key="' + esc(botKey) + '"><span class="label">' +
+        esc(marketLabel) + '</span><span class="value">' + esc(formatCompactUsd(market.value_usd)) + '</span></div>';
       metrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
@@ -1469,6 +1581,7 @@ DASHBOARD_HTML = """\
   }
   fetchEthPrices();
   setInterval(fetchEthPrices, 60000);
+  setInterval(fetchMarketData, 60000);
   summaryBar.addEventListener('click', function(event) {
     if (!event.target.closest('[data-currency-toggle]')) return;
     profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
@@ -1479,6 +1592,7 @@ DASHBOARD_HTML = """\
     if (document.visibilityState === 'visible') {
       reconnectNow();
       fetchEthPrices();
+      fetchMarketData();
     }
   });
   window.addEventListener('pageshow', function(event) {
