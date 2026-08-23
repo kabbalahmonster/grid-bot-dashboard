@@ -841,7 +841,7 @@ DASHBOARD_HTML = """\
   .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
   .sigil-stage[role="button"] { cursor: pointer; }
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
-  .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
+  .sigil-stage svg { width: min(100%, 360px); height: auto; }
   .sigil-controls { display: flex; justify-content: center; gap: 0.4rem; }
   .sigil-animation-toggle, .sigil-view-large { margin-top: 0.4rem; }
   body.sigil-modal-open { overflow: hidden; }
@@ -849,7 +849,7 @@ DASHBOARD_HTML = """\
   .sigil-modal[hidden] { display: none; }
   .sigil-modal-content { position: relative; display: grid; place-items: center; width: min(94vw, calc(94vh - 2rem)); aspect-ratio: 1; border: 1px solid #475569; border-radius: 0.75rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.72); overflow: hidden; }
   .sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; }
-  .sigil-modal-stage svg { width: 100%; height: 100%; max-width: none; filter: drop-shadow(0 0 14px rgba(250, 204, 21, 0.3)); }
+  .sigil-modal-stage svg { width: 100%; height: 100%; max-width: none; }
   .sigil-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
   .sigil-modal-close:hover, .sigil-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
@@ -864,9 +864,6 @@ DASHBOARD_HTML = """\
   @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
-  @media (max-width: 640px), (pointer: coarse) {
-    .sigil-stage svg, .sigil-modal-stage svg { filter: none; }
-  }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
   .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }

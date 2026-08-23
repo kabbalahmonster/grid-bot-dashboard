@@ -64,6 +64,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('pathLength="1"', body)
         self.assertIn("const preservedSigilStages = new Map()", body)
         self.assertIn("placeholder.replaceWith(preservedStage)", body)
+        self.assertNotIn("drop-shadow", body)
 
     def test_sigil_theater_mode_is_accessible_and_viewport_fitted(self):
         body = self.client.get("/").get_data(as_text=True)

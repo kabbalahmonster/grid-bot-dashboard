@@ -293,6 +293,9 @@ sigils near the viewport animate through `IntersectionObserver`, and all sigil
 motion pauses while the page is hidden or during scrolling, touch gestures,
 and pinch-zoom settling. The animation uses existing inline SVG and CSS only:
 no network request, canvas loop, video, or per-frame JavaScript is involved.
+The animated SVG remains filter-free at every viewport size; the static radial
+stage background supplies ambience without forcing the browser to rerasterize
+a moving drop shadow on every frame.
 While any sigil is open, routine status events update the dashboard's in-memory
 state without rebuilding card DOM; closing the panel or changing a view control
 renders the latest state. This keeps the SVG continuously attached and its CSS
