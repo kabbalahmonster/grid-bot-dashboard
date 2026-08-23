@@ -1442,8 +1442,10 @@ DASHBOARD_HTML = """\
     });
     // Never replace a living chart or sigil during routine status events. In
     // particular, detaching an SVG makes browsers restart its CSS timeline.
-    // The latest status remains in memory and renders after the panel closes
-    // or the user explicitly changes a view control (which calls force).
+    // The latest status remains in memory and renders on the next routine
+    // status event after live panels close, or when the user explicitly
+    // changes a view control (which calls force). Panel closure itself never
+    // forces a full-grid rebuild.
     const hasOpenSigil = Boolean(container.querySelector('details.sigil-panel[open]'));
     if ((openCharts.size > 0 || hasOpenSigil) && !force) return;
 
@@ -1767,10 +1769,7 @@ DASHBOARD_HTML = """\
             frame.replaceWith(document.createTextNode(error.message));
           });
       };
-      panel.addEventListener('toggle', function() {
-        if (panel.open) loadChart();
-        else if (!container.querySelector('details.sigil-panel[open]')) render(true);
-      });
+      panel.addEventListener('toggle', loadChart);
       loadChart();
     });
     container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
@@ -1786,10 +1785,7 @@ DASHBOARD_HTML = """\
         }
         wireSigilAnimation(panel, stage);
       };
-      panel.addEventListener('toggle', function() {
-        if (panel.open) drawSigil();
-        else if (!container.querySelector('details.chart-panel[open]')) render(true);
-      });
+      panel.addEventListener('toggle', drawSigil);
       drawSigil();
     });
   }

@@ -43,11 +43,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("((marketData[a] || {}).price_change || {}).h24", body)
         self.assertIn("sortBots.value === 'day-movement'", body)
 
-    def test_closing_sigil_does_not_reload_an_open_dexscreener_iframe(self):
+    def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
-        self.assertIn("else if (!container.querySelector('details.chart-panel[open]')) render(true)", body)
-        self.assertIn("if (panel.open) loadChart();", body)
-        self.assertIn("else if (!container.querySelector('details.sigil-panel[open]')) render(true)", body)
+        self.assertIn("panel.addEventListener('toggle', loadChart)", body)
+        self.assertIn("panel.addEventListener('toggle', drawSigil)", body)
+        self.assertNotIn("else if (!container.querySelector('details.chart-panel[open]')) render(true)", body)
+        self.assertNotIn("else if (!container.querySelector('details.sigil-panel[open]')) render(true)", body)
+        self.assertIn("Panel closure itself never", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
