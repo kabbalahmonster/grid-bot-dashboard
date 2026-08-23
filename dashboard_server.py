@@ -777,7 +777,7 @@ DASHBOARD_HTML = """\
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
   .chain-badge, .provider-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
-  .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
   .capacity-alert { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
@@ -838,7 +838,7 @@ DASHBOARD_HTML = """\
   details.more-info[open] summary { margin-bottom: 0.35rem; }
   details.chart-panel { margin-top: 0.75rem; }
   details.sigil-panel { margin-top: 0.75rem; }
-  .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; }
+  .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; contain: layout paint style; isolation: isolate; }
   .sigil-stage[role="button"] { cursor: pointer; }
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; }
@@ -981,6 +981,7 @@ DASHBOARD_HTML = """\
   let touchInteractionActive = false;
   let marketDataTimer = null;
   let routineRenderTimer = null;
+  let routineRenderIdleCallback = null;
   const pendingChangedBotIds = new Set();
   const sigilMotionPreference = localStorage.getItem('dashboard-sigil-animation');
   let sigilAnimationEnabled = sigilMotionPreference === 'on' ||
@@ -1399,12 +1400,20 @@ DASHBOARD_HTML = """\
 
   function scheduleRoutineRender(botId) {
     if (botId) pendingChangedBotIds.add(botId);
-    if (routineRenderTimer !== null) return;
+    if (routineRenderTimer !== null || routineRenderIdleCallback !== null) return;
     routineRenderTimer = setTimeout(function() {
       routineRenderTimer = null;
-      const changedBotIds = new Set(pendingChangedBotIds);
-      pendingChangedBotIds.clear();
-      render(false, changedBotIds);
+      const flush = function() {
+        routineRenderIdleCallback = null;
+        const changedBotIds = new Set(pendingChangedBotIds);
+        pendingChangedBotIds.clear();
+        render(false, changedBotIds);
+      };
+      if ('requestIdleCallback' in window && container.querySelector('.sigil-stage.animation-enabled.is-visible')) {
+        routineRenderIdleCallback = window.requestIdleCallback(flush, { timeout: 1200 });
+      } else {
+        flush();
+      }
     }, 750);
   }
 
@@ -1465,7 +1474,9 @@ DASHBOARD_HTML = """\
     const visualOrder = new Map();
     freshGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card, index) { visualOrder.set(card.dataset.botId, index); });
     currentCards.forEach(function(card, botId) {
-      if (visualOrder.has(botId)) card.style.order = String(visualOrder.get(botId));
+      if (!visualOrder.has(botId)) return;
+      const nextOrder = String(visualOrder.get(botId));
+      if (card.style.order !== nextOrder) card.style.order = nextOrder;
     });
     const botIdsToUpdate = changedBotIds && changedBotIds.size
       ? changedBotIds
@@ -1496,6 +1507,11 @@ DASHBOARD_HTML = """\
     if (force && routineRenderTimer !== null) {
       clearTimeout(routineRenderTimer);
       routineRenderTimer = null;
+      pendingChangedBotIds.clear();
+    }
+    if (force && routineRenderIdleCallback !== null) {
+      window.cancelIdleCallback(routineRenderIdleCallback);
+      routineRenderIdleCallback = null;
       pendingChangedBotIds.clear();
     }
     // Replacing the full fleet DOM during a touch-scroll causes visible frame

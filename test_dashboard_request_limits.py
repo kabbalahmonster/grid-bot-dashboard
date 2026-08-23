@@ -67,8 +67,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("const card = currentCards.get(botId)", body)
         self.assertIn("stage.dataset.clockSynced", body)
         self.assertIn("const visualOrder = new Map()", body)
-        self.assertIn("card.style.order = String(visualOrder.get(botId))", body)
+        self.assertIn("card.style.order = nextOrder", body)
         self.assertIn("card.hidden = true", body)
+        self.assertIn("requestIdleCallback(flush, { timeout: 1200 })", body)
+        self.assertIn("routineRenderTimer !== null || routineRenderIdleCallback !== null", body)
+        self.assertIn("if (card.style.order !== nextOrder)", body)
+        self.assertIn("contain: layout paint style", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)

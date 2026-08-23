@@ -301,9 +301,12 @@ living SVG or iframe node remains continuously attached while surrounding
 metrics, sell checks, positions, balances, events, and timestamps refresh.
 Incoming reports are briefly coalesced and routine rendering touches only the
 cards whose bot state changed, preventing fleet-wide layout work from starving
-the CSS animation timeline.
+the CSS animation timeline. When an animated sigil is visible, routine batches
+also wait for browser idle time (with a bounded timeout), and card/stage paint
+containment prevents unrelated dashboard changes from invalidating the sigil.
 Automatic updates apply the active sort through each grid item's CSS `order`,
-so cards move visually without reparenting their SVG or iframe DOM nodes. Sigil
+so cards move visually without reparenting their SVG or iframe DOM nodes;
+unchanged ranks cause no style mutation at all. Sigil
 phase is synchronized to wall-clock time exactly once per living SVG; routine
 wiring never rewrites that phase or restarts its CSS timeline. Filters hide
 cards containing live panels without detaching them, then reveal and update the
