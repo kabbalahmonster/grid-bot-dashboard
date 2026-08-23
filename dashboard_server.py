@@ -843,14 +843,13 @@ DASHBOARD_HTML = """\
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
-  .sigil-stroke-base { opacity: 0.28; }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
   .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
   .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled:not(.is-visible) *,
   .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
-  @keyframes sigil-current { from { stroke-dashoffset: 0; opacity: 0.58; } to { stroke-dashoffset: -0.22; opacity: 1; } }
+  @keyframes sigil-current { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -0.22; } }
   @keyframes sigil-turn { to { transform: rotate(360deg); } }
   @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
@@ -1092,10 +1091,9 @@ DASHBOARD_HTML = """\
     let path = 'M ' + points.map(function(point) { return point[0].toFixed(1) + ' ' + point[1].toFixed(1); }).join(' L ');
     if (bytes[30] % 2) path += ' Z';
     const symmetry = 2 + (bytes[31] % 3);
-    let baseStrokes = '', currentStrokes = '';
+    let currentStrokes = '';
     for (let turn = 0; turn < symmetry; turn++) {
       const transformedPath = ' pathLength="1" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
-      baseStrokes += '<path class="sigil-stroke-base"' + transformedPath;
       currentStrokes += '<path class="sigil-stroke-current"' + transformedPath;
     }
     const first = points[0], last = points[points.length - 1];
@@ -1108,7 +1106,7 @@ DASHBOARD_HTML = """\
     return '<svg viewBox="0 0 256 256" role="img" aria-label="Deterministic prosperity sigil" style="' + animationStyle + '">' +
       '<g class="sigil-glyph">' +
       '<g class="sigil-rings" fill="none" stroke="#facc15" stroke-width="2"><circle cx="128" cy="128" r="106" opacity="0.22"/><circle cx="128" cy="128" r="42" opacity="0.16"/></g>' +
-      '<g fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + baseStrokes + currentStrokes + '</g>' +
+      '<g fill="none" stroke="#facc15" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + currentStrokes + '</g>' +
       '<g fill="#fde68a" stroke="#facc15">' + satellites + '<circle cx="' + first[0].toFixed(1) + '" cy="' + first[1].toFixed(1) + '" r="4" fill="none" stroke-width="2"/>' +
       '<path d="M ' + (last[0] - 4).toFixed(1) + ' ' + last[1].toFixed(1) + ' h 8 M ' + last[0].toFixed(1) + ' ' + (last[1] - 4).toFixed(1) + ' v 8" stroke-width="1.5"/></g>' +
       '<circle cx="128" cy="128" r="3" fill="#fff7cc"/></g></svg>';
@@ -1384,8 +1382,12 @@ DASHBOARD_HTML = """\
       if (el.open) openEvents.add(el.dataset.eventsKey);
       else openEvents.delete(el.dataset.eventsKey);
     });
-    // Avoid reloading an open third-party iframe on every bot status update.
-    if (openCharts.size > 0 && !force) return;
+    // Never replace a living chart or sigil during routine status events. In
+    // particular, detaching an SVG makes browsers restart its CSS timeline.
+    // The latest status remains in memory and renders after the panel closes
+    // or the user explicitly changes a view control (which calls force).
+    const hasOpenSigil = Boolean(container.querySelector('details.sigil-panel[open]'));
+    if ((openCharts.size > 0 || hasOpenSigil) && !force) return;
 
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
@@ -1701,7 +1703,10 @@ DASHBOARD_HTML = """\
         }
         wireSigilAnimation(panel, stage);
       };
-      panel.addEventListener('toggle', drawSigil);
+      panel.addEventListener('toggle', function() {
+        if (panel.open) drawSigil();
+        else render(true);
+      });
       drawSigil();
     });
   }
