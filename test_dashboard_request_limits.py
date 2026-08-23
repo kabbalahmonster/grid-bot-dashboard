@@ -34,7 +34,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('<option value="market-cap">Market Cap</option>', body)
         self.assertIn("mode === 'market-cap'", body)
         self.assertIn("(marketData[a] || {}).value_usd", body)
-        self.assertIn("if (sortBots.value === 'market-cap') render(true)", body)
+        self.assertIn("if (sortBots.value === 'market-cap' || sortBots.value === 'day-movement') render(true)", body)
+
+    def test_dashboard_offers_day_movement_sort(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<option value="day-movement">Day Movement</option>', body)
+        self.assertIn("mode === 'day-movement'", body)
+        self.assertIn("((marketData[a] || {}).price_change || {}).h24", body)
+        self.assertIn("sortBots.value === 'day-movement'", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
