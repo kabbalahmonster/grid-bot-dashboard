@@ -980,6 +980,8 @@ DASHBOARD_HTML = """\
   let renderPendingForce = false;
   let touchInteractionActive = false;
   let marketDataTimer = null;
+  let routineRenderTimer = null;
+  const pendingChangedBotIds = new Set();
   const sigilMotionPreference = localStorage.getItem('dashboard-sigil-animation');
   let sigilAnimationEnabled = sigilMotionPreference === 'on' ||
     (sigilMotionPreference === null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -1066,7 +1068,7 @@ DASHBOARD_HTML = """\
       if (generation !== connectionGeneration) return;
       const entry = JSON.parse(e.data);
       bots[entry.bot_id] = entry.data || entry;
-      render();
+      scheduleRoutineRender(entry.bot_id);
       scheduleMarketDataFetch();
     });
 
@@ -1392,6 +1394,17 @@ DASHBOARD_HTML = """\
     return values.length ? Math.max.apply(null, values) : null;
   }
 
+  function scheduleRoutineRender(botId) {
+    if (botId) pendingChangedBotIds.add(botId);
+    if (routineRenderTimer !== null) return;
+    routineRenderTimer = setTimeout(function() {
+      routineRenderTimer = null;
+      const changedBotIds = new Set(pendingChangedBotIds);
+      pendingChangedBotIds.clear();
+      render(false, changedBotIds);
+    }, 750);
+  }
+
   function livePanelKey(element) {
     if (element.matches('details.chart-panel[open][data-chart-key]')) return 'chart:' + element.dataset.chartKey;
     if (element.matches('details.sigil-panel[open][data-sigil-key]')) return 'sigil:' + element.dataset.sigilKey;
@@ -1434,7 +1447,7 @@ DASHBOARD_HTML = """\
     currentCard.className = freshCard.className;
   }
 
-  function updateGridPreservingLivePanels(html) {
+  function updateGridPreservingLivePanels(html, changedBotIds) {
     const currentGrid = container.querySelector('.grid');
     if (!currentGrid || !container.querySelector('details.chart-panel[open], details.sigil-panel[open]')) return false;
     const template = document.createElement('template');
@@ -1443,20 +1456,33 @@ DASHBOARD_HTML = """\
     if (!freshGrid) return false;
     const freshCards = new Map();
     freshGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) { freshCards.set(card.dataset.botId, card); });
-    currentGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) {
-      const freshCard = freshCards.get(card.dataset.botId);
+    const currentCards = new Map();
+    currentGrid.querySelectorAll(':scope > .card[data-bot-id]').forEach(function(card) { currentCards.set(card.dataset.botId, card); });
+    const botIdsToUpdate = changedBotIds && changedBotIds.size
+      ? changedBotIds
+      : new Set(Array.from(currentCards.keys()).concat(Array.from(freshCards.keys())));
+    botIdsToUpdate.forEach(function(botId) {
+      const card = currentCards.get(botId);
+      const freshCard = freshCards.get(botId);
+      if (!card) {
+        if (freshCards.has(botId)) currentGrid.appendChild(freshCards.get(botId));
+        return;
+      }
       if (!freshCard) {
         if (!card.querySelector('details.chart-panel[open], details.sigil-panel[open]')) card.remove();
         return;
       }
-      freshCards.delete(card.dataset.botId);
       updateCardAroundLivePanels(card, freshCard);
     });
-    freshCards.forEach(function(card) { currentGrid.appendChild(card); });
     return true;
   }
 
-  function render(force) {
+  function render(force, changedBotIds) {
+    if (force && routineRenderTimer !== null) {
+      clearTimeout(routineRenderTimer);
+      routineRenderTimer = null;
+      pendingChangedBotIds.clear();
+    }
     // Replacing the full fleet DOM during a touch-scroll causes visible frame
     // drops. Status objects continue updating; coalesce their visual refresh
     // until the viewport has been still for a brief moment.
@@ -1791,7 +1817,7 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
-    const preservedLivePanels = !force && updateGridPreservingLivePanels(html);
+    const preservedLivePanels = !force && updateGridPreservingLivePanels(html, changedBotIds);
     if (!preservedLivePanels) {
       const preservedSigilStages = new Map();
       container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {

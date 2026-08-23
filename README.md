@@ -299,6 +299,9 @@ a moving drop shadow on every frame.
 Routine status events update cards around open sigil and chart panels. The
 living SVG or iframe node remains continuously attached while surrounding
 metrics, sell checks, positions, balances, events, and timestamps refresh.
+Incoming reports are briefly coalesced and routine rendering touches only the
+cards whose bot state changed, preventing fleet-wide layout work from starving
+the CSS animation timeline.
 Automatic updates keep the current card order while live panels exist so an
 iframe is never reparented; explicit sorting may rebuild the view. Sigil phase
 is synchronized to wall-clock time for deliberate rebuilds. Stroke lengths are

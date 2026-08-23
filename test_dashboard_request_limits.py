@@ -54,12 +54,17 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("updateGridPreservingLivePanels", body)
         self.assertIn("updateCardAroundLivePanels", body)
-        self.assertIn("!force && updateGridPreservingLivePanels(html)", body)
+        self.assertIn("!force && updateGridPreservingLivePanels(html, changedBotIds)", body)
         self.assertIn("details.chart-panel[open], details.sigil-panel[open]", body)
         self.assertIn("currentCard.insertBefore(freshChildren[index], livePanel)", body)
         self.assertIn("currentCard.appendChild(freshChildren[index])", body)
         self.assertIn("panel.dataset.chartWired", body)
         self.assertIn("panel.dataset.sigilWired", body)
+        self.assertIn("scheduleRoutineRender(entry.bot_id)", body)
+        self.assertIn("const pendingChangedBotIds = new Set()", body)
+        self.assertIn("render(false, changedBotIds)", body)
+        self.assertIn("updateGridPreservingLivePanels(html, changedBotIds)", body)
+        self.assertIn("const card = currentCards.get(botId)", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)
