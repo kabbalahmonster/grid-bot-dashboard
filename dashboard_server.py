@@ -843,13 +843,13 @@ DASHBOARD_HTML = """\
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
   .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
-  .sigil-stage.animation-enabled .sigil-stroke { stroke-dasharray: 720; animation: sigil-inscribe var(--sigil-draw-duration) ease-in-out var(--sigil-phase) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-stroke { stroke-dasharray: 1; animation: sigil-inscribe var(--sigil-draw-duration) ease-in-out var(--sigil-phase) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-stroke-field { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear var(--sigil-phase) infinite; }
   .sigil-stage.animation-enabled .sigil-rings { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out var(--sigil-phase) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-phase)) infinite alternate; }
   .sigil-stage.animation-enabled:not(.is-visible) *,
   .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
-  @keyframes sigil-inscribe { from { stroke-dashoffset: 720; opacity: 0.22; } to { stroke-dashoffset: 0; opacity: 0.92; } }
+  @keyframes sigil-inscribe { from { stroke-dashoffset: 1; opacity: 0.22; } to { stroke-dashoffset: 0; opacity: 0.92; } }
   @keyframes sigil-turn { to { transform: rotate(360deg); } }
   @keyframes sigil-breathe { from { transform: scale(0.985); opacity: 0.58; } to { transform: scale(1.015); opacity: 1; } }
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
@@ -1093,7 +1093,7 @@ DASHBOARD_HTML = """\
     const symmetry = 2 + (bytes[31] % 3);
     let strokes = '';
     for (let turn = 0; turn < symmetry; turn++) {
-      strokes += '<path class="sigil-stroke" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
+      strokes += '<path class="sigil-stroke" pathLength="1" d="' + path + '" transform="rotate(' + ((360 / symmetry) * turn) + ' 128 128)"/>';
     }
     const first = points[0], last = points[points.length - 1];
     const satellites = points.filter(function(_, index) { return index % 3 === bytes[29] % 3; }).map(function(point, index) {
@@ -1128,16 +1128,20 @@ DASHBOARD_HTML = """\
   }
 
   function wireSigilAnimation(panel, stage) {
-    if (stage.dataset.animationWired === 'true') return;
-    stage.dataset.animationWired = 'true';
-    stage.addEventListener('click', toggleSigilAnimation);
-    stage.addEventListener('keydown', function(event) {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      toggleSigilAnimation();
-    });
+    if (stage.dataset.animationWired !== 'true') {
+      stage.dataset.animationWired = 'true';
+      stage.addEventListener('click', toggleSigilAnimation);
+      stage.addEventListener('keydown', function(event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        toggleSigilAnimation();
+      });
+    }
     const button = panel.querySelector('.sigil-animation-toggle');
-    if (button) button.addEventListener('click', toggleSigilAnimation);
+    if (button && button.dataset.animationWired !== 'true') {
+      button.dataset.animationWired = 'true';
+      button.addEventListener('click', toggleSigilAnimation);
+    }
     if (sigilVisibilityObserver) sigilVisibilityObserver.observe(stage);
     else stage.classList.add('is-visible');
     applySigilAnimationState();
@@ -1642,8 +1646,21 @@ DASHBOARD_HTML = """\
       html += '</div>';
     });
     html += '</div>';
+    const preservedSigilStages = new Map();
+    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
+      const stage = panel.querySelector('.sigil-stage[data-rendered="true"]');
+      if (!stage) return;
+      stage.remove();
+      preservedSigilStages.set(panel.dataset.sigilKey, stage);
+    });
     if (sigilVisibilityObserver) sigilVisibilityObserver.disconnect();
     container.innerHTML = html;
+    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(panel) {
+      const preservedStage = preservedSigilStages.get(panel.dataset.sigilKey);
+      const placeholder = panel.querySelector('.sigil-stage');
+      if (!preservedStage || !placeholder || preservedStage.dataset.sigilSeed !== placeholder.dataset.sigilSeed) return;
+      placeholder.replaceWith(preservedStage);
+    });
     container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
     });

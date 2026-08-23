@@ -40,6 +40,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("setSigilInteractionPaused(true)", body)
         self.assertIn("Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off')", body)
         self.assertIn('aria-label="Toggle sigil animation"', body)
+        self.assertIn('pathLength="1"', body)
+        self.assertIn("const preservedSigilStages = new Map()", body)
+        self.assertIn("placeholder.replaceWith(preservedStage)", body)
 
 
 if __name__ == "__main__":

@@ -289,6 +289,9 @@ sigils near the viewport animate through `IntersectionObserver`, and all sigil
 motion pauses while the page is hidden or during scrolling, touch gestures,
 and pinch-zoom settling. The animation uses existing inline SVG and CSS only:
 no network request, canvas loop, video, or per-frame JavaScript is involved.
+The live SVG node is preserved when status events refresh its card, so the CSS
+animation timeline continues instead of restarting. Stroke lengths are also
+normalized in SVG path units, keeping short and long sigils equally smooth.
 
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
 
