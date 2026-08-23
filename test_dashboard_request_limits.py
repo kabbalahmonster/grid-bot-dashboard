@@ -76,6 +76,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("const minimumGap = 15000", body)
         self.assertIn("nextSignature === marketDataSignature", body)
         self.assertIn("marketDataFetchInFlight", body)
+        self.assertIn("animationVisible ? 10000 : 1000", body)
+        self.assertIn("if (el.textContent !== nextText)", body)
 
     def test_sigil_animation_is_gated_and_user_controllable(self):
         body = self.client.get("/").get_data(as_text=True)

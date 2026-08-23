@@ -316,6 +316,10 @@ path units, keeping short and long sigils equally smooth.
 Client-side market-data refreshes are limited to one request per 15 seconds and
 identical responses do not trigger DOM work. The regular 60-second refresh
 remains in place; the shorter throttle only coalesces staggered bot reports.
+While a sigil is visibly animating, report-age labels tick every 10 seconds
+instead of every second and only changed text is written. Status transitions
+and offline notifications therefore remain live without a fleet-wide DOM write
+on every animation second.
 
 The **View Large** control beside the animation toggle opens a viewport-fitted
 theater view over a darkened dashboard. It renders a wall-clock-synchronized

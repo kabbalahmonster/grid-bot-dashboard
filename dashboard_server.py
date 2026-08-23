@@ -1243,25 +1243,32 @@ DASHBOARD_HTML = """\
     return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>';
   }
 
-  function reportAge(receivedAt) {
+  function reportAge(receivedAt, precisionSeconds) {
     const timestamp = Date.parse(receivedAt || '');
     if (!Number.isFinite(timestamp)) return { status: 'unknown', text: 'unknown' };
     const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    const displaySeconds = precisionSeconds > 1
+      ? Math.floor(seconds / precisionSeconds) * precisionSeconds
+      : seconds;
     let text;
-    if (seconds < 60) text = seconds + 's ago';
-    else if (seconds < 3600) text = Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's ago';
-    else text = Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm ago';
+    if (displaySeconds < 60) text = displaySeconds + 's ago';
+    else if (displaySeconds < 3600) text = Math.floor(displaySeconds / 60) + 'm ' + (displaySeconds % 60) + 's ago';
+    else text = Math.floor(displaySeconds / 3600) + 'h ' + Math.floor((displaySeconds % 3600) / 60) + 'm ago';
     return { status: seconds < 120 ? 'running' : (seconds < 300 ? 'stale' : 'offline'), text: text };
   }
 
   function refreshReportAges() {
+    const animationVisible = Boolean(document.querySelector('.sigil-stage.animation-enabled.is-visible'));
+    const precisionSeconds = animationVisible ? 10 : 1;
     container.querySelectorAll('[data-received-at]').forEach(function(el) {
-      const age = reportAge(el.dataset.receivedAt);
-      el.textContent = 'Updated ' + age.text;
+      const age = reportAge(el.dataset.receivedAt, precisionSeconds);
+      const nextText = 'Updated ' + age.text;
+      if (el.textContent !== nextText) el.textContent = nextText;
       const badge = el.closest('.card').querySelector('.badge');
       if (badge && badge.dataset.inferred === 'true') {
-        badge.className = 'badge ' + age.status;
-        badge.textContent = age.status;
+        const nextClassName = 'badge ' + age.status;
+        if (badge.className !== nextClassName) badge.className = nextClassName;
+        if (badge.textContent !== age.status) badge.textContent = age.status;
       }
       const card = el.closest('.card');
       const botId = card ? card.dataset.botId : '';
@@ -1270,6 +1277,7 @@ DASHBOARD_HTML = """\
         if (Notification.permission === 'granted') new Notification(botId + ' is offline', { body: 'Last report ' + age.text });
       } else if (age.status === 'running') notifiedOffline.delete(botId);
     });
+    window.setTimeout(refreshReportAges, animationVisible ? 10000 : 1000);
   }
 
   function updateSummary(botIds) {
@@ -1420,7 +1428,7 @@ DASHBOARD_HTML = """\
         pendingChangedBotIds.clear();
         render(false, changedBotIds);
       };
-      if ('requestIdleCallback' in window && container.querySelector('.sigil-stage.animation-enabled.is-visible')) {
+      if ('requestIdleCallback' in window && document.querySelector('.sigil-stage.animation-enabled.is-visible')) {
         routineRenderIdleCallback = window.requestIdleCallback(flush, { timeout: 1200 });
       } else {
         flush();
@@ -1999,7 +2007,7 @@ DASHBOARD_HTML = """\
     if (!('Notification' in window)) { notificationsButton.textContent = 'Alerts unsupported'; return; }
     Notification.requestPermission().then(function(permission) { notificationsButton.textContent = permission === 'granted' ? 'Offline alerts enabled' : 'Offline alerts blocked'; });
   });
-  setInterval(refreshReportAges, 1000);
+  refreshReportAges();
 })();
 </script>
 
