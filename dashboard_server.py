@@ -1303,7 +1303,7 @@ DASHBOARD_HTML = """\
     const fiatCode = profitCurrency.toUpperCase();
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
     const fiatRealizedProfit = Number.isFinite(fiatRate) ? realizedProfit * fiatRate : null;
-    summaryBar.innerHTML = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
+    const nextSummaryHtml = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
       (needsPositions.length
         ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
@@ -1318,6 +1318,7 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
+    if (summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
   }
 
   function fetchEthPrices() {
@@ -1716,6 +1717,10 @@ DASHBOARD_HTML = """\
     let html = '<div class="grid">';
     botIds.forEach(function(botId) {
       const d = bots[botId];
+      if (changedBotIds && changedBotIds.size && !changedBotIds.has(botId)) {
+        html += '<div class="card" data-bot-id="' + esc(botId) + '"></div>';
+        return;
+      }
       const age = reportAge(d.received_at);
       const status = d.status || age.status;
       const botKey = encodeURIComponent(botId);

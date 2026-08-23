@@ -308,6 +308,10 @@ Changed cards are morphed in place: equal DOM subtrees are skipped, text and
 attributes change without replacement, and structural edits remain confined to
 the segment where they occurred. Open sigil and chart panels are immutable
 boundaries that the morph never enters.
+Routine batches generate full card markup only for changed bots; unchanged bots
+contribute lightweight rank placeholders, eliminating full-fleet HTML building
+and parsing from the hot update path. The summary bar is likewise written only
+when its rendered content actually changes.
 Automatic updates apply the active sort through each grid item's CSS `order`,
 so cards move visually without reparenting their SVG or iframe DOM nodes;
 unchanged ranks cause no style mutation at all. Sigil
