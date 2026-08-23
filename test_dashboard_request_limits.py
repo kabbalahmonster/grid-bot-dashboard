@@ -51,6 +51,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("const preservedSigilStages = new Map()", body)
         self.assertIn("placeholder.replaceWith(preservedStage)", body)
 
+    def test_sigil_theater_mode_is_accessible_and_viewport_fitted(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="sigil-modal" role="dialog" aria-modal="true"', body)
+        self.assertIn('aria-label="Close enlarged sigil"', body)
+        self.assertIn('class="toggle-raw sigil-view-large"', body)
+        self.assertIn("openSigilModal(bots[botId].sigil, viewButton)", body)
+        self.assertIn("event.key === 'Escape'", body)
+        self.assertIn("event.target === sigilModal", body)
+        self.assertIn("body.sigil-modal-open { overflow: hidden; }", body)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -300,6 +300,12 @@ timeline uninterrupted. Its phase is also synchronized to wall-clock time for
 deliberate view rebuilds. Stroke lengths are normalized in SVG path units,
 keeping short and long sigils equally smooth.
 
+The **View Large** control beside the animation toggle opens a viewport-fitted
+theater view over a darkened dashboard. It renders a wall-clock-synchronized
+copy of the same deterministic SVG, so opening or closing it does not detach or
+restart the card's animation. The dialog closes from its corner button, the
+backdrop, or Escape and locks background scrolling while open.
+
 The fleet summary also aggregates fresh `capacity_warning` reports beside the offline count. When one or more running bots need capacity, an animated amber **Needs new positions** flag shows both the affected-bot count and names, so blocked buy opportunities are visible without scrolling through cards.
 
 Only `bot_id` is required by the generic server. The current bot sends `dashboard_schema_version: 1` so future dashboard revisions can distinguish payload formats safely. The current UI understands the complete schema above. `poll_interval_seconds` is rendered as **Polling** in More Info when reported. `profit_percent` is total current position value versus total cost basis. Session profit, buys, sells, and uptime reset with the bot process.

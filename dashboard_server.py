@@ -842,7 +842,16 @@ DASHBOARD_HTML = """\
   .sigil-stage[role="button"] { cursor: pointer; }
   .sigil-stage[role="button"]:focus-visible { outline: 2px solid #facc15; outline-offset: 2px; }
   .sigil-stage svg { width: min(100%, 360px); height: auto; filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.24)); }
-  .sigil-animation-toggle { display: block; margin: 0.4rem auto 0; }
+  .sigil-controls { display: flex; justify-content: center; gap: 0.4rem; }
+  .sigil-animation-toggle, .sigil-view-large { margin-top: 0.4rem; }
+  body.sigil-modal-open { overflow: hidden; }
+  .sigil-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgba(2, 6, 23, 0.88); }
+  .sigil-modal[hidden] { display: none; }
+  .sigil-modal-content { position: relative; display: grid; place-items: center; width: min(94vw, calc(94vh - 2rem)); aspect-ratio: 1; border: 1px solid #475569; border-radius: 0.75rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.72); overflow: hidden; }
+  .sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; }
+  .sigil-modal-stage svg { width: 100%; height: 100%; max-width: none; filter: drop-shadow(0 0 14px rgba(250, 204, 21, 0.3)); }
+  .sigil-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+  .sigil-modal-close:hover, .sigil-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
   .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
@@ -856,7 +865,7 @@ DASHBOARD_HTML = """\
   @keyframes sigil-node-pulse { from { opacity: 0.35; transform: scale(0.72); } to { opacity: 1; transform: scale(1.24); } }
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
   @media (max-width: 640px), (pointer: coarse) {
-    .sigil-stage svg { filter: none; }
+    .sigil-stage svg, .sigil-modal-stage svg { filter: none; }
   }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
@@ -910,6 +919,13 @@ DASHBOARD_HTML = """\
   </div>
 </div>
 
+<div class="sigil-modal" id="sigil-modal" role="dialog" aria-modal="true" aria-label="Enlarged animated sigil" hidden>
+  <div class="sigil-modal-content">
+    <button class="sigil-modal-close" type="button" aria-label="Close enlarged sigil">×</button>
+    <div class="sigil-stage sigil-modal-stage is-visible"></div>
+  </div>
+</div>
+
 <script>
 (function() {
   const container = document.getElementById('bots-container');
@@ -923,6 +939,10 @@ DASHBOARD_HTML = """\
   const providerFilter = document.getElementById('provider-filter');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
+  const sigilModal = document.getElementById('sigil-modal');
+  const sigilModalStage = sigilModal.querySelector('.sigil-modal-stage');
+  const sigilModalClose = sigilModal.querySelector('.sigil-modal-close');
+  let sigilModalReturnFocus = null;
   const notificationsButton = document.getElementById('notifications');
   const bots = {};
   const marketData = {};
@@ -1114,7 +1134,7 @@ DASHBOARD_HTML = """\
   }
 
   function applySigilAnimationState() {
-    container.querySelectorAll('.sigil-stage').forEach(function(stage) {
+    document.querySelectorAll('.sigil-stage').forEach(function(stage) {
       stage.classList.toggle('animation-enabled', sigilAnimationEnabled);
       stage.setAttribute('aria-pressed', sigilAnimationEnabled ? 'true' : 'false');
     });
@@ -1129,6 +1149,36 @@ DASHBOARD_HTML = """\
     localStorage.setItem('dashboard-sigil-animation', sigilAnimationEnabled ? 'on' : 'off');
     applySigilAnimationState();
   }
+
+  function closeSigilModal() {
+    if (sigilModal.hidden) return;
+    sigilModal.hidden = true;
+    sigilModalStage.replaceChildren();
+    document.body.classList.remove('sigil-modal-open');
+    if (sigilModalReturnFocus && sigilModalReturnFocus.isConnected) sigilModalReturnFocus.focus();
+    sigilModalReturnFocus = null;
+  }
+
+  function openSigilModal(sigil, trigger) {
+    const svg = sigilSvg(sigil);
+    if (!svg) return;
+    sigilModalReturnFocus = trigger;
+    sigilModalStage.innerHTML = svg;
+    const modalSvg = sigilModalStage.querySelector('svg');
+    if (modalSvg) modalSvg.style.setProperty('--sigil-clock-phase', '-' + (Date.now() / 1000).toFixed(3) + 's');
+    sigilModal.hidden = false;
+    document.body.classList.add('sigil-modal-open');
+    applySigilAnimationState();
+    sigilModalClose.focus();
+  }
+
+  sigilModalClose.addEventListener('click', closeSigilModal);
+  sigilModal.addEventListener('click', function(event) {
+    if (event.target === sigilModal) closeSigilModal();
+  });
+  document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape' && !sigilModal.hidden) closeSigilModal();
+  });
 
   function wireSigilAnimation(panel, stage) {
     const svg = stage.querySelector('svg');
@@ -1146,6 +1196,14 @@ DASHBOARD_HTML = """\
     if (button && button.dataset.animationWired !== 'true') {
       button.dataset.animationWired = 'true';
       button.addEventListener('click', toggleSigilAnimation);
+    }
+    const viewButton = panel.querySelector('.sigil-view-large');
+    if (viewButton && viewButton.dataset.viewWired !== 'true') {
+      viewButton.dataset.viewWired = 'true';
+      viewButton.addEventListener('click', function() {
+        const botId = decodeURIComponent(panel.dataset.sigilKey || '');
+        if (bots[botId]) openSigilModal(bots[botId].sigil, viewButton);
+      });
     }
     if (sigilVisibilityObserver) sigilVisibilityObserver.observe(stage);
     else stage.classList.add('is-visible');
@@ -1581,7 +1639,8 @@ DASHBOARD_HTML = """\
       if (d.sigil && d.sigil.method === 'spare-wheel-v1') {
         html += '<details class="sigil-panel" data-sigil-key="' + esc(botKey) + '"' + (sigilOpen ? ' open' : '') + '><summary class="toggle-raw">Sigil</summary>';
         html += '<div class="sigil-stage" role="button" tabindex="0" aria-label="Toggle sigil animation" data-sigil-seed="' + esc(d.sigil.seed || '') + '"></div>';
-        html += '<button class="toggle-raw sigil-animation-toggle" type="button">Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off') + '</button>';
+        html += '<div class="sigil-controls"><button class="toggle-raw sigil-animation-toggle" type="button">Animation: ' + (sigilAnimationEnabled ? 'On' : 'Off') + '</button>';
+        html += '<button class="toggle-raw sigil-view-large" type="button" aria-label="View sigil enlarged">View Large</button></div>';
         html += '<div class="sigil-meta">' + esc(d.sigil.method) + ' · ' + esc(d.sigil.key || '') + '</div></details>';
       }
 
