@@ -769,6 +769,8 @@ DASHBOARD_HTML = """\
   .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
   .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
   .summary-detail { display: block; margin-top: 0.2rem; color: #94a3b8; font-size: 0.68rem; white-space: nowrap; }
+  button.summary-item { color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
+  button.summary-item:hover, button.summary-item:focus-visible { border-color: #64748b; outline: none; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
@@ -962,6 +964,8 @@ DASHBOARD_HTML = """\
   };
   let sortDirectionValue = defaultSortDirections.profit;
   let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'cad';
+  const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
+  let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
   let ethPrices = {};
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
@@ -1313,7 +1317,16 @@ DASHBOARD_HTML = """\
     const fiatRate = ethPrices[profitCurrency];
     const fiatCode = profitCurrency.toUpperCase();
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
-    const fiatRealizedProfit = Number.isFinite(fiatRate) ? realizedProfit * fiatRate : null;
+    const realizedUnitCode = realizedProfitUnit.toUpperCase();
+    const realizedUnitRate = realizedProfitUnit === 'eth' ? 1 : ethPrices[realizedProfitUnit];
+    const formatRealizedAmount = function(valueEth, includeUnit) {
+      if (!Number.isFinite(realizedUnitRate)) return '—' + (includeUnit ? ' ' + realizedUnitCode : '');
+      const value = valueEth * realizedUnitRate;
+      if (realizedProfitUnit === 'eth') return (value >= 0 ? '+' : '') + value.toFixed(8) + (includeUnit ? ' ETH' : '');
+      const formatted = new Intl.NumberFormat(undefined, { style: 'currency', currency: realizedUnitCode, minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+      return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
+    };
+    const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
     const nextSummaryHtml = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
       (needsPositions.length
@@ -1323,11 +1336,10 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
-      '<span class="summary-item">Realized profit: ' + (realizedProfit >= 0 ? '+' : '') + realizedProfit.toFixed(8) + ' ETH' +
-      (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) +
+      '<button class="summary-item realized-summary" type="button" data-realized-unit-toggle aria-label="Cycle realized profit units, currently ' + realizedUnitCode + '" title="Click to show ' + nextRealizedProfitUnit + '">Realized profit: ' + formatRealizedAmount(realizedProfit, true) +
       (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by time since the oldest tracking start">Since ' + trackingAgeText + ' · avg ' +
-        (realizedDailyAverage >= 0 ? '+' : '') + realizedDailyAverage.toFixed(8) + '/day · ' +
-        (realizedHourlyAverage >= 0 ? '+' : '') + realizedHourlyAverage.toFixed(8) + '/hr</span>') + '</span>' +
+        formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +
+        formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</button>' +
       '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
@@ -2028,6 +2040,12 @@ DASHBOARD_HTML = """\
   setInterval(fetchEthPrices, 60000);
   setInterval(fetchMarketData, 60000);
   summaryBar.addEventListener('click', function(event) {
+    if (event.target.closest('[data-realized-unit-toggle]')) {
+      realizedProfitUnit = { eth: 'cad', cad: 'usd', usd: 'eth' }[realizedProfitUnit];
+      localStorage.setItem('dashboard-realized-profit-unit', realizedProfitUnit);
+      render(true);
+      return;
+    }
     if (!event.target.closest('[data-currency-toggle]')) return;
     profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
     localStorage.setItem('dashboard-profit-currency', profitCurrency);

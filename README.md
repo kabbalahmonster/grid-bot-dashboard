@@ -25,6 +25,7 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session profit,
   session buy or sell count, realized profit, confirmed USDG treasury sent, position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
+- Clickable realized-profit summary cycling ETH, CAD, and USD for its total and daily/hourly averages
 - Optional bot display names/groups and chain badges
 - Bounded ETH-denominated bot trade history with explorer links
 - Bounded structured success/warning/error history with repeat counts and expandable provider details

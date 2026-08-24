@@ -63,6 +63,17 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("'/hr</span>'", body)
         self.assertIn("Fleet realized profit divided by time since the oldest tracking start", body)
 
+    def test_realized_profit_summary_cycles_units(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("dashboard-realized-profit-unit", body)
+        self.assertIn("['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit)", body)
+        self.assertIn('data-realized-unit-toggle', body)
+        self.assertIn("{ eth: 'cad', cad: 'usd', usd: 'eth' }[realizedProfitUnit]", body)
+        self.assertIn("formatRealizedAmount(realizedProfit, true)", body)
+        self.assertIn("formatRealizedAmount(realizedDailyAverage, false)", body)
+        self.assertIn("formatRealizedAmount(realizedHourlyAverage, false)", body)
+        self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)
