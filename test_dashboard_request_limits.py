@@ -134,6 +134,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("render(force, changedBotIds)", body)
         self.assertIn(".sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; contain: strict; }", body)
         self.assertIn("will-change: transform, opacity", body)
+        self.assertIn("@media (min-width: 769px) and (hover: hover) and (pointer: fine)", body)
+        self.assertIn(".sigil-modal-stage svg { transform: translateZ(0); backface-visibility: hidden; }", body)
 
 
 if __name__ == "__main__":

@@ -853,6 +853,9 @@ DASHBOARD_HTML = """\
   .sigil-modal-stage .sigil-glyph,
   .sigil-modal-stage .sigil-rings,
   .sigil-modal-stage .sigil-node { will-change: transform, opacity; }
+  @media (min-width: 769px) and (hover: hover) and (pointer: fine) {
+    .sigil-modal-stage svg { transform: translateZ(0); backface-visibility: hidden; }
+  }
   .sigil-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
   .sigil-modal-close:hover, .sigil-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
