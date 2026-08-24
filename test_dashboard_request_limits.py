@@ -43,6 +43,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("((marketData[a] || {}).price_change || {}).h24", body)
         self.assertIn("sortBots.value === 'day-movement'", body)
 
+    def test_dashboard_offers_session_trade_count_sorts(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<option value="buys">Session buys</option>', body)
+        self.assertIn('<option value="sells">Session sells</option>', body)
+        self.assertIn("mode === 'buys'", body)
+        self.assertIn("parseInt(av.buys, 10)", body)
+        self.assertIn("mode === 'sells'", body)
+        self.assertIn("parseInt(av.sells, 10)", body)
+        self.assertIn("buys: 'desc', sells: 'desc'", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)
