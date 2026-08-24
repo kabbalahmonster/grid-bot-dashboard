@@ -74,6 +74,24 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatRealizedAmount(realizedHourlyAverage, false)", body)
         self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
 
+    def test_browser_notification_types_are_optional_and_deduplicated(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('class="notification-menu" id="notification-menu" hidden', body)
+        for alert_type in ("sells", "positions", "offline", "recovered", "buys", "stoploss", "treasury", "errors"):
+            self.assertIn(f'data-notification-type="{alert_type}"', body)
+        self.assertIn("const notificationDefaults = { sells: true, positions: false, offline: false", body)
+        self.assertIn("dashboard-notification-preferences", body)
+        self.assertIn("dashboard-notifications-enabled", body)
+        self.assertIn("notificationsMasterEnabled && 'Notification' in window", body)
+        self.assertIn("processBotNotifications(entry.bot_id, bots[entry.bot_id], nextState)", body)
+        self.assertIn("const previousTrades = new Set", body)
+        self.assertIn("previous.capacity_warning && next.capacity_warning", body)
+        self.assertIn("previousAge === 'offline'", body)
+        self.assertIn("nextTreasury > previousTreasury", body)
+        self.assertIn("event.code !== 'usdg_banked'", body)
+        self.assertIn("count >= 3 && (previousEvents.get(key) || 0) < 3", body)
+        self.assertIn("Notification.requestPermission()", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)

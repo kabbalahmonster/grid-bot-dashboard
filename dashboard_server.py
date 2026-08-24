@@ -775,6 +775,14 @@ DASHBOARD_HTML = """\
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
   .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
+  .notification-wrap { position: relative; }
+  .notification-menu { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 20; width: min(19rem, calc(100vw - 2rem)); padding: 0.75rem; border: 1px solid #475569; border-radius: 0.45rem; background: #1e293b; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.45); }
+  .notification-menu[hidden] { display: none; }
+  .notification-menu strong { display: block; margin-bottom: 0.45rem; font-size: 0.82rem; }
+  .notification-option { display: flex; align-items: center; gap: 0.55rem; padding: 0.3rem 0; color: #cbd5e1; font-size: 0.75rem; }
+  .notification-option input { accent-color: #22c55e; }
+  .notification-enable { width: 100%; margin-top: 0.55rem; }
+  .notification-note { display: block; margin-top: 0.45rem; color: #64748b; font-size: 0.66rem; line-height: 1.35; }
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
@@ -909,7 +917,21 @@ DASHBOARD_HTML = """\
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
-    <button id="notifications">Enable offline alerts</button>
+    <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
+      <div class="notification-menu" id="notification-menu" hidden>
+        <strong>Browser notifications</strong>
+        <label class="notification-option"><input type="checkbox" data-notification-type="sells"> Confirmed sells</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="positions"> Needs new positions</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="offline"> Bot offline</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="recovered"> Bot recovered</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="buys"> Confirmed buys</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="stoploss"> Stop-loss sells</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="treasury"> Treasury/banking success</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="errors"> Persistent errors</label>
+        <button class="notification-enable" id="notification-enable" type="button">Enable browser notifications</button>
+        <span class="notification-note">Alerts work while this dashboard is open. Choices are saved in this browser.</span>
+      </div>
+    </span>
   </div>
   <div id="bots-container">
     <div class="empty" id="empty-state">
@@ -944,6 +966,8 @@ DASHBOARD_HTML = """\
   const sigilModalClose = sigilModal.querySelector('.sigil-modal-close');
   let sigilModalReturnFocus = null;
   const notificationsButton = document.getElementById('notifications');
+  const notificationMenu = document.getElementById('notification-menu');
+  const notificationEnable = document.getElementById('notification-enable');
   const bots = {};
   const marketData = {};
   const openMarketMovements = new Set();
@@ -958,6 +982,10 @@ DASHBOARD_HTML = """\
   const openEvents = new Set();
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
+  const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false };
+  let notificationPreferences = Object.assign({}, notificationDefaults);
+  let notificationsMasterEnabled = localStorage.getItem('dashboard-notifications-enabled') === 'true';
+  try { notificationPreferences = Object.assign(notificationPreferences, JSON.parse(localStorage.getItem('dashboard-notification-preferences') || '{}')); } catch (_) {}
   const defaultSortDirections = {
     name: 'asc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
@@ -1031,6 +1059,78 @@ DASHBOARD_HTML = """\
     viewportIdleTimer = setTimeout(finishWhenIdle, 180);
   }
 
+  function browserNotificationsEnabled() {
+    return notificationsMasterEnabled && 'Notification' in window && Notification.permission === 'granted';
+  }
+
+  function sendBrowserNotification(title, body, tag, url) {
+    if (!browserNotificationsEnabled()) return;
+    const notice = new Notification(title, { body: body, tag: tag });
+    notice.onclick = function() {
+      window.focus();
+      if (url) window.open(url, '_blank', 'noopener');
+      notice.close();
+    };
+  }
+
+  function tradeIdentity(trade) {
+    return String(trade.tx_hash || [trade.timestamp, trade.side, trade.eth_amount, trade.token_amount].join(':'));
+  }
+
+  function processBotNotifications(botId, previous, next) {
+    if (!browserNotificationsEnabled() || !previous || !next) return;
+    const name = next.display_name || botId;
+    const symbol = next.token_symbol ? ' · ' + next.token_symbol : '';
+    const chain = chainMetadata[parseInt(next.chain_id, 10)];
+    const previousTrades = new Set((previous.trades_history || []).map(tradeIdentity));
+    (next.trades_history || []).forEach(function(trade) {
+      const identity = tradeIdentity(trade);
+      if (previousTrades.has(identity)) return;
+      const side = String(trade.side || '').toLowerCase();
+      const profit = parseFloat(trade.profit_eth);
+      const isStopLoss = side === 'sell' && Number.isFinite(profit) && profit < 0;
+      const txUrl = chain && trade.tx_hash ? chain.explorer.replace('/address/', '/tx/') + trade.tx_hash : '';
+      if (isStopLoss && notificationPreferences.stoploss) {
+        sendBrowserNotification('Stop-loss sell · ' + name, (Number.isFinite(profit) ? profit.toFixed(8) + ' ETH profit' : 'Confirmed') + symbol, 'stoploss:' + identity, txUrl);
+      } else if (side === 'sell' && notificationPreferences.sells) {
+        sendBrowserNotification('Sell confirmed · ' + name, (Number.isFinite(profit) ? (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH profit' : parseFloat(trade.eth_amount || 0).toFixed(8) + ' ETH received') + symbol, 'sell:' + identity, txUrl);
+      } else if (side === 'buy' && notificationPreferences.buys) {
+        sendBrowserNotification('Buy confirmed · ' + name, parseFloat(trade.eth_amount || 0).toFixed(8) + ' ETH' + symbol, 'buy:' + identity, txUrl);
+      }
+    });
+    if (notificationPreferences.positions && !previous.capacity_warning && next.capacity_warning) {
+      sendBrowserNotification('Needs new positions · ' + name, 'All ' + (next.capacity_warning.max_positions || next.max_positions || '') + ' position slots are filled' + symbol, 'positions:' + botId);
+    }
+    const previousAge = reportAge(previous.received_at).status;
+    if (notificationPreferences.recovered && previousAge === 'offline' && reportAge(next.received_at).status === 'running') {
+      sendBrowserNotification('Bot recovered · ' + name, 'Status reports resumed' + symbol, 'recovered:' + botId);
+    }
+    const previousTreasury = parseFloat(previous.treasury_sent_usdg) || 0;
+    const nextTreasury = parseFloat(next.treasury_sent_usdg) || 0;
+    if (notificationPreferences.treasury && nextTreasury > previousTreasury) {
+      sendBrowserNotification('Treasury transfer · ' + name, '+' + (nextTreasury - previousTreasury).toFixed(2) + ' USDG confirmed', 'treasury:' + botId + ':' + nextTreasury);
+    }
+    if (notificationPreferences.treasury) {
+      const previousBankingEvents = new Set((previous.events || []).map(function(event) { return String(event.code || '') + ':' + String(event.timestamp || '') + ':' + String(event.tx_hash || ''); }));
+      (next.events || []).forEach(function(event) {
+        if (event.level !== 'success' || event.code !== 'usdg_banked') return;
+        const key = String(event.code) + ':' + String(event.timestamp || '') + ':' + String(event.tx_hash || '');
+        if (previousBankingEvents.has(key)) return;
+        const txUrl = chain && event.tx_hash ? chain.explorer.replace('/address/', '/tx/') + event.tx_hash : '';
+        sendBrowserNotification('Profit banked · ' + name, String(event.message || 'USDG banking confirmed'), 'banking:' + botId + ':' + key, txUrl);
+      });
+    }
+    if (notificationPreferences.errors) {
+      const previousEvents = new Map((previous.events || []).map(function(event) { return [String(event.code || '') + ':' + String(event.timestamp || ''), parseInt(event.count, 10) || 1]; }));
+      (next.events || []).forEach(function(event) {
+        if (event.level !== 'error') return;
+        const key = String(event.code || '') + ':' + String(event.timestamp || '');
+        const count = parseInt(event.count, 10) || 1;
+        if (count >= 3 && (previousEvents.get(key) || 0) < 3) sendBrowserNotification('Persistent error · ' + name, String(event.message || event.code || 'Repeated bot error'), 'error:' + botId + ':' + key);
+      });
+    }
+  }
+
   function connect() {
     connectionGeneration += 1;
     const generation = connectionGeneration;
@@ -1076,7 +1176,9 @@ DASHBOARD_HTML = """\
     source.addEventListener('update', function(e) {
       if (generation !== connectionGeneration) return;
       const entry = JSON.parse(e.data);
-      bots[entry.bot_id] = entry.data || entry;
+      const nextState = entry.data || entry;
+      processBotNotifications(entry.bot_id, bots[entry.bot_id], nextState);
+      bots[entry.bot_id] = nextState;
       scheduleRoutineRender(entry.bot_id);
       scheduleMarketDataFetch();
     });
@@ -1277,9 +1379,9 @@ DASHBOARD_HTML = """\
       }
       const card = el.closest('.card');
       const botId = card ? card.dataset.botId : '';
-      if (age.status === 'offline' && botId && !notifiedOffline.has(botId)) {
+      if (age.status === 'offline' && botId && notificationPreferences.offline && browserNotificationsEnabled() && !notifiedOffline.has(botId)) {
         notifiedOffline.add(botId);
-        if (Notification.permission === 'granted') new Notification(botId + ' is offline', { body: 'Last report ' + age.text });
+        sendBrowserNotification(botId + ' is offline', 'Last report ' + age.text, 'offline:' + botId);
       } else if (age.status === 'running') notifiedOffline.delete(botId);
     });
     window.setTimeout(refreshReportAges, animationVisible ? 10000 : 1000);
@@ -2089,11 +2191,48 @@ DASHBOARD_HTML = """\
     render(true);
   });
   updateSortDirectionButton();
+  function updateNotificationControls() {
+    notificationMenu.querySelectorAll('[data-notification-type]').forEach(function(input) {
+      input.checked = Boolean(notificationPreferences[input.dataset.notificationType]);
+    });
+    const enabled = browserNotificationsEnabled();
+    notificationsButton.textContent = enabled ? 'Notifications: On' : 'Notifications';
+    notificationEnable.textContent = enabled ? 'Disable browser notifications' : 'Enable browser notifications';
+  }
   notificationsButton.addEventListener('click', function() {
-    if (!window.isSecureContext) { notificationsButton.textContent = 'HTTPS required for system alerts'; return; }
-    if (!('Notification' in window)) { notificationsButton.textContent = 'Alerts unsupported'; return; }
-    Notification.requestPermission().then(function(permission) { notificationsButton.textContent = permission === 'granted' ? 'Offline alerts enabled' : 'Offline alerts blocked'; });
+    const opening = notificationMenu.hidden;
+    notificationMenu.hidden = !opening;
+    notificationsButton.setAttribute('aria-expanded', String(opening));
   });
+  notificationMenu.addEventListener('click', function(event) { event.stopPropagation(); });
+  notificationMenu.addEventListener('change', function(event) {
+    const input = event.target.closest('[data-notification-type]');
+    if (!input) return;
+    notificationPreferences[input.dataset.notificationType] = input.checked;
+    localStorage.setItem('dashboard-notification-preferences', JSON.stringify(notificationPreferences));
+  });
+  notificationEnable.addEventListener('click', function() {
+    if (browserNotificationsEnabled()) {
+      notificationsMasterEnabled = false;
+      localStorage.setItem('dashboard-notifications-enabled', 'false');
+      notifiedOffline.clear();
+      updateNotificationControls();
+      return;
+    }
+    if (!window.isSecureContext) { notificationEnable.textContent = 'HTTPS required'; return; }
+    if (!('Notification' in window)) { notificationEnable.textContent = 'Unsupported in this browser'; return; }
+    Notification.requestPermission().then(function(permission) {
+      notificationsMasterEnabled = permission === 'granted';
+      localStorage.setItem('dashboard-notifications-enabled', String(notificationsMasterEnabled));
+      updateNotificationControls();
+    });
+  });
+  document.addEventListener('click', function(event) {
+    if (notificationMenu.hidden || event.target.closest('.notification-wrap')) return;
+    notificationMenu.hidden = true;
+    notificationsButton.setAttribute('aria-expanded', 'false');
+  });
+  updateNotificationControls();
   refreshReportAges();
 })();
 </script>

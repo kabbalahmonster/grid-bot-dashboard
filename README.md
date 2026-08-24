@@ -34,7 +34,7 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Per-cycle USDG balances when reported by current bots
 - Lazy-loaded Dexscreener WETH-pair charts filtered to the bot wallet
 - Live report age with running, stale, and offline states
-- Optional browser offline notifications when served over HTTPS
+- Optional per-type browser notifications for confirmed trades, capacity, availability, treasury activity, and persistent errors when served over HTTPS
 - `X-API-Key` authentication for writes and deletion
 - Configurable API rate limit (default 600 requests/minute/IP)
 - Recursive private-key detection and rejection
