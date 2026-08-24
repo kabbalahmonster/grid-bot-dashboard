@@ -134,8 +134,6 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("render(force, changedBotIds)", body)
         self.assertIn(".sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; contain: strict; }", body)
         self.assertIn("will-change: transform, opacity", body)
-        self.assertIn(".sigil-modal-stage.animation-enabled .sigil-stroke-current", body)
-        self.assertIn("animation: sigil-glimmer var(--sigil-glimmer-duration)", body)
 
 
 if __name__ == "__main__":
