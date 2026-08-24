@@ -768,6 +768,7 @@ DASHBOARD_HTML = """\
   .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
   .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
   .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
+  .summary-detail { display: block; margin-top: 0.2rem; color: #94a3b8; font-size: 0.68rem; white-space: nowrap; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
@@ -1291,6 +1292,16 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const trackingTimestamps = states.map(function(d) { return Date.parse(d.profit_tracking_started_at || ''); }).filter(Number.isFinite);
+    const oldestTrackingAt = trackingTimestamps.length ? Math.min.apply(null, trackingTimestamps) : null;
+    const trackingElapsedHours = oldestTrackingAt === null ? null : Math.max(0, (Date.now() - oldestTrackingAt) / 3600000);
+    const trackingAgeDays = trackingElapsedHours === null ? 0 : Math.floor(trackingElapsedHours / 24);
+    const trackingAgeHours = trackingElapsedHours === null ? 0 : Math.floor(trackingElapsedHours % 24);
+    const trackingAgeText = trackingElapsedHours === null ? '' :
+      (trackingAgeDays > 0 ? trackingAgeDays + 'd ' + trackingAgeHours + 'h ago' :
+        (trackingAgeHours > 0 ? trackingAgeHours + 'h ago' : '<1h ago'));
+    const realizedDailyAverage = trackingElapsedHours > 0 ? realizedProfit / (trackingElapsedHours / 24) : null;
+    const realizedHourlyAverage = trackingElapsedHours > 0 ? realizedProfit / trackingElapsedHours : null;
     const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
@@ -1313,7 +1324,10 @@ DASHBOARD_HTML = """\
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<span class="summary-item">Realized profit: ' + (realizedProfit >= 0 ? '+' : '') + realizedProfit.toFixed(8) + ' ETH' +
-      (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) + '</span>' +
+      (fiatRealizedProfit === null ? '' : ' / ' + (fiatRealizedProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatRealizedProfit)) +
+      (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by time since the oldest tracking start">Since ' + trackingAgeText + ' · avg ' +
+        (realizedDailyAverage >= 0 ? '+' : '') + realizedDailyAverage.toFixed(8) + '/day · ' +
+        (realizedHourlyAverage >= 0 ? '+' : '') + realizedHourlyAverage.toFixed(8) + '/hr</span>') + '</span>' +
       '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +

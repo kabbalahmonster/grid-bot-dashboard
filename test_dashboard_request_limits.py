@@ -53,6 +53,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("parseInt(av.sells, 10)", body)
         self.assertIn("buys: 'desc', sells: 'desc'", body)
 
+    def test_summary_shows_realized_profit_age_and_averages(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("Date.parse(d.profit_tracking_started_at || '')", body)
+        self.assertIn("realizedProfit / (trackingElapsedHours / 24)", body)
+        self.assertIn("realizedProfit / trackingElapsedHours", body)
+        self.assertIn("Since ' + trackingAgeText + ' · avg '", body)
+        self.assertIn("'/day · '", body)
+        self.assertIn("'/hr</span>'", body)
+        self.assertIn("Fleet realized profit divided by time since the oldest tracking start", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)
