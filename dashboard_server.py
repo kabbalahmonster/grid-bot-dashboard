@@ -848,8 +848,11 @@ DASHBOARD_HTML = """\
   .sigil-modal { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 1rem; background: rgba(2, 6, 23, 0.88); }
   .sigil-modal[hidden] { display: none; }
   .sigil-modal-content { position: relative; display: grid; place-items: center; width: min(94vw, calc(94vh - 2rem)); aspect-ratio: 1; border: 1px solid #475569; border-radius: 0.75rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.72); overflow: hidden; }
-  .sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; }
+  .sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; contain: strict; }
   .sigil-modal-stage svg { width: 100%; height: 100%; max-width: none; }
+  .sigil-modal-stage .sigil-glyph,
+  .sigil-modal-stage .sigil-rings,
+  .sigil-modal-stage .sigil-node { will-change: transform, opacity; }
   .sigil-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
   .sigil-modal-close:hover, .sigil-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
@@ -986,6 +989,8 @@ DASHBOARD_HTML = """\
   let routineRenderTimer = null;
   let routineRenderIdleCallback = null;
   const pendingChangedBotIds = new Set();
+  let renderPendingForSigilModal = false;
+  let renderPendingForceForSigilModal = false;
   const sigilMotionPreference = localStorage.getItem('dashboard-sigil-animation');
   let sigilAnimationEnabled = sigilMotionPreference === 'on' ||
     (sigilMotionPreference === null && !window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -1158,6 +1163,14 @@ DASHBOARD_HTML = """\
     sigilModal.hidden = true;
     sigilModalStage.replaceChildren();
     document.body.classList.remove('sigil-modal-open');
+    if (renderPendingForSigilModal) {
+      const changedBotIds = new Set(pendingChangedBotIds);
+      pendingChangedBotIds.clear();
+      const force = renderPendingForceForSigilModal;
+      renderPendingForSigilModal = false;
+      renderPendingForceForSigilModal = false;
+      render(force, changedBotIds);
+    }
     if (sigilModalReturnFocus && sigilModalReturnFocus.isConnected) sigilModalReturnFocus.focus();
     sigilModalReturnFocus = null;
   }
@@ -1258,6 +1271,10 @@ DASHBOARD_HTML = """\
   }
 
   function refreshReportAges() {
+    if (!sigilModal.hidden) {
+      window.setTimeout(refreshReportAges, 10000);
+      return;
+    }
     const animationVisible = Boolean(document.querySelector('.sigil-stage.animation-enabled.is-visible'));
     const precisionSeconds = animationVisible ? 10 : 1;
     container.querySelectorAll('[data-received-at]').forEach(function(el) {
@@ -1420,6 +1437,10 @@ DASHBOARD_HTML = """\
 
   function scheduleRoutineRender(botId) {
     if (botId) pendingChangedBotIds.add(botId);
+    if (!sigilModal.hidden) {
+      renderPendingForSigilModal = true;
+      return;
+    }
     if (routineRenderTimer !== null || routineRenderIdleCallback !== null) return;
     routineRenderTimer = setTimeout(function() {
       routineRenderTimer = null;
@@ -1572,6 +1593,12 @@ DASHBOARD_HTML = """\
   }
 
   function render(force, changedBotIds) {
+    if (!sigilModal.hidden) {
+      renderPendingForSigilModal = true;
+      renderPendingForceForSigilModal = renderPendingForceForSigilModal || Boolean(force);
+      if (changedBotIds) changedBotIds.forEach(function(botId) { pendingChangedBotIds.add(botId); });
+      return;
+    }
     if (force && routineRenderTimer !== null) {
       clearTimeout(routineRenderTimer);
       routineRenderTimer = null;

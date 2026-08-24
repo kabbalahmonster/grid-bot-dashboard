@@ -126,6 +126,15 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("event.target === sigilModal", body)
         self.assertIn("body.sigil-modal-open { overflow: hidden; }", body)
 
+    def test_sigil_theater_mode_defers_background_render_work(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("let renderPendingForSigilModal = false", body)
+        self.assertIn("renderPendingForSigilModal = true", body)
+        self.assertIn("const changedBotIds = new Set(pendingChangedBotIds)", body)
+        self.assertIn("render(force, changedBotIds)", body)
+        self.assertIn(".sigil-modal-stage { display: grid; place-items: center; width: 100%; height: 100%; contain: strict; }", body)
+        self.assertIn("will-change: transform, opacity", body)
+
 
 if __name__ == "__main__":
     unittest.main()
