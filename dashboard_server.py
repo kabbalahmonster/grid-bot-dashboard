@@ -1421,7 +1421,7 @@ DASHBOARD_HTML = """\
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const allRealizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
     const realizedProfit = realizedProfitPeriod === 'all' ? allRealizedProfit : states.reduce(function(total, d) {
-      return total + (parseFloat((d.realized_profit_periods || {})[realizedProfitPeriod]) || 0);
+      return total + realizedProfitForPeriod(d, realizedProfitPeriod);
     }, 0);
     const totalEthBalance = states.reduce(function(total, d) { return total + (parseFloat(d.eth_balance) || 0); }, 0);
     const trackingTimestamps = states.map(function(d) { return Date.parse(d.profit_tracking_started_at || ''); }).filter(Number.isFinite);
@@ -1540,6 +1540,21 @@ DASHBOARD_HTML = """\
       style: 'currency', currency: currency.toUpperCase(),
       minimumFractionDigits: 2, maximumFractionDigits: 2
     }).format(value);
+  }
+
+  function realizedProfitForPeriod(d, period) {
+    if (period === 'all') return parseFloat(d.realized_profit_eth) || 0;
+    const reported = parseFloat((d.realized_profit_periods || {})[period]);
+    if (Number.isFinite(reported)) return reported;
+    const hours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[period];
+    const cutoff = Date.now() - hours * 3600000;
+    const trackingStart = Date.parse(d.profit_tracking_started_at || '');
+    if (Number.isFinite(trackingStart) && trackingStart >= cutoff) return parseFloat(d.realized_profit_eth) || 0;
+    return (d.trades_history || []).reduce(function(total, trade) {
+      const timestamp = Date.parse(trade.timestamp || '');
+      return trade.side === 'sell' && Number.isFinite(timestamp) && timestamp >= cutoff
+        ? total + (parseFloat(trade.profit_eth) || 0) : total;
+    }, 0);
   }
 
   function formatMovement(value) {

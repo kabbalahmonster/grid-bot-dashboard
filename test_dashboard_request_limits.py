@@ -62,6 +62,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("'/day · '", body)
         self.assertIn("'/hr</span>'", body)
         self.assertIn("Fleet realized profit divided by the selected period", body)
+        self.assertIn("function realizedProfitForPeriod(d, period)", body)
+        self.assertIn("d.trades_history || []", body)
 
     def test_realized_profit_summary_cycles_units(self):
         body = self.client.get("/").get_data(as_text=True)
