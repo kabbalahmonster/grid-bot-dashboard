@@ -1412,6 +1412,7 @@ DASHBOARD_HTML = """\
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const totalEthBalance = states.reduce(function(total, d) { return total + (parseFloat(d.eth_balance) || 0); }, 0);
     const trackingTimestamps = states.map(function(d) { return Date.parse(d.profit_tracking_started_at || ''); }).filter(Number.isFinite);
     const oldestTrackingAt = trackingTimestamps.length ? Math.min.apply(null, trackingTimestamps) : null;
     const trackingElapsedHours = oldestTrackingAt === null ? null : Math.max(0, (Date.now() - oldestTrackingAt) / 3600000);
@@ -1438,6 +1439,7 @@ DASHBOARD_HTML = """\
       return value === null ? total : total + value;
     }, 0);
     const fleetBagValueAvailable = Number.isFinite(fiatRate) && Number.isFinite(ethPrices.usd);
+    const totalEthFiat = Number.isFinite(fiatRate) ? totalEthBalance * fiatRate : null;
     const realizedUnitCode = realizedProfitUnit.toUpperCase();
     const realizedUnitRate = realizedProfitUnit === 'eth' ? 1 : ethPrices[realizedProfitUnit];
     const formatRealizedAmount = function(valueEth, includeUnit) {
@@ -1457,6 +1459,9 @@ DASHBOARD_HTML = """\
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
       (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') + ' ' + fiatCode +
       '<span class="summary-detail">ETH + USDG + tokens · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span></button>' +
+      '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
+      totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
+      formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +

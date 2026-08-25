@@ -90,6 +90,10 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("estimatedBagValue(av, profitCurrency)", body)
         self.assertIn("'estimated-value': 'desc'", body)
         self.assertLess(body.index("Needs new positions:"), body.index("Active:"))
+        self.assertIn("Total ETH: ' +", body)
+        self.assertIn("totalEthBalance.toFixed(8) + ' ETH'", body)
+        self.assertIn("totalEthBalance * fiatRate", body)
+        self.assertIn("Combined ETH balance across the displayed bots", body)
 
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
