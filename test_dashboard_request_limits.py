@@ -77,6 +77,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="notification-menu" id="notification-menu" hidden', body)
+        self.assertIn("@media (max-width: 600px)", body)
+        self.assertIn("bottom: calc(1rem + env(safe-area-inset-bottom, 0px))", body)
+        self.assertIn("max-height: calc(100dvh - 2rem - env(safe-area-inset-bottom, 0px))", body)
         for alert_type in ("sells", "positions", "offline", "recovered", "buys", "stoploss", "treasury", "errors"):
             self.assertIn(f'data-notification-type="{alert_type}"', body)
         self.assertIn("const notificationDefaults = { sells: true, positions: false, offline: false", body)

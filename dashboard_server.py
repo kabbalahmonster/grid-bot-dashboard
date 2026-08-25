@@ -783,6 +783,19 @@ DASHBOARD_HTML = """\
   .notification-option input { accent-color: #22c55e; }
   .notification-enable { width: 100%; margin-top: 0.55rem; }
   .notification-note { display: block; margin-top: 0.45rem; color: #64748b; font-size: 0.66rem; line-height: 1.35; }
+  @media (max-width: 600px) {
+    .notification-menu {
+      position: fixed;
+      left: 1rem;
+      right: 1rem;
+      top: auto;
+      bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+      width: auto;
+      max-height: calc(100dvh - 2rem - env(safe-area-inset-bottom, 0px));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+  }
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
