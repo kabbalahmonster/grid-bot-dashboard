@@ -1446,7 +1446,7 @@ DASHBOARD_HTML = """\
     const realizedAverageHours = realizedProfitPeriod === 'all' ? trackingElapsedHours : realizedPeriodHours;
     const realizedDailyAverage = realizedAverageHours > 0 ? realizedProfit / (realizedAverageHours / 24) : null;
     const realizedHourlyAverage = realizedAverageHours > 0 ? realizedProfit / realizedAverageHours : null;
-    const realizedPeriodLabel = { all: 'Since ' + trackingAgeText, month: 'Last 30 days', week: 'Last 7 days', '24h': 'Last 24 hours', '6h': 'Last 6 hours', '1h': 'Last hour' }[realizedProfitPeriod];
+    const realizedPeriodLabel = { all: 'Since ' + trackingAgeText, month: 'Since 30d ago', week: 'Since 7d ago', '24h': 'Since 24h ago', '6h': 'Since 6h ago', '1h': 'Since 1h ago' }[realizedProfitPeriod];
     const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
@@ -2261,6 +2261,7 @@ DASHBOARD_HTML = """\
     if (!selector) return;
     realizedProfitPeriod = selector.value;
     localStorage.setItem('dashboard-realized-profit-period', realizedProfitPeriod);
+    selector.blur();
     render(true);
   });
   container.addEventListener('click', function(event) {
