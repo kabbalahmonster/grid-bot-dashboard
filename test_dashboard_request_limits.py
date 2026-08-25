@@ -56,12 +56,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_summary_shows_realized_profit_age_and_averages(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("Date.parse(d.profit_tracking_started_at || '')", body)
-        self.assertIn("realizedProfit / (trackingElapsedHours / 24)", body)
-        self.assertIn("realizedProfit / trackingElapsedHours", body)
-        self.assertIn("Since ' + trackingAgeText + ' · avg '", body)
+        self.assertIn("realizedProfit / (realizedAverageHours / 24)", body)
+        self.assertIn("realizedProfit / realizedAverageHours", body)
+        self.assertIn("all: 'Since ' + trackingAgeText", body)
         self.assertIn("'/day · '", body)
         self.assertIn("'/hr</span>'", body)
-        self.assertIn("Fleet realized profit divided by time since the oldest tracking start", body)
+        self.assertIn("Fleet realized profit divided by the selected period", body)
 
     def test_realized_profit_summary_cycles_units(self):
         body = self.client.get("/").get_data(as_text=True)
@@ -74,6 +74,10 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatRealizedAmount(realizedHourlyAverage, false)", body)
         self.assertIn("minimumFractionDigits: 2, maximumFractionDigits: 2", body)
         self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
+        self.assertIn("dashboard-realized-profit-period", body)
+        self.assertIn("data-realized-period", body)
+        for label in ("All", "Month", "Week", "24 hr", "6 hr", "1 hr"):
+            self.assertIn("'" + label + "'", body)
 
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)

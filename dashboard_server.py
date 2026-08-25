@@ -84,7 +84,7 @@ _PRIVATE_KEY_PATTERNS = [
 _STATUS_FIELDS = frozenset({
     "dashboard_schema_version", "bot_id", "timestamp", "uptime_seconds",
     "price", "eth_balance", "usdg_balance", "treasury_sent_usdg", "token_balance",
-    "positions", "profit_percent", "session_profit_eth", "realized_profit_eth",
+    "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
     "chain_id", "swap_provider", "token_symbol", "token_address", "wallet_address",
@@ -98,6 +98,7 @@ _EVENT_FIELDS = frozenset({
 })
 _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
 _SELL_ATTEMPT_FIELDS = frozenset({"status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth"})
+_REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "24h", "6h", "1h"})
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
 _MAX_TRADES = 50
@@ -343,6 +344,7 @@ def _allowlisted_status_payload(data):
         ("capacity_warning", _CAPACITY_WARNING_FIELDS),
         ("sell_attempt", _SELL_ATTEMPT_FIELDS),
         ("sigil", _SIGIL_FIELDS),
+        ("realized_profit_periods", _REALIZED_PERIOD_FIELDS),
     ):
         if field in filtered and filtered[field] is not None:
             filtered[field] = _allowlisted_mapping(filtered[field], allowed)
@@ -771,6 +773,10 @@ DASHBOARD_HTML = """\
   .summary-detail { display: block; margin-top: 0.2rem; color: #94a3b8; font-size: 0.68rem; white-space: nowrap; }
   button.summary-item { color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
   button.summary-item:hover, button.summary-item:focus-visible { border-color: #64748b; outline: none; }
+  .realized-summary { min-width: 15rem; }
+  .realized-first-line { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+  .realized-amount { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .realized-period { max-width: 5.5rem; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; color: #f1f5f9; font: inherit; font-size: 0.68rem; padding: 0.12rem 0.2rem; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
@@ -1008,6 +1014,8 @@ DASHBOARD_HTML = """\
   let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'cad';
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
+  const storedRealizedPeriod = localStorage.getItem('dashboard-realized-profit-period');
+  let realizedProfitPeriod = ['all', 'month', 'week', '24h', '6h', '1h'].includes(storedRealizedPeriod) ? storedRealizedPeriod : 'all';
   let ethPrices = {};
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
@@ -1411,7 +1419,10 @@ DASHBOARD_HTML = """\
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
-    const realizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const allRealizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
+    const realizedProfit = realizedProfitPeriod === 'all' ? allRealizedProfit : states.reduce(function(total, d) {
+      return total + (parseFloat((d.realized_profit_periods || {})[realizedProfitPeriod]) || 0);
+    }, 0);
     const totalEthBalance = states.reduce(function(total, d) { return total + (parseFloat(d.eth_balance) || 0); }, 0);
     const trackingTimestamps = states.map(function(d) { return Date.parse(d.profit_tracking_started_at || ''); }).filter(Number.isFinite);
     const oldestTrackingAt = trackingTimestamps.length ? Math.min.apply(null, trackingTimestamps) : null;
@@ -1421,8 +1432,11 @@ DASHBOARD_HTML = """\
     const trackingAgeText = trackingElapsedHours === null ? '' :
       (trackingAgeDays > 0 ? trackingAgeDays + 'd ' + trackingAgeHours + 'h ago' :
         (trackingAgeHours > 0 ? trackingAgeHours + 'h ago' : '<1h ago'));
-    const realizedDailyAverage = trackingElapsedHours > 0 ? realizedProfit / (trackingElapsedHours / 24) : null;
-    const realizedHourlyAverage = trackingElapsedHours > 0 ? realizedProfit / trackingElapsedHours : null;
+    const realizedPeriodHours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[realizedProfitPeriod];
+    const realizedAverageHours = realizedProfitPeriod === 'all' ? trackingElapsedHours : realizedPeriodHours;
+    const realizedDailyAverage = realizedAverageHours > 0 ? realizedProfit / (realizedAverageHours / 24) : null;
+    const realizedHourlyAverage = realizedAverageHours > 0 ? realizedProfit / realizedAverageHours : null;
+    const realizedPeriodLabel = { all: 'Since ' + trackingAgeText, month: 'Last 30 days', week: 'Last 7 days', '24h': 'Last 24 hours', '6h': 'Last 6 hours', '1h': 'Last hour' }[realizedProfitPeriod];
     const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
@@ -1462,10 +1476,12 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
-      '<button class="summary-item realized-summary" type="button" data-realized-unit-toggle aria-label="Cycle realized profit units, currently ' + realizedUnitCode + '" title="Click to show ' + nextRealizedProfitUnit + '">Realized profit: ' + formatRealizedAmount(realizedProfit, true) +
-      (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by time since the oldest tracking start">Since ' + trackingAgeText + ' · avg ' +
+      '<span class="summary-item realized-summary"><span class="realized-first-line"><button class="realized-amount" type="button" data-realized-unit-toggle aria-label="Cycle realized profit units, currently ' + realizedUnitCode + '" title="Click to show ' + nextRealizedProfitUnit + '">Realized profit: ' + formatRealizedAmount(realizedProfit, true) + '</button>' +
+      '<select class="realized-period" data-realized-period aria-label="Realized profit period">' +
+      [['all', 'All'], ['month', 'Month'], ['week', 'Week'], ['24h', '24 hr'], ['6h', '6 hr'], ['1h', '1 hr']].map(function(option) { return '<option value="' + option[0] + '"' + (realizedProfitPeriod === option[0] ? ' selected' : '') + '>' + option[1] + '</option>'; }).join('') + '</select></span>' +
+      (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by the selected period">' + realizedPeriodLabel + ' · avg ' +
         formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +
-        formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</button>' +
+        formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</span>' +
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
       totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
       formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
@@ -2212,6 +2228,13 @@ DASHBOARD_HTML = """\
     if (!event.target.closest('[data-currency-toggle], [data-bag-currency-toggle]')) return;
     profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
     localStorage.setItem('dashboard-profit-currency', profitCurrency);
+    render(true);
+  });
+  summaryBar.addEventListener('change', function(event) {
+    const selector = event.target.closest('[data-realized-period]');
+    if (!selector) return;
+    realizedProfitPeriod = selector.value;
+    localStorage.setItem('dashboard-realized-profit-period', realizedProfitPeriod);
     render(true);
   });
   container.addEventListener('click', function(event) {
