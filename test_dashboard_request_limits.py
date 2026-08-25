@@ -75,6 +75,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("minimumFractionDigits: 2, maximumFractionDigits: 2", body)
         self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
 
+    def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("function estimatedBagValue(d, currency)", body)
+        self.assertIn("ethBalance + tokenBalance * tokenPriceEth", body)
+        self.assertIn("usdgBalance * ethRate / usdRate", body)
+        self.assertIn("Estimated fleet value:", body)
+        self.assertIn("['Estimated Bag Value', 'estimated_bag_value']", body)
+        self.assertIn("data-bag-currency-toggle", body)
+        self.assertIn("liquidation value may be lower", body)
+
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="notification-menu" id="notification-menu" hidden', body)
