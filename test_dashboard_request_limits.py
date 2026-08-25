@@ -129,7 +129,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('data-focus-bot="', body)
         self.assertIn('tabindex="-1"', body)
         self.assertIn("candidate.dataset.botId === focusLink.dataset.focusBot", body)
-        self.assertIn("card.scrollIntoView({ behavior: 'smooth', block: 'center' })", body)
+        self.assertIn("card.scrollIntoView({ behavior: 'smooth', block: 'start' })", body)
         self.assertIn("card.focus({ preventScroll: true })", body)
         self.assertIn(".card:focus { outline: 2px solid #f59e0b", body)
 

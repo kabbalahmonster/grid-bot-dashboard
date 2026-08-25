@@ -2262,7 +2262,7 @@ DASHBOARD_HTML = """\
         return candidate.dataset.botId === focusLink.dataset.focusBot;
       });
       if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
         card.focus({ preventScroll: true });
       }
       return;
