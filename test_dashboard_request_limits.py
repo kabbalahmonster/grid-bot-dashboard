@@ -94,6 +94,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("event.code !== 'usdg_banked'", body)
         self.assertIn("count >= 3 && (previousEvents.get(key) || 0) < 3", body)
         self.assertIn("Notification.requestPermission()", body)
+        self.assertIn('id="notification-note"', body)
+        self.assertIn("Notification.permission === 'denied'", body)
+        self.assertIn('add doomdash.ca to the Home Screen', body)
 
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)

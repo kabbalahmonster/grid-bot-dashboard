@@ -942,7 +942,7 @@ DASHBOARD_HTML = """\
         <label class="notification-option"><input type="checkbox" data-notification-type="treasury"> Treasury/banking success</label>
         <label class="notification-option"><input type="checkbox" data-notification-type="errors"> Persistent errors</label>
         <button class="notification-enable" id="notification-enable" type="button">Enable browser notifications</button>
-        <span class="notification-note">Alerts work while this dashboard is open. Choices are saved in this browser.</span>
+        <span class="notification-note" id="notification-note">Alerts work while this dashboard is open. Choices are saved in this browser.</span>
       </div>
     </span>
   </div>
@@ -981,6 +981,7 @@ DASHBOARD_HTML = """\
   const notificationsButton = document.getElementById('notifications');
   const notificationMenu = document.getElementById('notification-menu');
   const notificationEnable = document.getElementById('notification-enable');
+  const notificationNote = document.getElementById('notification-note');
   const bots = {};
   const marketData = {};
   const openMarketMovements = new Set();
@@ -2212,6 +2213,9 @@ DASHBOARD_HTML = """\
     notificationsButton.textContent = enabled ? 'Notifications: On' : 'Notifications';
     notificationEnable.textContent = enabled ? 'Disable browser notifications' : 'Enable browser notifications';
   }
+  function setNotificationMessage(message) {
+    notificationNote.textContent = message;
+  }
   notificationsButton.addEventListener('click', function() {
     const opening = notificationMenu.hidden;
     notificationMenu.hidden = !opening;
@@ -2224,21 +2228,42 @@ DASHBOARD_HTML = """\
     notificationPreferences[input.dataset.notificationType] = input.checked;
     localStorage.setItem('dashboard-notification-preferences', JSON.stringify(notificationPreferences));
   });
-  notificationEnable.addEventListener('click', function() {
+  notificationEnable.addEventListener('click', async function() {
     if (browserNotificationsEnabled()) {
       notificationsMasterEnabled = false;
       localStorage.setItem('dashboard-notifications-enabled', 'false');
       notifiedOffline.clear();
       updateNotificationControls();
+      setNotificationMessage('Browser alerts are off. Your category choices are still saved.');
       return;
     }
-    if (!window.isSecureContext) { notificationEnable.textContent = 'HTTPS required'; return; }
-    if (!('Notification' in window)) { notificationEnable.textContent = 'Unsupported in this browser'; return; }
-    Notification.requestPermission().then(function(permission) {
+    if (!window.isSecureContext) { setNotificationMessage('Notifications require HTTPS.'); return; }
+    if (!('Notification' in window)) {
+      setNotificationMessage('This browser does not expose notifications. On iPhone, add doomdash.ca to the Home Screen and open it there.');
+      return;
+    }
+    if (Notification.permission === 'denied') {
+      setNotificationMessage('Notifications are blocked. Allow them in this browser\u2019s site settings, then try again.');
+      return;
+    }
+    notificationEnable.disabled = true;
+    notificationEnable.textContent = 'Requesting permission\u2026';
+    try {
+      const permission = await Notification.requestPermission();
       notificationsMasterEnabled = permission === 'granted';
       localStorage.setItem('dashboard-notifications-enabled', String(notificationsMasterEnabled));
       updateNotificationControls();
-    });
+      setNotificationMessage(permission === 'granted'
+        ? 'Browser alerts are on. Choices are saved in this browser.'
+        : 'Permission was not granted. Allow notifications in this browser\u2019s site settings, then try again.');
+    } catch (_) {
+      notificationsMasterEnabled = false;
+      localStorage.setItem('dashboard-notifications-enabled', 'false');
+      updateNotificationControls();
+      setNotificationMessage('The browser could not open its permission prompt. On iPhone, add doomdash.ca to the Home Screen and open it there.');
+    } finally {
+      notificationEnable.disabled = false;
+    }
   });
   document.addEventListener('click', function(event) {
     if (notificationMenu.hidden || event.target.closest('.notification-wrap')) return;
