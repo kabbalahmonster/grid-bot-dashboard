@@ -1010,8 +1010,18 @@ DASHBOARD_HTML = """\
     name: 'asc', 'estimated-value': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
   };
-  let sortDirectionValue = defaultSortDirections.profit;
-  let profitCurrency = localStorage.getItem('dashboard-profit-currency') || 'cad';
+  const storedSortMode = localStorage.getItem('dashboard-sort-mode');
+  if (storedSortMode && sortBots.querySelector('option[value="' + CSS.escape(storedSortMode) + '"]')) sortBots.value = storedSortMode;
+  const storedSortDirection = localStorage.getItem('dashboard-sort-direction');
+  let sortDirectionValue = ['asc', 'desc'].includes(storedSortDirection) ? storedSortDirection : (defaultSortDirections[sortBots.value] || 'asc');
+  const storedProfitCurrency = localStorage.getItem('dashboard-profit-currency');
+  let profitCurrency = ['cad', 'usd'].includes(storedProfitCurrency) ? storedProfitCurrency : 'cad';
+  botFilter.value = localStorage.getItem('dashboard-bot-filter') || '';
+  const storedChainFilter = localStorage.getItem('dashboard-chain-filter') || '';
+  if (chainFilter.querySelector('option[value="' + CSS.escape(storedChainFilter) + '"]')) chainFilter.value = storedChainFilter;
+  const storedProviderFilter = localStorage.getItem('dashboard-provider-filter') || '';
+  if (providerFilter.querySelector('option[value="' + CSS.escape(storedProviderFilter) + '"]')) providerFilter.value = storedProviderFilter;
+  clearFilter.style.display = botFilter.value ? 'block' : 'none';
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
   const storedRealizedPeriod = localStorage.getItem('dashboard-realized-profit-period');
@@ -2271,27 +2281,38 @@ DASHBOARD_HTML = """\
   });
   window.addEventListener('online', reconnectNow);
   botFilter.addEventListener('input', function() {
+    localStorage.setItem('dashboard-bot-filter', botFilter.value);
     clearFilter.style.display = botFilter.value ? 'block' : 'none';
     render(true);
   });
   clearFilter.addEventListener('click', function() {
     botFilter.value = '';
+    localStorage.setItem('dashboard-bot-filter', '');
     clearFilter.style.display = 'none';
     botFilter.focus();
     render(true);
   });
-  chainFilter.addEventListener('input', function() { render(true); });
-  providerFilter.addEventListener('input', function() { render(true); });
+  chainFilter.addEventListener('input', function() {
+    localStorage.setItem('dashboard-chain-filter', chainFilter.value);
+    render(true);
+  });
+  providerFilter.addEventListener('input', function() {
+    localStorage.setItem('dashboard-provider-filter', providerFilter.value);
+    render(true);
+  });
   function updateSortDirectionButton() {
     sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
   }
   sortBots.addEventListener('change', function() {
     sortDirectionValue = defaultSortDirections[sortBots.value] || 'asc';
+    localStorage.setItem('dashboard-sort-mode', sortBots.value);
+    localStorage.setItem('dashboard-sort-direction', sortDirectionValue);
     updateSortDirectionButton();
     render(true);
   });
   sortDirection.addEventListener('click', function() {
     sortDirectionValue = sortDirectionValue === 'asc' ? 'desc' : 'asc';
+    localStorage.setItem('dashboard-sort-direction', sortDirectionValue);
     updateSortDirectionButton();
     render(true);
   });

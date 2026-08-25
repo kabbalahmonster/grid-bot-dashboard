@@ -53,6 +53,18 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("parseInt(av.sells, 10)", body)
         self.assertIn("buys: 'desc', sells: 'desc'", body)
 
+    def test_toolbar_and_currency_settings_persist_locally(self):
+        body = self.client.get("/").get_data(as_text=True)
+        for key in (
+            "dashboard-bot-filter", "dashboard-chain-filter", "dashboard-provider-filter",
+            "dashboard-sort-mode", "dashboard-sort-direction", "dashboard-profit-currency",
+            "dashboard-realized-profit-unit", "dashboard-realized-profit-period",
+            "dashboard-sigil-animation", "dashboard-notification-preferences",
+        ):
+            self.assertIn(key, body)
+        self.assertIn("['asc', 'desc'].includes(storedSortDirection)", body)
+        self.assertIn("['cad', 'usd'].includes(storedProfitCurrency)", body)
+
     def test_summary_shows_realized_profit_age_and_averages(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("Date.parse(d.profit_tracking_started_at || '')", body)
