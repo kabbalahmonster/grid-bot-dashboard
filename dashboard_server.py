@@ -779,6 +779,9 @@ DASHBOARD_HTML = """\
   .realized-period { appearance: none; -webkit-appearance: none; max-width: 5.5rem; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; background-image: none; color: #f1f5f9; font: inherit; font-size: 0.68rem; text-align: center; padding: 0.12rem 0.3rem; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
+  .needs-position-link { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 0.15rem; cursor: pointer; }
+  .needs-position-link:hover, .needs-position-link:focus-visible { color: #fef3c7; outline: none; }
+  .card:focus { outline: 2px solid #f59e0b; outline-offset: 3px; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
   .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
   .notification-wrap { position: relative; }
@@ -1425,7 +1428,6 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(state.capacity_warning) && reportAge(state.received_at).status === 'running';
     });
-    const needsPositionNames = needsPositions.map(function(id) { return bots[id].display_name || id; });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
@@ -1479,9 +1481,11 @@ DASHBOARD_HTML = """\
       return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
     };
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
-    const nextSummaryHtml = (needsPositions.length
+      const nextSummaryHtml = (needsPositions.length
         ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
-          ' <span class="bot-names">(' + needsPositionNames.map(esc).join(', ') + ')</span></span>'
+          ' <span class="bot-names">(' + needsPositions.map(function(id) {
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].display_name || id) + '</button>';
+          }).join(', ') + ')</span></span>'
         : '<span class="summary-item">Needs new positions: 0</span>') +
       '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
@@ -1953,7 +1957,7 @@ DASHBOARD_HTML = """\
     botIds.forEach(function(botId) {
       const d = bots[botId];
       if (changedBotIds && changedBotIds.size && !changedBotIds.has(botId)) {
-        html += '<div class="card" data-bot-id="' + esc(botId) + '"></div>';
+        html += '<div class="card" data-bot-id="' + esc(botId) + '" tabindex="-1"></div>';
         return;
       }
       const age = reportAge(d.received_at);
@@ -1964,7 +1968,7 @@ DASHBOARD_HTML = """\
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
       const sigilOpen = !closedSigils.has(botKey);
-      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '">';
+      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
@@ -2252,6 +2256,17 @@ DASHBOARD_HTML = """\
   setInterval(fetchEthPrices, 60000);
   setInterval(fetchMarketData, 60000);
   summaryBar.addEventListener('click', function(event) {
+    const focusLink = event.target.closest('[data-focus-bot]');
+    if (focusLink) {
+      const card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
+        return candidate.dataset.botId === focusLink.dataset.focusBot;
+      });
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.focus({ preventScroll: true });
+      }
+      return;
+    }
     if (event.target.closest('[data-realized-unit-toggle]')) {
       realizedProfitUnit = { eth: 'cad', cad: 'usd', usd: 'eth' }[realizedProfitUnit];
       localStorage.setItem('dashboard-realized-profit-unit', realizedProfitUnit);

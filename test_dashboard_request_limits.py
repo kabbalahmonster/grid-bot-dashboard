@@ -124,6 +124,15 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Combined ETH balance across the displayed bots", body)
         self.assertLess(body.index("formatRealizedAmount(realizedHourlyAverage, false)"), body.index("Total ETH: ' +"))
 
+    def test_needs_positions_names_focus_their_bot_cards(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('data-focus-bot="', body)
+        self.assertIn('tabindex="-1"', body)
+        self.assertIn("candidate.dataset.botId === focusLink.dataset.focusBot", body)
+        self.assertIn("card.scrollIntoView({ behavior: 'smooth', block: 'center' })", body)
+        self.assertIn("card.focus({ preventScroll: true })", body)
+        self.assertIn(".card:focus { outline: 2px solid #f59e0b", body)
+
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="notification-menu" id="notification-menu" hidden', body)
