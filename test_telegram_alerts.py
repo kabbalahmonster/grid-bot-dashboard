@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from telegram_alerts import TelegramAlerts
 
@@ -32,7 +32,10 @@ class TestTelegramAlerts(unittest.TestCase):
 
         self.assertEqual(self.alerts.send.call_count, 1)
         self.assertIn("Sell confirmed · CASHCAT", self.alerts.send.call_args.args[0])
-        self.assertIn("https://base.blockscout.com/tx/0xabc", self.alerts.send.call_args.args[0])
+        self.assertEqual(
+            self.alerts.send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]["url"],
+            "https://base.blockscout.com/tx/0xabc",
+        )
 
     def test_stop_loss_uses_high_priority_category(self):
         current = {"trades_history": [{"side": "sell", "tx_hash": "0xloss", "profit_eth": -0.002}]}
@@ -72,6 +75,37 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts._handle_command({"chat": {"id": 123}, "text": "/alerts buys on"})
         self.assertFalse(self.alerts._preferences["buys"])
         self.alerts.send.assert_not_called()
+
+    def test_status_needs_and_bot_commands_use_live_fleet_state(self):
+        self.states["cashcat"] = {
+            "display_name": "CASHCAT", "token_symbol": "CASHCAT",
+            "received_at": datetime.now(timezone.utc).isoformat(),
+            "eth_balance": 0.25, "usdg_balance": 50, "session_profit_eth": 0.01,
+            "realized_profit_eth": 0.02, "filled_positions": 4, "max_positions": 5,
+            "capacity_warning": {"max_positions": 5},
+        }
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/status"})
+        self.assertIn("Running: 1/1", self.alerts.send.call_args.args[0])
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/needs"})
+        self.assertIn("CASHCAT · 5 slots full", self.alerts.send.call_args.args[0])
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/bot CASHCAT"})
+        self.assertIn("Positions: 4/5", self.alerts.send.call_args.args[0])
+
+    def test_mute_and_unmute_are_durable(self):
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/mute 6h"})
+        self.assertIsNotNone(self.alerts._muted_until)
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/unmute"})
+        self.assertIsNone(self.alerts._muted_until)
+
+    @patch("telegram_alerts.requests.post")
+    def test_inline_callback_toggles_category(self, post):
+        post.return_value.raise_for_status.return_value = None
+        self.alerts._handle_callback({
+            "id": "callback-1", "data": "toggle:buys",
+            "message": {"chat": {"id": 7045629589}, "message_id": 12},
+        })
+        self.assertTrue(self.alerts._preferences["buys"])
+        self.assertEqual(post.call_count, 2)
 
 
 if __name__ == "__main__":
