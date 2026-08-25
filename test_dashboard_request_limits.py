@@ -70,6 +70,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Date.parse(d.profit_tracking_started_at || '')", body)
         self.assertIn("realizedProfit / (realizedAverageHours / 24)", body)
         self.assertIn("realizedProfit / realizedAverageHours", body)
+        self.assertIn("Math.min(realizedPeriodHours, trackingElapsedHours)", body)
+        self.assertIn("trackingElapsedHours < realizedPeriodHours", body)
         self.assertIn("all: 'Since ' + trackingAgeText", body)
         self.assertIn("'/day · '", body)
         self.assertIn("'/hr</span>'", body)

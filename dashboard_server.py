@@ -1443,10 +1443,13 @@ DASHBOARD_HTML = """\
       (trackingAgeDays > 0 ? trackingAgeDays + 'd ' + trackingAgeHours + 'h ago' :
         (trackingAgeHours > 0 ? trackingAgeHours + 'h ago' : '<1h ago'));
     const realizedPeriodHours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[realizedProfitPeriod];
-    const realizedAverageHours = realizedProfitPeriod === 'all' ? trackingElapsedHours : realizedPeriodHours;
+    const realizedAverageHours = realizedProfitPeriod === 'all' ? trackingElapsedHours :
+      (trackingElapsedHours === null ? realizedPeriodHours : Math.min(realizedPeriodHours, trackingElapsedHours));
     const realizedDailyAverage = realizedAverageHours > 0 ? realizedProfit / (realizedAverageHours / 24) : null;
     const realizedHourlyAverage = realizedAverageHours > 0 ? realizedProfit / realizedAverageHours : null;
-    const realizedPeriodLabel = { all: 'Since ' + trackingAgeText, month: 'Since 30d ago', week: 'Since 7d ago', '24h': 'Since 24h ago', '6h': 'Since 6h ago', '1h': 'Since 1h ago' }[realizedProfitPeriod];
+    const realizedPeriodLabel = realizedProfitPeriod !== 'all' && trackingElapsedHours !== null && trackingElapsedHours < realizedPeriodHours
+      ? 'Since ' + trackingAgeText
+      : { all: 'Since ' + trackingAgeText, month: 'Since 30d ago', week: 'Since 7d ago', '24h': 'Since 24h ago', '6h': 'Since 6h ago', '1h': 'Since 1h ago' }[realizedProfitPeriod];
     const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
