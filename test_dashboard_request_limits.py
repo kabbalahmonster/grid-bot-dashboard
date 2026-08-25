@@ -72,6 +72,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatRealizedAmount(realizedProfit, true)", body)
         self.assertIn("formatRealizedAmount(realizedDailyAverage, false)", body)
         self.assertIn("formatRealizedAmount(realizedHourlyAverage, false)", body)
+        self.assertIn("minimumFractionDigits: 2, maximumFractionDigits: 2", body)
         self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
 
     def test_browser_notification_types_are_optional_and_deduplicated(self):

@@ -1439,7 +1439,7 @@ DASHBOARD_HTML = """\
       if (!Number.isFinite(realizedUnitRate)) return '—' + (includeUnit ? ' ' + realizedUnitCode : '');
       const value = valueEth * realizedUnitRate;
       if (realizedProfitUnit === 'eth') return (value >= 0 ? '+' : '') + value.toFixed(8) + (includeUnit ? ' ETH' : '');
-      const formatted = new Intl.NumberFormat(undefined, { style: 'currency', currency: realizedUnitCode, minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
+      const formatted = new Intl.NumberFormat(undefined, { style: 'currency', currency: realizedUnitCode, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value);
       return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
     };
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
