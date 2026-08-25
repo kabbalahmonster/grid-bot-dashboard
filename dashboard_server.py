@@ -1459,9 +1459,6 @@ DASHBOARD_HTML = """\
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
       (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') + ' ' + fiatCode +
       '<span class="summary-detail">ETH + USDG + tokens · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span></button>' +
-      '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
-      totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
-      formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
@@ -1469,6 +1466,9 @@ DASHBOARD_HTML = """\
       (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by time since the oldest tracking start">Since ' + trackingAgeText + ' · avg ' +
         formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +
         formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</button>' +
+      '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
+      totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
+      formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
       '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
