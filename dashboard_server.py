@@ -2216,6 +2216,12 @@ DASHBOARD_HTML = """\
   function setNotificationMessage(message) {
     notificationNote.textContent = message;
   }
+  function notificationBlockedMessage() {
+    if (/Android/i.test(navigator.userAgent)) {
+      return 'Notifications are blocked. Check both Android Settings › Apps › Chrome › Notifications and Chrome’s permission for doomdash.ca, then reload.';
+    }
+    return 'Notifications are blocked. Allow them in this browser’s site settings, then reload.';
+  }
   notificationsButton.addEventListener('click', function() {
     const opening = notificationMenu.hidden;
     notificationMenu.hidden = !opening;
@@ -2243,7 +2249,7 @@ DASHBOARD_HTML = """\
       return;
     }
     if (Notification.permission === 'denied') {
-      setNotificationMessage('Notifications are blocked. Allow them in this browser\u2019s site settings, then try again.');
+      setNotificationMessage(notificationBlockedMessage());
       return;
     }
     notificationEnable.disabled = true;
@@ -2255,7 +2261,7 @@ DASHBOARD_HTML = """\
       updateNotificationControls();
       setNotificationMessage(permission === 'granted'
         ? 'Browser alerts are on. Choices are saved in this browser.'
-        : 'Permission was not granted. Allow notifications in this browser\u2019s site settings, then try again.');
+        : notificationBlockedMessage());
     } catch (_) {
       notificationsMasterEnabled = false;
       localStorage.setItem('dashboard-notifications-enabled', 'false');
