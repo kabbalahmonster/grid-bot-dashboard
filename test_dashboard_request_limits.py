@@ -133,6 +133,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("card.focus({ preventScroll: true })", body)
         self.assertIn(".card:focus { outline: 2px solid #f59e0b", body)
 
+    def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("['Next Buy Est.', 'next_buy_estimated_eth']", body)
+        self.assertIn("['Gas Reserve', 'gas_reserve_eth']", body)
+        self.assertIn("(parseFloat(d.eth_balance) || 0) - reportedGasReserve", body)
+        self.assertIn("/ unfilledPositions", body)
+        self.assertIn("toFixed(5)", body)
+
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="notification-menu" id="notification-menu" hidden', body)
