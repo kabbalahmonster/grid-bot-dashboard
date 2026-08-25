@@ -40,6 +40,7 @@ import requests as http_requests
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
+from telegram_alerts import TelegramAlerts
 
 # Load .env file if present
 load_dotenv()
@@ -65,6 +66,9 @@ STATE_FILE = os.environ.get("STATE_FILE", "data/dashboard_state.json")
 STATE_FLUSH_INTERVAL = float(os.environ.get("STATE_FLUSH_INTERVAL", "15"))
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
 MAX_STATUS_REQUEST_BYTES = 128 * 1024
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+TELEGRAM_ALERT_STATE_FILE = os.environ.get("TELEGRAM_ALERT_STATE_FILE", "data/telegram_alert_state.json")
 
 # Patterns that suggest private key material (checked against keys AND values)
 _PRIVATE_KEY_PATTERNS = [
@@ -255,6 +259,20 @@ def _load_persisted_state():
 _load_persisted_state()
 threading.Thread(target=_state_writer, name="dashboard-state-writer", daemon=True).start()
 atexit.register(_shutdown_state_writer)
+
+
+def _telegram_state_snapshot():
+    with _lock:
+        return {bot_id: dict(state) for bot_id, state in bot_states.items()}
+
+
+telegram_alerts = TelegramAlerts(
+    TELEGRAM_BOT_TOKEN,
+    TELEGRAM_CHAT_ID,
+    TELEGRAM_ALERT_STATE_FILE,
+    _telegram_state_snapshot,
+)
+atexit.register(telegram_alerts.close)
 
 # ---------------------------------------------------------------------------
 # Rate limiter
@@ -448,11 +466,14 @@ def receive_status():
     }
 
     with _lock:
+        previous_state = bot_states.get(bot_id)
         bot_states[bot_id] = data
         bot_history[bot_id].append(entry)
         _mark_state_dirty_locked()
 
     _broadcast("update", entry)
+    telegram_alerts.start()
+    telegram_alerts.process_status(bot_id, previous_state, data)
     logger.info("Status update from bot=%s", bot_id)
 
     return jsonify({"ok": True, "id": entry["id"], "received_at": now}), 200
