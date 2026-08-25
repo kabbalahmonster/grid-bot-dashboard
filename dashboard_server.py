@@ -1454,12 +1454,12 @@ DASHBOARD_HTML = """\
         ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
           ' <span class="bot-names">(' + needsPositionNames.map(esc).join(', ') + ')</span></span>'
         : '<span class="summary-item">Needs new positions: 0</span>') +
-      '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
-      (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
-      ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
       (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') + ' ' + fiatCode +
       '<span class="summary-detail">ETH + USDG + tokens · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span></button>' +
+      '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
+      (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
+      ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<button class="summary-item realized-summary" type="button" data-realized-unit-toggle aria-label="Cycle realized profit units, currently ' + realizedUnitCode + '" title="Click to show ' + nextRealizedProfitUnit + '">Realized profit: ' + formatRealizedAmount(realizedProfit, true) +
       (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by time since the oldest tracking start">Since ' + trackingAgeText + ' · avg ' +
         formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +

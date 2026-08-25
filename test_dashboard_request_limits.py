@@ -81,6 +81,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("ethBalance + tokenBalance * tokenPriceEth", body)
         self.assertIn("usdgBalance * ethRate / usdRate", body)
         self.assertIn("Estimated fleet value:", body)
+        self.assertLess(body.index("Estimated fleet value:"), body.index("Session profit:"))
         self.assertIn("['Estimated Bag Value', 'estimated_bag_value']", body)
         self.assertIn("data-bag-currency-toggle", body)
         self.assertIn("liquidation value may be lower", body)
