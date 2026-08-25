@@ -928,7 +928,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
-    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
       <div class="notification-menu" id="notification-menu" hidden>
@@ -1001,7 +1001,7 @@ DASHBOARD_HTML = """\
   let notificationsMasterEnabled = localStorage.getItem('dashboard-notifications-enabled') === 'true';
   try { notificationPreferences = Object.assign(notificationPreferences, JSON.parse(localStorage.getItem('dashboard-notification-preferences') || '{}')); } catch (_) {}
   const defaultSortDirections = {
-    name: 'asc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
+    name: 'asc', 'estimated-value': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
   };
   let sortDirectionValue = defaultSortDirections.profit;
@@ -1448,12 +1448,12 @@ DASHBOARD_HTML = """\
       return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
     };
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
-    const nextSummaryHtml = '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
-      '<span class="summary-item">Offline: ' + offline + '</span>' +
-      (needsPositions.length
+    const nextSummaryHtml = (needsPositions.length
         ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
           ' <span class="bot-names">(' + needsPositionNames.map(esc).join(', ') + ')</span></span>'
         : '<span class="summary-item">Needs new positions: 0</span>') +
+      '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
+      '<span class="summary-item">Offline: ' + offline + '</span>' +
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
       (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') + ' ' + fiatCode +
       '<span class="summary-detail">ETH + USDG + tokens · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span></button>' +
@@ -1824,6 +1824,14 @@ DASHBOARD_HTML = """\
         const aName = String(av.display_name || a).toLowerCase();
         const bName = String(bv.display_name || b).toLowerCase();
         result = aName.localeCompare(bName) || a.localeCompare(b);
+      }
+      else if (mode === 'estimated-value') {
+        const aValue = estimatedBagValue(av, profitCurrency);
+        const bValue = estimatedBagValue(bv, profitCurrency);
+        if (aValue === null && bValue === null) return a.localeCompare(b);
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        result = aValue - bValue;
       }
       else if (mode === 'market-cap') {
         const aRaw = (marketData[a] || {}).value_usd, bRaw = (marketData[b] || {}).value_usd;

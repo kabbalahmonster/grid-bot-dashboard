@@ -85,6 +85,11 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("['Estimated Bag Value', 'estimated_bag_value']", body)
         self.assertIn("data-bag-currency-toggle", body)
         self.assertIn("liquidation value may be lower", body)
+        self.assertIn('<option value="estimated-value">Estimated value</option>', body)
+        self.assertIn("mode === 'estimated-value'", body)
+        self.assertIn("estimatedBagValue(av, profitCurrency)", body)
+        self.assertIn("'estimated-value': 'desc'", body)
+        self.assertLess(body.index("Needs new positions:"), body.index("Active:"))
 
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
