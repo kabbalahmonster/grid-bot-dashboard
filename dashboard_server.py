@@ -2083,7 +2083,7 @@ DASHBOARD_HTML = """\
         return Number.isFinite(Number(value)) ? (Number(value) >= 0 ? ' positive' : ' negative') : '';
       };
       html += '<details class="market-movement" data-market-movement-key="' + esc(botKey) + '"' + (openMarketMovements.has(botKey) ? ' open' : '') + '>' +
-        '<summary><span class="label">Day</span><span class="value' + movementClass(changes.h24) + '" data-market-window="h24">' + esc(formatMovement(changes.h24)) + '</span></summary>' +
+        '<summary><span class="label">24h</span><span class="value' + movementClass(changes.h24) + '" data-market-window="h24">' + esc(formatMovement(changes.h24)) + '</span></summary>' +
         '<div class="movement-breakdown">' +
         '<div class="metric"><span class="label">5m</span><span class="value' + movementClass(changes.m5) + '" data-market-window="m5">' + esc(formatMovement(changes.m5)) + '</span></div>' +
         '<div class="metric"><span class="label">1h</span><span class="value' + movementClass(changes.h1) + '" data-market-window="h1">' + esc(formatMovement(changes.h1)) + '</span></div>' +

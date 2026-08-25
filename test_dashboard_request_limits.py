@@ -39,6 +39,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_dashboard_offers_day_movement_sort(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('<option value="day-movement">Day Movement</option>', body)
+        self.assertIn('<summary><span class="label">24h</span>', body)
         self.assertIn("mode === 'day-movement'", body)
         self.assertIn("((marketData[a] || {}).price_change || {}).h24", body)
         self.assertIn("sortBots.value === 'day-movement'", body)
