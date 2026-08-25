@@ -776,7 +776,7 @@ DASHBOARD_HTML = """\
   .realized-summary { min-width: 15rem; }
   .realized-first-line { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
   .realized-amount { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
-  .realized-period { max-width: 5.5rem; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; color: #f1f5f9; font: inherit; font-size: 0.68rem; padding: 0.12rem 0.2rem; }
+  .realized-period { appearance: none; -webkit-appearance: none; max-width: 5.5rem; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; background-image: none; color: #f1f5f9; font: inherit; font-size: 0.68rem; text-align: center; padding: 0.12rem 0.3rem; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
@@ -1499,7 +1499,8 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
-    if (summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
+    const periodSelectorOpen = document.activeElement && document.activeElement.matches('[data-realized-period]');
+    if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
   }
 
   function fetchEthPrices() {

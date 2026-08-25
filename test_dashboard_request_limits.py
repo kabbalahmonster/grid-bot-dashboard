@@ -92,6 +92,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("data-realized-period", body)
         for label in ("All", "Month", "Week", "24 hr", "6 hr", "1 hr"):
             self.assertIn("'" + label + "'", body)
+        self.assertIn("document.activeElement.matches('[data-realized-period]')", body)
+        self.assertIn("if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml)", body)
+        self.assertIn(".realized-period { appearance: none; -webkit-appearance: none;", body)
 
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)
