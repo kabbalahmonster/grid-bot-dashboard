@@ -961,7 +961,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
-    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
       <div class="notification-menu" id="notification-menu" hidden>
@@ -1034,7 +1034,7 @@ DASHBOARD_HTML = """\
   let notificationsMasterEnabled = localStorage.getItem('dashboard-notifications-enabled') === 'true';
   try { notificationPreferences = Object.assign(notificationPreferences, JSON.parse(localStorage.getItem('dashboard-notification-preferences') || '{}')); } catch (_) {}
   const defaultSortDirections = {
-    name: 'asc', 'estimated-value': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
+    name: 'asc', 'estimated-value': 'desc', 'next-buy-estimate': 'desc', 'needs-positions': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
   };
   const storedSortMode = localStorage.getItem('dashboard-sort-mode');
@@ -1580,6 +1580,13 @@ DASHBOARD_HTML = """\
     return cryptoValue + usdgValue;
   }
 
+  function estimatedNextBuy(d) {
+    const unfilled = Math.max(0, (parseInt(d.max_positions, 10) || 0) - (parseInt(d.filled_positions, 10) || 0));
+    const reserve = parseFloat(d.gas_reserve_eth);
+    if (unfilled <= 0 || !Number.isFinite(reserve)) return null;
+    return Math.max(0, (parseFloat(d.eth_balance) || 0) - reserve) / unfilled;
+  }
+
   function formatBagValue(value, currency) {
     if (!Number.isFinite(value)) return '—';
     return new Intl.NumberFormat(undefined, {
@@ -1915,6 +1922,16 @@ DASHBOARD_HTML = """\
         if (bValue === null) return -1;
         result = aValue - bValue;
       }
+      else if (mode === 'next-buy-estimate') {
+        const aValue = estimatedNextBuy(av), bValue = estimatedNextBuy(bv);
+        if (aValue === null && bValue === null) return a.localeCompare(b);
+        if (aValue === null) return 1;
+        if (bValue === null) return -1;
+        result = aValue - bValue;
+      }
+      else if (mode === 'needs-positions') {
+        result = Number(Boolean(av.capacity_warning)) - Number(Boolean(bv.capacity_warning));
+      }
       else if (mode === 'market-cap') {
         const aRaw = (marketData[a] || {}).value_usd, bRaw = (marketData[b] || {}).value_usd;
         const aValue = Number(aRaw), bValue = Number(bRaw);
@@ -2050,11 +2067,7 @@ DASHBOARD_HTML = """\
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
         : null;
-      const unfilledPositions = Math.max(0, (parseInt(d.max_positions, 10) || 0) - (parseInt(d.filled_positions, 10) || 0));
-      const reportedGasReserve = parseFloat(d.gas_reserve_eth);
-      d.next_buy_estimated_eth = unfilledPositions > 0 && Number.isFinite(reportedGasReserve)
-        ? Math.max(0, (parseFloat(d.eth_balance) || 0) - reportedGasReserve) / unfilledPositions
-        : null;
+      d.next_buy_estimated_eth = estimatedNextBuy(d);
       d.estimated_bag_value = estimatedBagValue(d, profitCurrency);
 
       function renderMetric(pair) {

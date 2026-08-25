@@ -138,9 +138,19 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("['Next Buy Est.', 'next_buy_estimated_eth']", body)
         self.assertIn("['Gas Reserve', 'gas_reserve_eth']", body)
-        self.assertIn("(parseFloat(d.eth_balance) || 0) - reportedGasReserve", body)
-        self.assertIn("/ unfilledPositions", body)
+        self.assertIn("function estimatedNextBuy(d)", body)
+        self.assertIn("(parseFloat(d.eth_balance) || 0) - reserve", body)
         self.assertIn("toFixed(5)", body)
+
+    def test_dashboard_offers_operational_next_buy_and_capacity_sorts(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<option value="next-buy-estimate">Next buy estimate</option>', body)
+        self.assertIn("mode === 'next-buy-estimate'", body)
+        self.assertIn("estimatedNextBuy(av)", body)
+        self.assertIn("'next-buy-estimate': 'desc'", body)
+        self.assertIn('<option value="needs-positions">Needs positions</option>', body)
+        self.assertIn("mode === 'needs-positions'", body)
+        self.assertIn("Number(Boolean(av.capacity_warning))", body)
 
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
