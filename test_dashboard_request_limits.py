@@ -172,6 +172,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertNotIn("else if (!container.querySelector('details.chart-panel[open]')) render(true)", body)
         self.assertNotIn("else if (!container.querySelector('details.sigil-panel[open]')) render(true)", body)
 
+    def test_chart_lookup_failure_offers_retry(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("retry.textContent = 'Retry'", body)
+        self.assertIn("replacement.dataset.resolver = resolver", body)
+        self.assertIn("errorState.replaceWith(replacement)", body)
+        self.assertIn("frame.dataset.loading === 'true'", body)
+        self.assertIn(".chart-retry", body)
+
     def test_live_panels_are_preserved_while_surrounding_card_data_updates(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("updateGridPreservingLivePanels", body)

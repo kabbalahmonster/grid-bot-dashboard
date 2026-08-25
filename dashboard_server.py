@@ -870,6 +870,9 @@ DASHBOARD_HTML = """\
   details.more-info summary::-webkit-details-marker { display: none; }
   details.more-info[open] summary { margin-bottom: 0.35rem; }
   details.chart-panel { margin-top: 0.75rem; }
+  .chart-error { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 8rem; margin-top: 0.5rem; border: 1px solid #7f1d1d; border-radius: 0.375rem; background: #1f1115; color: #fca5a5; font-size: 0.78rem; }
+  .chart-retry { border: 1px solid #ef4444; border-radius: 0.3rem; padding: 0.3rem 0.55rem; background: #450a0a; color: #fecaca; font: inherit; cursor: pointer; }
+  .chart-retry:hover, .chart-retry:focus-visible { border-color: #fca5a5; color: #fff; outline: none; }
   details.sigil-panel { margin-top: 0.75rem; }
   .sigil-stage { display: grid; place-items: center; min-height: 300px; margin-top: 0.5rem; border: 1px solid #334155; border-radius: 0.375rem; background: radial-gradient(circle at center, #172033 0, #0f172a 68%); overflow: hidden; contain: layout paint style; isolation: isolate; }
   .sigil-stage[role="button"] { cursor: pointer; }
@@ -2204,15 +2207,38 @@ DASHBOARD_HTML = """\
       const loadChart = function() {
         if (!panel.open) return;
         const frame = panel.querySelector('iframe.dex-chart');
-        if (!frame || frame.src) return;
+        if (!frame || frame.src || frame.dataset.loading === 'true') return;
+        frame.dataset.loading = 'true';
         fetch(frame.dataset.resolver)
           .then(function(response) {
             if (!response.ok) throw new Error('Chart lookup failed: ' + response.status);
             return response.json();
           })
-          .then(function(data) { frame.src = data.chart_url; })
+          .then(function(data) {
+            frame.dataset.loading = 'false';
+            frame.src = data.chart_url;
+          })
           .catch(function(error) {
-            frame.replaceWith(document.createTextNode(error.message));
+            const resolver = frame.dataset.resolver;
+            const errorState = document.createElement('div');
+            errorState.className = 'chart-error';
+            const message = document.createElement('span');
+            message.textContent = error.message;
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'chart-retry';
+            retry.textContent = 'Retry';
+            retry.addEventListener('click', function() {
+              const replacement = document.createElement('iframe');
+              replacement.className = 'dex-chart';
+              replacement.loading = 'lazy';
+              replacement.dataset.resolver = resolver;
+              replacement.title = 'Dexscreener chart';
+              errorState.replaceWith(replacement);
+              loadChart();
+            });
+            errorState.append(message, retry);
+            frame.replaceWith(errorState);
           });
       };
       if (panel.dataset.chartWired !== 'true') {
