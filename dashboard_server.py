@@ -1460,6 +1460,8 @@ DASHBOARD_HTML = """\
     const uptimeText = uptimeDays > 0 ? uptimeDays + 'd ' + uptimeHours + 'h' : (uptimeHours > 0 ? uptimeHours + 'h ' + uptimeMinutes + 'm' : uptimeMinutes + 'm');
     const fiatRate = ethPrices[profitCurrency];
     const fiatCode = profitCurrency.toUpperCase();
+    const usdgCadValue = Number.isFinite(ethPrices.cad) && Number.isFinite(ethPrices.usd) && ethPrices.usd > 0
+      ? usdgBalance * ethPrices.cad / ethPrices.usd : null;
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
     const fleetBagValue = states.reduce(function(total, d) {
       const value = estimatedBagValue(d, profitCurrency);
@@ -1483,9 +1485,10 @@ DASHBOARD_HTML = """\
         : '<span class="summary-item">Needs new positions: 0</span>') +
       '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
-      '<button class="summary-item" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
-      (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') + ' ' + fiatCode +
-      '<span class="summary-detail">ETH + USDG + tokens · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span></button>' +
+      '<span class="summary-item" title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
+      (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') +
+      ' <button class="currency-toggle" type="button" data-bag-currency-toggle>' + fiatCode + '</button>' +
+      '<span class="summary-detail">ETH + USDG + tokens</span></span>' +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
@@ -1498,7 +1501,8 @@ DASHBOARD_HTML = """\
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
       totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
       formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
-      '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) + '</span>' +
+      '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) +
+      (usdgCadValue === null ? '' : '<span class="summary-detail">' + formatBagValue(usdgCadValue, 'cad') + ' CAD</span>') + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
