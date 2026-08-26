@@ -92,7 +92,8 @@ _STATUS_FIELDS = frozenset({
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
     "chain_id", "swap_provider", "token_symbol", "token_address", "wallet_address",
-    "display_name", "group", "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
+    "display_name", "group", "buy_point_percent", "sell_point_percent",
+    "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
 _TRADE_FIELDS = frozenset({"timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash", "profit_eth"})
@@ -2049,6 +2050,7 @@ DASHBOARD_HTML = """\
       ];
       const moreMetrics = [
         ['Price', 'price'],
+        ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
@@ -2078,6 +2080,10 @@ DASHBOARD_HTML = """\
           if (key === 'profit_percent') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(2) + '%';
+          } else if (key === 'buy_point_percent' || key === 'sell_point_percent') {
+            const point = parseFloat(val);
+            cls = key === 'buy_point_percent' ? 'negative' : 'positive';
+            val = (point >= 0 ? '+' : '') + point.toFixed(2).replace(/\\.00$/, '') + '%';
           } else if (key === 'estimated_bag_value') {
             val = '<button class="currency-toggle" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">' +
               esc(formatBagValue(Number(val), profitCurrency)) + ' ' + esc(profitCurrency.toUpperCase()) + '</button>';

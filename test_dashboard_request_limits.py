@@ -136,6 +136,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
 
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("['Buy Point', 'buy_point_percent']", body)
+        self.assertIn("['Sell Point', 'sell_point_percent']", body)
         self.assertIn("['Next Buy Est.', 'next_buy_estimated_eth']", body)
         self.assertIn("['Gas Reserve', 'gas_reserve_eth']", body)
         self.assertIn("function estimatedNextBuy(d)", body)
