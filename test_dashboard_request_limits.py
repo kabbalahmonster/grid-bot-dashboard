@@ -141,6 +141,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Sell checks active: ' + activeSellChecks.length", body)
         self.assertIn("bots[id].token_symbol || bots[id].display_name || id", body)
         self.assertIn("data-focus-bot=", body)
+        self.assertLess(body.index("Sell checks active:"), body.index("Needs new positions:"))
         self.assertLess(body.index("Sell checks active:"), body.index("Active: ' + active"))
         self.assertIn(".summary-item.sell-checks-active", body)
 
