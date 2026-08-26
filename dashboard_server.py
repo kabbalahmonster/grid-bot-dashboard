@@ -801,6 +801,8 @@ DASHBOARD_HTML = """\
   .realized-period { appearance: none; -webkit-appearance: none; max-width: 5.5rem; border: 1px solid #475569; border-radius: 0.25rem; background: #0f172a; background-image: none; color: #f1f5f9; font: inherit; font-size: 0.68rem; text-align: center; padding: 0.12rem 0.3rem; }
   .summary-item.needs-positions { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
+  .summary-item.sell-checks-active { background: #164e63; border-color: #22d3ee; color: #cffafe; font-weight: 700; }
+  .summary-item.sell-checks-active .bot-names { color: #67e8f9; }
   .needs-position-link { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 0.15rem; cursor: pointer; }
   .needs-position-link:hover, .needs-position-link:focus-visible { color: #fef3c7; outline: none; }
   .card:focus { outline: 2px solid #f59e0b; outline-offset: 3px; }
@@ -1453,6 +1455,10 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(state.capacity_warning) && reportAge(state.received_at).status === 'running';
     });
+    const activeSellChecks = Object.keys(bots).filter(function(id) {
+      const state = bots[id];
+      return Boolean(state.sell_attempt) && reportAge(state.received_at).status === 'running';
+    });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
@@ -1512,6 +1518,12 @@ DASHBOARD_HTML = """\
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].display_name || id) + '</button>';
           }).join(', ') + ')</span></span>'
         : '<span class="summary-item">Needs new positions: 0</span>') +
+      (activeSellChecks.length
+        ? '<span class="summary-item sell-checks-active" aria-live="polite">● Sell checks active: ' + activeSellChecks.length +
+          ' <span class="bot-names">(' + activeSellChecks.map(function(id) {
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          }).join(', ') + ')</span></span>'
+        : '<span class="summary-item">Sell checks active: 0</span>') +
       '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
       '<span class="summary-item" title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +

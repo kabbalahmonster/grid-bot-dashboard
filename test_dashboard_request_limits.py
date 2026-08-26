@@ -134,6 +134,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("card.focus({ preventScroll: true })", body)
         self.assertIn(".card:focus { outline: 2px solid #f59e0b", body)
 
+    def test_sell_checks_summary_lists_and_focuses_running_bots(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("const activeSellChecks = Object.keys(bots).filter", body)
+        self.assertIn("Boolean(state.sell_attempt)", body)
+        self.assertIn("Sell checks active: ' + activeSellChecks.length", body)
+        self.assertIn("bots[id].token_symbol || bots[id].display_name || id", body)
+        self.assertIn("data-focus-bot=", body)
+        self.assertLess(body.index("Sell checks active:"), body.index("Active: ' + active"))
+        self.assertIn(".summary-item.sell-checks-active", body)
+
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("['Buy Point', 'buy_point_percent']", body)
