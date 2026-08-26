@@ -42,6 +42,25 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts.process_status("loser", {"trades_history": []}, current)
         self.assertIn("Stop-loss sell", self.alerts.send.call_args.args[0])
 
+    def test_profit_banked_alert_includes_transaction_button(self):
+        self.alerts._preferences["treasury"] = True
+        event = {
+            "timestamp": "2026-08-26T03:00:00+00:00",
+            "level": "success",
+            "code": "usdg_banked",
+            "message": "Banked 1.25 USDG",
+            "tx_hash": "0xbank",
+        }
+        previous = {"events": []}
+        current = {"events": [event], "chain_id": 8453}
+
+        self.alerts.process_status("banker", previous, current)
+
+        self.assertIn("Profit banked", self.alerts.send.call_args.args[0])
+        buttons = self.alerts.send.call_args.kwargs["reply_markup"]["inline_keyboard"][0]
+        self.assertEqual(buttons[0]["text"], "View transaction ↗")
+        self.assertEqual(buttons[0]["url"], "https://base.blockscout.com/tx/0xbank")
+
     def test_offline_and_recovery_are_edge_triggered(self):
         old = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
         self.states["bot-1"] = {"display_name": "OLDIE", "received_at": old}

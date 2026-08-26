@@ -226,7 +226,12 @@ class TelegramAlerts:
             event_id = self._event_id(event)
             if self._wanted("treasury") and event.get("level") == "success" and event.get("code") == "usdg_banked" and event_id not in previous_events:
                 if self._remember(f"banking:{bot_id}:{event_id}"):
-                    self.send(f"🏦 Profit banked · {name}\n{event.get('message') or 'USDG banking confirmed'}")
+                    tx_url = self._tx_url(current, str(event.get("tx_hash") or ""))
+                    self.send(
+                        f"🏦 Profit banked · {name}\n"
+                        f"{event.get('message') or 'USDG banking confirmed'}",
+                        reply_markup=self._alert_buttons(tx_url),
+                    )
             count = int(event.get("count") or 1)
             if self._wanted("errors") and event.get("level") == "error" and count >= 3 and previous_events.get(event_id, 0) < 3:
                 if self._remember(f"error:{bot_id}:{event_id}"):
