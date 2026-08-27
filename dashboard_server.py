@@ -1267,10 +1267,35 @@ DASHBOARD_HTML = """\
     connect();
   }
 
+  function refreshCardsFromApi() {
+    return fetch('/api/bots', { cache: 'no-store' })
+      .then(function(response) {
+        if (!response.ok) throw new Error('Card refresh failed: ' + response.status);
+        return response.json();
+      })
+      .then(function(data) {
+        const nextBots = {};
+        Object.keys(data.bots || {}).forEach(function(botId) {
+          const entry = data.bots[botId];
+          if (entry && entry.state) nextBots[botId] = entry.state;
+        });
+        Object.keys(bots).forEach(function(botId) { delete bots[botId]; });
+        Object.keys(nextBots).forEach(function(botId) { bots[botId] = nextBots[botId]; });
+        render(true);
+        scheduleMarketDataFetch();
+      });
+  }
+
   reconnectCardsButton.addEventListener('click', function() {
     reconnectCardsButton.disabled = true;
     reconnectCardsButton.textContent = 'Refreshing…';
     reconnectNow();
+    refreshCardsFromApi()
+      .catch(function() {})
+      .finally(function() {
+        reconnectCardsButton.disabled = false;
+        reconnectCardsButton.textContent = 'Refresh cards';
+      });
     fetchEthPrices();
     fetchMarketData();
   });
