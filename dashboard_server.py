@@ -981,6 +981,7 @@ DASHBOARD_HTML = """\
         <span class="notification-note" id="notification-note">Alerts work while this dashboard is open. Choices are saved in this browser.</span>
       </div>
     </span>
+    <button id="reconnect-cards" type="button" title="Reconnect and refresh all bot cards" aria-label="Reconnect and refresh all bot cards">Refresh cards</button>
   </div>
   <div id="bots-container">
     <div class="empty" id="empty-state">
@@ -1015,6 +1016,7 @@ DASHBOARD_HTML = """\
   const sigilModalClose = sigilModal.querySelector('.sigil-modal-close');
   let sigilModalReturnFocus = null;
   const notificationsButton = document.getElementById('notifications');
+  const reconnectCardsButton = document.getElementById('reconnect-cards');
   const notificationMenu = document.getElementById('notification-menu');
   const notificationEnable = document.getElementById('notification-enable');
   const notificationNote = document.getElementById('notification-note');
@@ -1208,6 +1210,8 @@ DASHBOARD_HTML = """\
       if (generation !== connectionGeneration) return;
       dot.className = 'status-dot connected';
       connStatus.textContent = 'Live';
+      reconnectCardsButton.disabled = false;
+      reconnectCardsButton.textContent = 'Refresh cards';
       reconnectDelay = 1000;
     };
 
@@ -1227,6 +1231,7 @@ DASHBOARD_HTML = """\
       if (generation !== connectionGeneration) return;
       const data = JSON.parse(e.data);
       if (data.bots) {
+        Object.keys(bots).forEach(function(botId) { delete bots[botId]; });
         Object.keys(data.bots).forEach(function(botId) {
           bots[botId] = data.bots[botId];
         });
@@ -1261,6 +1266,14 @@ DASHBOARD_HTML = """\
     reconnectDelay = 1000;
     connect();
   }
+
+  reconnectCardsButton.addEventListener('click', function() {
+    reconnectCardsButton.disabled = true;
+    reconnectCardsButton.textContent = 'Refreshing…';
+    reconnectNow();
+    fetchEthPrices();
+    fetchMarketData();
+  });
 
   function esc(str) {
     const div = document.createElement('div');

@@ -189,6 +189,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Notification.permission === 'denied'", body)
         self.assertIn('add doomdash.ca to the Home Screen', body)
 
+    def test_dashboard_can_manually_reconnect_and_refresh_cards(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="reconnect-cards"', body)
+        self.assertIn("reconnectCardsButton.addEventListener('click'", body)
+        self.assertIn("reconnectCardsButton.textContent = 'Refreshing…'", body)
+        self.assertIn("reconnectNow();", body)
+        self.assertIn("fetchEthPrices();", body)
+        self.assertIn("fetchMarketData();", body)
+        self.assertIn("Object.keys(bots).forEach(function(botId) { delete bots[botId]; });", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)
