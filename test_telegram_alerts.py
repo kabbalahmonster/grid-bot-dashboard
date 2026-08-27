@@ -110,6 +110,54 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/bot CASHCAT"})
         self.assertIn("Positions: 4/5", self.alerts.send.call_args.args[0])
 
+    def test_attention_reports_operational_exceptions(self):
+        self.states["bot-1"] = {
+            "display_name": "DRAMA", "received_at": datetime.now(timezone.utc).isoformat(),
+            "capacity_warning": {"max_positions": 5}, "sell_attempt": {"status": "checking"},
+            "eth_balance": 0.0006, "gas_reserve_eth": 0.0002,
+            "events": [{"level": "error", "count": 3, "message": "nope"}],
+        }
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/attention"})
+        text = self.alerts.send.call_args.args[0]
+        self.assertIn("Needs positions: 1 · DRAMA", text)
+        self.assertIn("Sell checks: 1 · DRAMA", text)
+        self.assertIn("Errors/RPC: 1 · DRAMA", text)
+        self.assertIn("Low funds: 1 · DRAMA", text)
+
+    def test_profit_and_trade_commands_use_requested_period(self):
+        now = datetime.now(timezone.utc).isoformat()
+        self.states["winner"] = {
+            "realized_profit_periods": {"24h": 0.012},
+            "trades_history": [{"timestamp": now, "side": "sell", "profit_eth": 0.012}],
+        }
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/profit 24h"})
+        self.assertIn("Fleet: +0.01200000 ETH", self.alerts.send.call_args.args[0])
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/trades 24h"})
+        self.assertIn("1 total · 0 buys · 1 sells", self.alerts.send.call_args.args[0])
+
+    def test_low_funds_and_unbanked_usdg_alerts_are_edge_triggered(self):
+        self.states["poor"] = {
+            "eth_balance": 0.0006, "gas_reserve_eth": 0.0002, "usdg_balance": 12,
+        }
+        self.alerts.scan_funds()
+        self.alerts.scan_funds()
+        self.assertEqual(self.alerts.send.call_count, 2)
+        messages = [call.args[0] for call in self.alerts.send.call_args_list]
+        self.assertTrue(any("Low ETH" in message for message in messages))
+        self.assertTrue(any("USDG awaiting banking" in message for message in messages))
+
+    def test_daily_digest_runs_once_after_configured_utc_time(self):
+        self.alerts.daily_digest_time = "13:00"
+        self.states["bot"] = {"eth_balance": 1, "token_balance": 2, "price": 0.5}
+        before = datetime(2026, 8, 27, 12, 59, tzinfo=timezone.utc)
+        after = datetime(2026, 8, 27, 13, 0, tzinfo=timezone.utc)
+        self.alerts.scan_daily_digest(before)
+        self.alerts.send.assert_not_called()
+        self.alerts.scan_daily_digest(after)
+        self.alerts.scan_daily_digest(after + timedelta(hours=1))
+        self.assertEqual(self.alerts.send.call_count, 1)
+        self.assertIn("Fleet crypto value: ~2.00000000 ETH", self.alerts.send.call_args.args[0])
+
     def test_mute_and_unmute_are_durable(self):
         self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/mute 6h"})
         self.assertIsNotNone(self.alerts._muted_until)
@@ -125,6 +173,14 @@ class TestTelegramAlerts(unittest.TestCase):
         })
         self.assertTrue(self.alerts._preferences["buys"])
         self.assertEqual(post.call_count, 2)
+
+    @patch("telegram_alerts.requests.post")
+    def test_registers_new_commands_with_telegram(self, post):
+        post.return_value.raise_for_status.return_value = None
+        self.alerts._register_commands()
+        commands = post.call_args.kwargs["json"]["commands"]
+        self.assertIn({"command": "attention", "description": "Operational exceptions"}, commands)
+        self.assertIn({"command": "digest", "description": "Daily report now"}, commands)
 
 
 if __name__ == "__main__":

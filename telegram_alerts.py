@@ -6,7 +6,7 @@ import os
 import re
 import threading
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 
@@ -20,6 +20,7 @@ DEFAULT_PREFERENCES = {
     "buys": False,
     "treasury": False,
     "errors": False,
+    "funds": True,
 }
 CHAIN_EXPLORERS = {
     1: "https://etherscan.io/tx/",
@@ -30,7 +31,8 @@ CHAIN_EXPLORERS = {
 
 class TelegramAlerts:
     def __init__(self, token, chat_id, state_file, state_provider, offline_seconds=300, request_timeout=10,
-                 dashboard_url="https://doomdash.ca"):
+                 dashboard_url="https://doomdash.ca", low_funds_buffer_eth=0.0005,
+                 unbanked_usdg_threshold=10.0, daily_digest_time="13:00"):
         self.token = str(token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.state_file = state_file
@@ -38,6 +40,9 @@ class TelegramAlerts:
         self.offline_seconds = offline_seconds
         self.request_timeout = request_timeout
         self.dashboard_url = dashboard_url.rstrip("/")
+        self.low_funds_buffer_eth = max(0.0, float(low_funds_buffer_eth))
+        self.unbanked_usdg_threshold = max(0.0, float(unbanked_usdg_threshold))
+        self.daily_digest_time = str(daily_digest_time or "").strip()
         self.log = logging.getLogger("dashboard.telegram")
         self.enabled = bool(self.token and self.chat_id)
         self._lock = threading.Lock()
@@ -46,6 +51,9 @@ class TelegramAlerts:
         self._seen = deque(maxlen=5000)
         self._seen_set = set()
         self._offline_notified = set()
+        self._low_funds_notified = set()
+        self._unbanked_usdg_notified = set()
+        self._last_digest_date = None
         self._update_offset = 0
         self._muted_until = None
         self._load()
@@ -82,6 +90,9 @@ class TelegramAlerts:
             self._seen = deque(state.get("seen", [])[-5000:], maxlen=5000)
             self._seen_set = set(self._seen)
             self._offline_notified = set(state.get("offline_notified", []))
+            self._low_funds_notified = set(state.get("low_funds_notified", []))
+            self._unbanked_usdg_notified = set(state.get("unbanked_usdg_notified", []))
+            self._last_digest_date = state.get("last_digest_date")
             self._update_offset = int(state.get("update_offset", 0))
             muted_until = state.get("muted_until")
             self._muted_until = datetime.fromisoformat(muted_until) if muted_until else None
@@ -98,6 +109,9 @@ class TelegramAlerts:
                 "preferences": self._preferences,
                 "seen": list(self._seen),
                 "offline_notified": sorted(self._offline_notified),
+                "low_funds_notified": sorted(self._low_funds_notified),
+                "unbanked_usdg_notified": sorted(self._unbanked_usdg_notified),
+                "last_digest_date": self._last_digest_date,
                 "update_offset": self._update_offset,
                 "muted_until": self._muted_until.isoformat() if self._muted_until else None,
             }, handle, indent=2)
@@ -267,6 +281,85 @@ class TelegramAlerts:
             self.send(f"🔴 Bot offline · {self._name(bot_id, state)}\nNo status report for 5 minutes",
                       reply_markup=self._alert_buttons())
 
+    def scan_funds(self):
+        if not self.enabled or not self._wanted("funds"):
+            return
+        for bot_id, state in self.state_provider().items():
+            issue = self._funds_issue(state)
+            usdg = float(state.get("usdg_balance") or 0)
+            with self._lock:
+                before = (bot_id in self._low_funds_notified, bot_id in self._unbanked_usdg_notified)
+                notify_low = bool(issue and bot_id not in self._low_funds_notified)
+                notify_usdg = bool(self.unbanked_usdg_threshold > 0 and
+                                   usdg >= self.unbanked_usdg_threshold and
+                                   bot_id not in self._unbanked_usdg_notified)
+                if notify_low:
+                    self._low_funds_notified.add(bot_id)
+                elif not issue:
+                    self._low_funds_notified.discard(bot_id)
+                if notify_usdg:
+                    self._unbanked_usdg_notified.add(bot_id)
+                elif usdg < self.unbanked_usdg_threshold * 0.5:
+                    self._unbanked_usdg_notified.discard(bot_id)
+                after = (bot_id in self._low_funds_notified, bot_id in self._unbanked_usdg_notified)
+                if before != after:
+                    self._save_locked()
+            if notify_low:
+                balance, reserve, _ = issue
+                self.send(f"⛽ Low ETH · {self._name(bot_id, state)}\n{balance:.8f} ETH remaining · reserve {reserve:.8f}",
+                          reply_markup=self._alert_buttons())
+            if notify_usdg:
+                self.send(f"🏦 USDG awaiting banking · {self._name(bot_id, state)}\n{usdg:.2f} USDG in bot wallet",
+                          reply_markup=self._alert_buttons())
+
+    def _daily_digest_text(self):
+        states = self.state_provider()
+        trades = self._recent_trades("24h")
+        values = [(self._name(bot_id, state), self._realized_for_period(state, "24h"))
+                  for bot_id, state in states.items()]
+        ranked = sorted(values, key=lambda item: item[1], reverse=True)
+        crypto_value = sum(float(state.get("eth_balance") or 0) +
+                           float(state.get("token_balance") or 0) * float(state.get("price") or 0)
+                           for state in states.values())
+        usdg = sum(float(state.get("usdg_balance") or 0) for state in states.values())
+        buys = sum(str(trade.get("side", "")).lower() == "buy" for _, _, trade in trades)
+        sells = sum(str(trade.get("side", "")).lower() == "sell" for _, _, trade in trades)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+        banked = 0.0
+        for state in states.values():
+            for event in state.get("events", []):
+                if event.get("code") != "usdg_banked":
+                    continue
+                try:
+                    stamp = datetime.fromisoformat(str(event.get("timestamp", "")).replace("Z", "+00:00"))
+                    if stamp >= cutoff:
+                        banked += float(event.get("usdg_amount") or 0)
+                except (TypeError, ValueError):
+                    continue
+        lines = ["🌅 DoomDash daily digest", "",
+                 f"Fleet crypto value: ~{crypto_value:.8f} ETH + {usdg:.2f} USDG",
+                 f"24h realized: {sum(value for _, value in values):+.8f} ETH",
+                 f"Trades: {len(trades)} · {buys} buys · {sells} sells",
+                 f"Treasury banked: {banked:.2f} USDG"]
+        if ranked:
+            lines.extend((f"Best: {ranked[0][0]} · {ranked[0][1]:+.8f} ETH",
+                          f"Worst: {ranked[-1][0]} · {ranked[-1][1]:+.8f} ETH"))
+        lines.extend(("", self._attention_text()))
+        return "\n".join(lines)
+
+    def scan_daily_digest(self, now=None):
+        now = now or datetime.now(timezone.utc)
+        match = re.fullmatch(r"([01]\d|2[0-3]):([0-5]\d)", self.daily_digest_time)
+        if not self.enabled or not match or (now.hour, now.minute) < (int(match.group(1)), int(match.group(2))):
+            return
+        day = now.date().isoformat()
+        with self._lock:
+            if self._last_digest_date == day:
+                return
+            self._last_digest_date = day
+            self._save_locked()
+        self.send(self._daily_digest_text(), reply_markup=self._alert_buttons())
+
     def _settings_markup(self):
         with self._lock:
             preferences = dict(self._preferences)
@@ -317,6 +410,107 @@ class TelegramAlerts:
             f"📈 Session: {session:+.8f} ETH\n"
             f"🏆 Realized: {realized:+.8f} ETH"
         )
+
+    @staticmethod
+    def _period_hours(period):
+        return {"1h": 1, "6h": 6, "24h": 24, "week": 168, "month": 720}.get(period)
+
+    def _realized_for_period(self, state, period):
+        if period == "all":
+            return float(state.get("realized_profit_eth") or 0)
+        reported = (state.get("realized_profit_periods") or {}).get(period)
+        try:
+            return float(reported)
+        except (TypeError, ValueError):
+            pass
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self._period_hours(period))
+        total = 0.0
+        for trade in state.get("trades_history", []):
+            try:
+                stamp = datetime.fromisoformat(str(trade.get("timestamp", "")).replace("Z", "+00:00"))
+            except (TypeError, ValueError):
+                continue
+            if trade.get("side") == "sell" and stamp >= cutoff:
+                total += float(trade.get("profit_eth") or 0)
+        return total
+
+    def _profit_text(self, period):
+        values = [(self._name(bot_id, state), self._realized_for_period(state, period))
+                  for bot_id, state in self.state_provider().items()]
+        ranked = sorted(values, key=lambda item: item[1], reverse=True)
+        lines = [f"📈 Realized profit · {period}", "", f"Fleet: {sum(value for _, value in values):+.8f} ETH"]
+        if ranked:
+            lines.extend((f"Best: {ranked[0][0]} · {ranked[0][1]:+.8f} ETH",
+                          f"Worst: {ranked[-1][0]} · {ranked[-1][1]:+.8f} ETH"))
+        return "\n".join(lines)
+
+    def _recent_trades(self, period):
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self._period_hours(period))
+        trades = []
+        for bot_id, state in self.state_provider().items():
+            for trade in state.get("trades_history", []):
+                try:
+                    stamp = datetime.fromisoformat(str(trade.get("timestamp", "")).replace("Z", "+00:00"))
+                except (TypeError, ValueError):
+                    continue
+                if stamp >= cutoff:
+                    trades.append((stamp, self._name(bot_id, state), trade))
+        return sorted(trades, key=lambda item: item[0], reverse=True)
+
+    def _trades_text(self, period):
+        trades = self._recent_trades(period)
+        buys = sum(str(trade.get("side", "")).lower() == "buy" for _, _, trade in trades)
+        sells = sum(str(trade.get("side", "")).lower() == "sell" for _, _, trade in trades)
+        profit = sum(float(trade.get("profit_eth") or 0) for _, _, trade in trades
+                     if str(trade.get("side", "")).lower() == "sell")
+        lines = [f"🔁 Trades · {period}", "", f"{len(trades)} total · {buys} buys · {sells} sells",
+                 f"Realized: {profit:+.8f} ETH"]
+        for stamp, name, trade in trades[:10]:
+            side = str(trade.get("side", "trade")).upper()
+            amount = float(trade.get("profit_eth") or 0) if side == "SELL" else float(trade.get("eth_amount") or 0)
+            suffix = "profit" if side == "SELL" else "spent"
+            lines.append(f"• {stamp.strftime('%H:%M')} {name} · {side} · {amount:+.8f} ETH {suffix}")
+        if len(trades) > 10:
+            lines.append(f"…and {len(trades) - 10} more")
+        return "\n".join(lines)
+
+    def _funds_issue(self, state):
+        try:
+            balance = float(state.get("eth_balance"))
+            reserve = float(state.get("gas_reserve_eth"))
+        except (TypeError, ValueError):
+            return None
+        threshold = reserve + self.low_funds_buffer_eth
+        return (balance, reserve, threshold) if balance <= threshold else None
+
+    def _attention_text(self):
+        sections = {"offline": [], "stale": [], "positions": [], "sells": [], "errors": [], "funds": []}
+        for bot_id, state in self.state_provider().items():
+            name = self._name(bot_id, state)
+            age = self._age_seconds(state)
+            if age >= self.offline_seconds:
+                sections["offline"].append(name)
+            elif age >= 120:
+                sections["stale"].append(name)
+            if state.get("capacity_warning"):
+                sections["positions"].append(name)
+            if state.get("sell_attempt"):
+                sections["sells"].append(name)
+            if self._funds_issue(state):
+                sections["funds"].append(name)
+            repeated = [event for event in state.get("events", [])
+                        if event.get("level") == "error" and int(event.get("count") or 1) >= 3]
+            if repeated or str(state.get("rpc_status", "ok")).lower() not in ("", "ok"):
+                sections["errors"].append(name)
+        labels = (("offline", "🔴 Offline"), ("stale", "🟠 Stale"), ("positions", "⚑ Needs positions"),
+                  ("sells", "🔎 Sell checks"), ("errors", "🚨 Errors/RPC"), ("funds", "⛽ Low funds"))
+        lines = ["🚦 DoomDash attention", ""]
+        for key, label in labels:
+            if sections[key]:
+                lines.append(f"{label}: {len(sections[key])} · {', '.join(sections[key])}")
+        if len(lines) == 2:
+            lines.append("✅ Nothing needs attention.")
+        return "\n".join(lines)
 
     def _needs_text(self):
         needs = [(bot_id, state) for bot_id, state in self.state_provider().items() if state.get("capacity_warning")]
@@ -372,6 +566,26 @@ class TelegramAlerts:
         if command == "/needs":
             self.send(self._needs_text(), reply_markup=self._alert_buttons(), force=True)
             return
+        if command == "/attention":
+            self.send(self._attention_text(), reply_markup=self._alert_buttons(), force=True)
+            return
+        if command == "/profit":
+            period = parts[1] if len(parts) == 2 else "24h"
+            if period not in ("1h", "6h", "24h", "week", "month", "all"):
+                self.send("Use /profit 1h, 6h, 24h, week, month, or all.", force=True)
+            else:
+                self.send(self._profit_text(period), reply_markup=self._alert_buttons(), force=True)
+            return
+        if command == "/trades":
+            period = parts[1] if len(parts) == 2 else "24h"
+            if period not in ("1h", "6h", "24h", "week", "month"):
+                self.send("Use /trades 1h, 6h, 24h, week, or month.", force=True)
+            else:
+                self.send(self._trades_text(period), reply_markup=self._alert_buttons(), force=True)
+            return
+        if command == "/digest":
+            self.send(self._daily_digest_text(), reply_markup=self._alert_buttons(), force=True)
+            return
         if command == "/bot" and len(parts) >= 2:
             self.send(self._bot_text(" ".join(parts[1:])), reply_markup=self._alert_buttons(), force=True)
             return
@@ -380,7 +594,6 @@ class TelegramAlerts:
             if not match:
                 self.send("Use /mute 1h, /mute 6h, /mute 12h, or /mute 24h.", force=True)
                 return
-            from datetime import timedelta
             with self._lock:
                 self._muted_until = datetime.now(timezone.utc) + timedelta(hours=int(match.group(1)))
                 self._save_locked()
@@ -395,7 +608,9 @@ class TelegramAlerts:
         if command == "/help":
             self.send(
                 "DoomDash commands\n\n/status — fleet snapshot\n/needs — bots needing positions\n"
-                "/bot <name> — one bot\n/alerts — alert toggles\n/mute 1h|6h|12h|24h\n"
+                "/attention — exceptions\n/profit [period] — realized performance\n"
+                "/trades [period] — recent activity\n/digest — daily report now\n/bot <name> — one bot\n"
+                "/alerts — alert toggles\n/mute 1h|6h|12h|24h\n"
                 "/unmute\n/test",
                 reply_markup=self._alert_buttons(), force=True,
             )
@@ -456,10 +671,31 @@ class TelegramAlerts:
                 self._update_offset = max(self._update_offset, int(update["update_id"]) + 1)
                 self._save_locked()
 
+    def _register_commands(self):
+        commands = [
+            ("status", "Fleet snapshot"), ("attention", "Operational exceptions"),
+            ("profit", "Realized profit by period"), ("trades", "Recent trades by period"),
+            ("digest", "Daily report now"), ("needs", "Bots needing positions"),
+            ("bot", "Inspect one bot"), ("alerts", "Alert toggles"),
+            ("mute", "Mute alerts"), ("unmute", "Unmute alerts"), ("help", "Command help"),
+        ]
+        response = requests.post(
+            f"https://api.telegram.org/bot{self.token}/setMyCommands",
+            json={"commands": [{"command": command, "description": description} for command, description in commands]},
+            timeout=self.request_timeout,
+        )
+        response.raise_for_status()
+
     def _run(self):
+        try:
+            self._register_commands()
+        except requests.RequestException as exc:
+            self.log.warning("Telegram command registration failed: %s", exc)
         while not self._stop.is_set():
             try:
                 self.scan_offline()
+                self.scan_funds()
+                self.scan_daily_digest()
                 self._poll_commands()
             except requests.RequestException as exc:
                 self.log.warning("Telegram polling failed: %s", exc)

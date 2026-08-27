@@ -69,6 +69,9 @@ MAX_STATUS_REQUEST_BYTES = 128 * 1024
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 TELEGRAM_ALERT_STATE_FILE = os.environ.get("TELEGRAM_ALERT_STATE_FILE", "data/telegram_alert_state.json")
+TELEGRAM_LOW_FUNDS_BUFFER_ETH = float(os.environ.get("TELEGRAM_LOW_FUNDS_BUFFER_ETH", "0.0005"))
+TELEGRAM_UNBANKED_USDG_THRESHOLD = float(os.environ.get("TELEGRAM_UNBANKED_USDG_THRESHOLD", "10"))
+TELEGRAM_DAILY_DIGEST_TIME = os.environ.get("TELEGRAM_DAILY_DIGEST_TIME", "13:00")
 
 # Patterns that suggest private key material (checked against keys AND values)
 _PRIVATE_KEY_PATTERNS = [
@@ -272,6 +275,9 @@ telegram_alerts = TelegramAlerts(
     TELEGRAM_CHAT_ID,
     TELEGRAM_ALERT_STATE_FILE,
     _telegram_state_snapshot,
+    low_funds_buffer_eth=TELEGRAM_LOW_FUNDS_BUFFER_ETH,
+    unbanked_usdg_threshold=TELEGRAM_UNBANKED_USDG_THRESHOLD,
+    daily_digest_time=TELEGRAM_DAILY_DIGEST_TIME,
 )
 atexit.register(telegram_alerts.close)
 
@@ -789,6 +795,10 @@ DASHBOARD_HTML = """\
   .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
   .status-dot.connected { background: #22c55e; }
   .status-dot.disconnected { background: #ef4444; }
+  .connection-wrap { position: relative; }
+  .connection-button { appearance: none; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+  .connection-diagnostics { position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 30; min-width: 15rem; padding: 0.65rem 0.75rem; border: 1px solid #475569; border-radius: 0.4rem; background: #0f172a; color: #cbd5e1; box-shadow: 0 1rem 2rem rgba(0,0,0,.4); font-size: 0.72rem; line-height: 1.55; }
+  .connection-diagnostics[hidden] { display: none; }
   .container { max-width: 1200px; margin: 2rem auto; padding: 0 1rem; }
   .summary-bar, .toolbar { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1rem; }
   .summary-item { background: #1e293b; border: 1px solid #334155; border-radius: 0.4rem; padding: 0.55rem 0.75rem; font-size: 0.8rem; }
@@ -946,15 +956,19 @@ DASHBOARD_HTML = """\
   .event-details summary { cursor: pointer; user-select: none; }
   .event-raw { margin-top: 0.3rem; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: monospace; color: #94a3b8; }
   .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
+  .empty-clear { margin-top: 0.8rem; }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>⚡ Grid Bot Dashboard</h1>
-  <div>
-    <span class="status-dot disconnected" id="dot"></span>
-    <span id="connection-status">Connecting…</span>
+  <div class="connection-wrap">
+    <button class="connection-button" id="connection-button" type="button" aria-expanded="false" aria-controls="connection-diagnostics">
+      <span class="status-dot disconnected" id="dot"></span>
+      <span id="connection-status">Connecting…</span>
+    </button>
+    <div class="connection-diagnostics" id="connection-diagnostics" hidden>Waiting for the first live message…</div>
   </div>
 </div>
 
@@ -987,6 +1001,7 @@ DASHBOARD_HTML = """\
     <div class="empty" id="empty-state">
       <p>No bots reporting yet</p>
       <span>Waiting for status updates…</span>
+      <button class="empty-clear" id="clear-all-filters" type="button" hidden>Clear all filters</button>
     </div>
   </div>
 </div>
@@ -1004,9 +1019,12 @@ DASHBOARD_HTML = """\
   const emptyState = document.getElementById('empty-state');
   const dot = document.getElementById('dot');
   const connStatus = document.getElementById('connection-status');
+  const connectionButton = document.getElementById('connection-button');
+  const connectionDiagnostics = document.getElementById('connection-diagnostics');
   const summaryBar = document.getElementById('summary-bar');
   const botFilter = document.getElementById('bot-filter');
   const clearFilter = document.getElementById('clear-filter');
+  const clearAllFilters = document.getElementById('clear-all-filters');
   const chainFilter = document.getElementById('chain-filter');
   const providerFilter = document.getElementById('provider-filter');
   const sortBots = document.getElementById('sort-bots');
@@ -1069,6 +1087,9 @@ DASHBOARD_HTML = """\
   let reconnectTimer = null;
   let connectionGeneration = 0;
   let reconnectDelay = 1000;
+  let reconnectCount = 0;
+  let lastLiveMessageAt = null;
+  let lastSnapshotAt = null;
   const maxReconnectDelay = 30000;
   let viewportBusy = false;
   let viewportMotionAt = 0;
@@ -1217,6 +1238,7 @@ DASHBOARD_HTML = """\
 
     source.onerror = function() {
       if (generation !== connectionGeneration) return;
+      reconnectCount += 1;
       dot.className = 'status-dot disconnected';
       connStatus.textContent = 'Reconnecting…';
       source.close();
@@ -1229,6 +1251,8 @@ DASHBOARD_HTML = """\
 
     source.addEventListener('snapshot', function(e) {
       if (generation !== connectionGeneration) return;
+      lastLiveMessageAt = Date.now();
+      lastSnapshotAt = lastLiveMessageAt;
       const data = JSON.parse(e.data);
       if (data.bots) {
         Object.keys(bots).forEach(function(botId) { delete bots[botId]; });
@@ -1242,6 +1266,7 @@ DASHBOARD_HTML = """\
 
     source.addEventListener('update', function(e) {
       if (generation !== connectionGeneration) return;
+      lastLiveMessageAt = Date.now();
       const entry = JSON.parse(e.data);
       const nextState = entry.data || entry;
       processBotNotifications(entry.bot_id, bots[entry.bot_id], nextState);
@@ -1252,6 +1277,7 @@ DASHBOARD_HTML = """\
 
     source.addEventListener('remove', function(e) {
       if (generation !== connectionGeneration) return;
+      lastLiveMessageAt = Date.now();
       const data = JSON.parse(e.data);
       if (data.bot_id && bots[data.bot_id]) {
         delete bots[data.bot_id];
@@ -1261,10 +1287,24 @@ DASHBOARD_HTML = """\
   }
 
   function reconnectNow() {
+    reconnectCount += 1;
     dot.className = 'status-dot disconnected';
     connStatus.textContent = 'Reconnecting…';
     reconnectDelay = 1000;
     connect();
+  }
+
+  function updateConnectionDiagnostics() {
+    const age = function(timestamp) {
+      if (!timestamp) return 'never';
+      const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+      return seconds < 60 ? seconds + 's ago' : Math.floor(seconds / 60) + 'm ago';
+    };
+    connectionDiagnostics.textContent = 'Last live message: ' + age(lastLiveMessageAt) + '\\n' +
+      'Last full snapshot: ' + age(lastSnapshotAt) + '\\n' +
+      'Manual/automatic reconnects: ' + reconnectCount + '\\n' +
+      'Cards in memory: ' + Object.keys(bots).length;
+    connectionDiagnostics.style.whiteSpace = 'pre-line';
   }
 
   function refreshCardsFromApi() {
@@ -1274,6 +1314,8 @@ DASHBOARD_HTML = """\
         return response.json();
       })
       .then(function(data) {
+        lastLiveMessageAt = Date.now();
+        lastSnapshotAt = lastLiveMessageAt;
         const nextBots = {};
         Object.keys(data.bots || {}).forEach(function(botId) {
           const entry = data.bots[botId];
@@ -1465,6 +1507,7 @@ DASHBOARD_HTML = """\
   }
 
   function refreshReportAges() {
+    updateConnectionDiagnostics();
     const animationVisible = Boolean(document.querySelector('.sigil-stage.animation-enabled.is-visible'));
     const precisionSeconds = animationVisible ? 10 : 1;
     container.querySelectorAll('[data-received-at]').forEach(function(el) {
@@ -1947,7 +1990,7 @@ DASHBOARD_HTML = """\
     const botIds = Object.keys(bots).filter(function(id) {
       const d = bots[id];
       const provider = String(d.swap_provider || '').toLowerCase();
-      const haystack = [id, d.display_name, d.group, provider].join(' ').toLowerCase();
+      const haystack = [id, d.display_name, d.token_symbol, d.group, provider].join(' ').toLowerCase();
       const providerMatches = !wantedProvider ||
         (wantedProvider === '__unreported' ? !provider : provider === wantedProvider);
       return (!query || haystack.includes(query)) &&
@@ -2031,6 +2074,10 @@ DASHBOARD_HTML = """\
     });
     updateSummary(botIds);
     if (botIds.length === 0) {
+      const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider);
+      emptyState.querySelector('p').textContent = filtered ? 'No bots match your filters' : 'No bots reporting yet';
+      emptyState.querySelector('span').textContent = filtered ? 'Clear the active filters to show the fleet.' : 'Waiting for status updates…';
+      clearAllFilters.hidden = !filtered;
       const liveGrid = container.querySelector('.grid');
       if (liveGrid && container.querySelector('details.chart-panel[open], details.sigil-panel[open]')) {
         liveGrid.hidden = true;
@@ -2439,6 +2486,22 @@ DASHBOARD_HTML = """\
     clearFilter.style.display = 'none';
     botFilter.focus();
     render(true);
+  });
+  clearAllFilters.addEventListener('click', function() {
+    botFilter.value = '';
+    chainFilter.value = '';
+    providerFilter.value = '';
+    localStorage.setItem('dashboard-bot-filter', '');
+    localStorage.setItem('dashboard-chain-filter', '');
+    localStorage.setItem('dashboard-provider-filter', '');
+    clearFilter.style.display = 'none';
+    render(true);
+  });
+  connectionButton.addEventListener('click', function() {
+    const opening = connectionDiagnostics.hidden;
+    connectionDiagnostics.hidden = !opening;
+    connectionButton.setAttribute('aria-expanded', String(opening));
+    updateConnectionDiagnostics();
   });
   chainFilter.addEventListener('input', function() {
     localStorage.setItem('dashboard-chain-filter', chainFilter.value);

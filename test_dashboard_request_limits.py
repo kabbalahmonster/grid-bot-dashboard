@@ -203,6 +203,22 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("fetchMarketData();", body)
         self.assertIn("Object.keys(bots).forEach(function(botId) { delete bots[botId]; });", body)
 
+    def test_empty_filtered_fleet_offers_clear_all_filters(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="clear-all-filters"', body)
+        self.assertIn("'No bots match your filters'", body)
+        self.assertIn("clearAllFilters.addEventListener('click'", body)
+        self.assertIn("chainFilter.value = '';", body)
+        self.assertIn("providerFilter.value = '';", body)
+
+    def test_connection_status_exposes_live_diagnostics(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="connection-diagnostics"', body)
+        self.assertIn("Last live message:", body)
+        self.assertIn("Last full snapshot:", body)
+        self.assertIn("Manual/automatic reconnects:", body)
+        self.assertIn("Cards in memory:", body)
+
     def test_closing_live_panels_never_forces_a_grid_render(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("panel.addEventListener('toggle', loadChart)", body)

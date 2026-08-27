@@ -35,11 +35,20 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Lazy-loaded Dexscreener WETH-pair charts filtered to the bot wallet
 - Live report age with running, stale, and offline states
 - Optional per-type browser notifications for confirmed trades, capacity, availability, treasury activity, and persistent errors when served over HTTPS
+- Filter-aware empty state with one-tap filter clearing, plus live-message/snapshot/reconnect diagnostics behind the connection indicator
+- Durable Telegram commands for fleet status, exceptions, period profit, recent trades, and per-bot inspection
+- Deduplicated Telegram low-ETH/unbanked-USDG warnings and a configurable daily operational digest
 - `X-API-Key` authentication for writes and deletion
 - Configurable API rate limit (default 600 requests/minute/IP)
 - Recursive private-key detection and rejection
 - Bounded SSE client queues
 - Responsive inline frontend; no build step or database
+
+Telegram commands include `/status`, `/attention`, `/profit 24h`, `/trades 24h`,
+`/digest`, `/needs`, `/bot <name>`, `/alerts`, `/mute`, and `/unmute`. Profit
+periods accept `1h`, `6h`, `24h`, `week`, `month`, or `all` (trades omit
+`all`). The daily digest is sent once after `TELEGRAM_DAILY_DIGEST_TIME` in UTC;
+set that value blank to disable scheduling while retaining `/digest` on demand.
 
 ## Requirements
 
@@ -67,6 +76,9 @@ PORT=5000
 STATE_FILE=data/dashboard_state.json
 STATE_FLUSH_INTERVAL=15
 RATE_LIMIT_MAX_REQUESTS=600
+TELEGRAM_LOW_FUNDS_BUFFER_ETH=0.0005
+TELEGRAM_UNBANKED_USDG_THRESHOLD=10
+TELEGRAM_DAILY_DIGEST_TIME=13:00
 ```
 
 Generate a key:
