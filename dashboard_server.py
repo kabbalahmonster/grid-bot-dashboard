@@ -1598,13 +1598,13 @@ DASHBOARD_HTML = """\
           ' <span class="bot-names">(' + activeSellChecks.map(function(id) {
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
           }).join(', ') + ')</span></span>'
-        : '<span class="summary-item">Sell checks active: 0</span>') +
+        : '') +
       (needsPositions.length
         ? '<span class="summary-item needs-positions" aria-live="polite">⚑ Needs new positions: ' + needsPositions.length +
           ' <span class="bot-names">(' + needsPositions.map(function(id) {
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].display_name || id) + '</button>';
           }).join(', ') + ')</span></span>'
-        : '<span class="summary-item">Needs new positions: 0</span>') +
+        : '') +
       '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
       '<span class="summary-item">Offline: ' + offline + '</span>' +
       '<span class="summary-item" title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +

@@ -144,6 +144,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertLess(body.index("Sell checks active:"), body.index("Needs new positions:"))
         self.assertLess(body.index("Sell checks active:"), body.index("Active: ' + active"))
         self.assertIn(".summary-item.sell-checks-active", body)
+        self.assertNotIn('Sell checks active: 0</span>', body)
+        self.assertNotIn('Needs new positions: 0</span>', body)
 
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
