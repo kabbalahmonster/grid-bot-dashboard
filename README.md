@@ -76,10 +76,28 @@ PORT=5000
 STATE_FILE=data/dashboard_state.json
 STATE_FLUSH_INTERVAL=15
 RATE_LIMIT_MAX_REQUESTS=600
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+TELEGRAM_ALERT_STATE_FILE=data/telegram_alert_state.json
 TELEGRAM_LOW_FUNDS_BUFFER_ETH=0.0005
 TELEGRAM_UNBANKED_USDG_THRESHOLD=10
 TELEGRAM_DAILY_DIGEST_TIME=13:00
 ```
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `API_KEY` | empty | Shared secret required for bot status writes and card deletion; production must set a strong value |
+| `HOST` | `0.0.0.0` | Flask/Gunicorn bind host; use `127.0.0.1` behind a reverse proxy |
+| `PORT` | `5000` | HTTP listen port |
+| `STATE_FILE` | `data/dashboard_state.json` | Persisted latest states and bounded per-bot status history |
+| `STATE_FLUSH_INTERVAL` | `15` | Seconds between coalesced state writes |
+| `RATE_LIMIT_MAX_REQUESTS` | `600` | Maximum authenticated status requests per source IP per rolling minute |
+| `TELEGRAM_BOT_TOKEN` | empty | BotFather token; Telegram is disabled unless this and the chat ID are set |
+| `TELEGRAM_CHAT_ID` | empty | Sole direct-chat ID authorized for commands and alerts |
+| `TELEGRAM_ALERT_STATE_FILE` | `data/telegram_alert_state.json` | Durable command offset, dedupe, preferences, mute, and digest state |
+| `TELEGRAM_LOW_FUNDS_BUFFER_ETH` | `0.0005` | ETH buffer added to each reported gas reserve for low-funds alerts |
+| `TELEGRAM_UNBANKED_USDG_THRESHOLD` | `10` | Wallet USDG balance that triggers an awaiting-banking alert; `0` disables it |
+| `TELEGRAM_DAILY_DIGEST_TIME` | `13:00` | UTC `HH:MM`; empty disables scheduled digests |
 
 Generate a key:
 
@@ -118,6 +136,45 @@ gunicorn dashboard_server:app \
 
 The unlimited worker timeout keeps long-lived SSE connections alive. Systemd
 still owns the process lifecycle, and `--graceful-timeout 30` bounds shutdowns.
+
+## Telegram monitoring and commands
+
+Telegram is optional and runs inside the single DoomDash server process. It
+never holds a wallet key and has no trade, restart, or strategy-mutation
+commands. It reads the same in-memory snapshots used by the dashboard.
+
+1. Create a bot with Telegram's `@BotFather` and copy the token into
+   `TELEGRAM_BOT_TOKEN`.
+2. Open a direct chat with the new bot and send `/start` once.
+3. Obtain the numeric direct-chat ID and set `TELEGRAM_CHAT_ID`. Messages from
+   every other chat are ignored.
+4. Restart `grid-dashboard.service`. On startup DoomDash registers its command
+   menu with Telegram. Send `/test` to verify delivery.
+
+| Command | Result |
+|---|---|
+| `/status` | Running count, fleet ETH/USDG, session and realized totals |
+| `/attention` | Offline/stale bots, capacity, sell checks, repeated errors/RPC trouble, and low funds |
+| `/profit 1h\|6h\|24h\|week\|month\|all` | Period realized profit plus best/worst bot |
+| `/trades 1h\|6h\|24h\|week\|month` | Counts, realized sell profit, and up to ten recent trades |
+| `/digest` | Generate the daily operational report immediately |
+| `/needs` | Bots currently unable to add another position |
+| `/bot <name>` | One bot's status, capacity, balances, and profit |
+| `/alerts` | Inline per-category alert toggles |
+| `/mute 1h\|6h\|12h\|24h` / `/unmute` | Suppress unsolicited alerts temporarily; commands still answer |
+| `/help` | Command reference |
+
+`TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
+an ETH balance at or below that sum triggers one `funds` alert. It re-arms
+after recovery. `TELEGRAM_UNBANKED_USDG_THRESHOLD` triggers once at the
+configured wallet balance and re-arms below half the threshold. Both states,
+alert preferences, mute expiry, Telegram update offset, and the last digest
+date persist in `TELEGRAM_ALERT_STATE_FILE`.
+
+The digest runs once per UTC date after `TELEGRAM_DAILY_DIGEST_TIME` and
+contains estimated fleet crypto value, USDG, 24-hour realized profit, buys,
+sells, treasury banking, best/worst bot, and the `/attention` report. Set the
+time to an empty value to disable scheduling without disabling `/digest`.
 
 ## Persistent systemd user service
 
@@ -228,6 +285,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "uptime_seconds": 215.1,
   "price": 0.0000000624,
   "eth_balance": 0.00099309,
+  "gas_reserve_eth": 0.0005,
   "usdg_balance": 12.34,
   "treasury_sent_usdg": 125.50,
   "token_balance": 328902.93,
@@ -241,6 +299,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "profit_percent": -49.66,
   "session_profit_eth": 0.0,
   "realized_profit_eth": 0.0025,
+  "realized_profit_periods": {"1h": 0.0001, "6h": 0.0004, "24h": 0.0012, "week": 0.0025, "month": 0.0025},
   "realized_sales": 4,
   "profit_tracking_started_at": "2026-08-14T16:00:00+00:00",
   "buys": 0,
@@ -256,6 +315,9 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
     "minimum_profit_eth": 0.0001
   },
   "chain_id": 4663,
+  "token_symbol": "MERD",
+  "buy_point_percent": -10.0,
+  "sell_point_percent": 5.0,
   "swap_provider": "uniswap",
   "token_address": "0x0000000000000000000000000000000000000001",
   "wallet_address": "0x0000000000000000000000000000000000000002",
@@ -269,7 +331,15 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 
 Bots may also send up to 50 structured `events`. The dashboard renders them newest-first in a collapsible Events panel, distinguishes green successes, amber warnings, and red errors, and shows a repeat count for deduplicated events. Events with a `tx_hash` include a white explorer link; confirmed USDG banking swaps use this to make the banking transaction directly auditable. This feed is intended for meaningful operational outcomes and blocked actions, not raw bot output or routine no-trade polling.
 
-Bots may send `realized_profit_eth`, `realized_sales`, and `profit_tracking_started_at`. Realized profit is shown beside session profit on each card and aggregated fleet-wide in ETH plus the selected CAD/USD currency. A bot-side baseline reset starts a new displayed accounting period without deleting cumulative totals or transaction-hash deduplication. Older bots remain compatible and contribute zero until updated.
+Bots may send `realized_profit_eth`, bounded `realized_profit_periods`,
+`realized_sales`, and `profit_tracking_started_at`. Realized profit is shown
+beside session profit on each card and aggregated fleet-wide in ETH plus the
+selected CAD/USD currency. A bot-side baseline reset starts a new displayed
+accounting period without deleting cumulative totals or transaction-hash
+deduplication. `gas_reserve_eth` drives the dashboard's next-buy estimate and
+Telegram low-funds threshold. `buy_point_percent` and `sell_point_percent`
+display the configured strategy points. Older bots remain compatible and
+contribute zero or omit the corresponding metric until updated.
 
 `usdg_balance` is an optional read-only ERC-20 balance, summed as **USDG** in the fleet header. `treasury_sent_usdg` is the bot's all-time total of successful USDG treasury sweeps from its local receipt log; the dashboard renders it in **More info** and sums it in the fleet header. Older bots remain compatible and contribute zero until updated. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
 
@@ -364,6 +434,30 @@ curl -X POST https://doomdash.ca/api/status \
   -d '{"bot_id":"manual-test","profit_percent":1.25,"buys":0,"sells":0}'
 ```
 
+## Browser operations and recovery controls
+
+The toolbar search covers bot ID, display name, token symbol, group, and swap
+provider. Chain and provider selectors apply additional filters. If bots exist
+but none match, the empty state says **No bots match your filters** and offers
+**Clear all filters**. Search, filters, sort, currencies, notifications, and
+sigil animation preferences are stored in that browser profile.
+
+**Refresh cards** does not reload the page. It independently fetches the
+authoritative `/api/bots` snapshot, renders it, refreshes price/market data,
+and reconnects `/api/stream`. The full snapshot replaces the browser's old bot
+set so a removed card cannot linger.
+
+Tap the **Live** indicator to inspect last live-message age, last full-snapshot
+age, reconnect count, and cards in browser memory. `Live` means SSE is open;
+the message/snapshot ages expose a connected but stalled data path. Returning
+to a visible tab, restoring a back-forward-cache page, or regaining network
+also requests a reconnect.
+
+The cyan **Sell checks active** and amber **Needs new positions** flags scan
+the full tracked fleet, not only the displayed filter subset. They are hidden
+at zero and appear only while a fresh/running bot reports the condition. Their
+token names focus the corresponding card.
+
 ## API
 
 | Method | Endpoint | Auth | Purpose |
@@ -376,6 +470,7 @@ curl -X POST https://doomdash.ca/api/status \
 | `DELETE` | `/api/bots/<bot_id>` | `X-API-Key` | Remove bot and history |
 | `GET` | `/api/stream` | No | SSE update stream |
 | `GET` | `/api/health` | No | Health and counts |
+| `GET` | `/api/eth-price` | No | Cached ETH/USD/CAD conversion rates |
 | `GET` | `/api/dexscreener/market-data` | No | Batched cached market cap/FDV for reported bots |
 | `GET` | `/api/dexscreener/chart-url` | No | Resolve preferred WETH pair embed URL |
 
@@ -395,12 +490,42 @@ WETH-pair cache. The cache refreshes at most once per minute per unique
 chain/token pair and serves its last successful value as stale during temporary
 Dexscreener failures. Routine SSE updates do not reload an open chart.
 
-The fleet toolbar can search bot IDs, display names, groups, and provider names;
+The fleet toolbar can search bot IDs, display names, token symbols, groups, and provider names;
 filter by chain and swap provider (including older bots with an unreported provider);
 and sort by name, AVG P&L, highest individual position P&L, session profit, session buy or sell count, realized profit, confirmed USDG treasury sent,
 position utilization (`filled_positions / max_positions`), ETH balance, USDG balance, or status.
 Default directions are name ascending, numeric metrics descending, and status
 running-to-offline. The direction button reverses the active sort.
+
+## Production architecture, backup, and rebuild
+
+The trading bot and dashboard are separate repositories by design:
+
+```text
+independent robinhood-grid-bot-py clones
+  -> authenticated POST /api/status
+  -> DoomDash memory + data/dashboard_state.json
+  -> browser snapshot/SSE and server-side Telegram monitoring
+```
+
+DoomDash is a monitor, not a bot backup. Its snapshots contain public
+operational state but not bot source, `.env` strategy configuration, wallet
+keys, or a complete reconstructable bot checkout. Back those up at the fleet
+host using the trading repository's fleet guide.
+
+For DoomDash recovery, retain these outside Git:
+
+- `.env` (API key and Telegram credentials; mode `0600`)
+- `data/dashboard_state.json` (latest bot snapshots and bounded history)
+- `data/telegram_alert_state.json` (dedupe, preferences, mute, and digest state)
+- reverse-proxy/DNS configuration and the systemd user unit
+
+To rebuild: clone the repository, create the virtual environment, install
+requirements, restore `.env` and optional `data/` files, install/start the
+one-worker service, restore HTTPS, then verify `/api/health`, `/api/bots`,
+`/api/stream`, browser diagnostics, and Telegram `/test`. Bots recreate current
+cards on their next reports even without `dashboard_state.json`; lost bounded
+history and Telegram dedupe state do not regenerate.
 
 ## Security
 
