@@ -120,6 +120,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("focusButton.dataset.historyFocusBot", body)
         self.assertIn("card.scrollIntoView({ behavior: 'smooth', block: 'start' })", body)
 
+    def test_auto_detected_token_tax_is_visible_on_card(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("AUTO TAX ", body)
+        self.assertIn("Runtime auto-detected transfer fee", body)
+        self.assertIn("token_tax_detection_source", body)
+
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("function estimatedBagValue(d, currency)", body)
