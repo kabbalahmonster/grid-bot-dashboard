@@ -101,6 +101,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("selector.blur();", body)
         self.assertIn(".realized-period { appearance: none; -webkit-appearance: none;", body)
 
+    def test_fleet_history_summary_dialogs_use_retained_status_data(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('data-fleet-history="sells"', body)
+        self.assertIn('data-fleet-history="banking"', body)
+        self.assertIn('id="history-modal" role="dialog" aria-modal="true"', body)
+        self.assertIn("String(trade.side || '').toLowerCase() !== 'sell'", body)
+        self.assertIn("event.code !== 'usdg_banked'", body)
+        self.assertIn("entries.sort(function(a, b)", body)
+        self.assertIn("historyTxUrl(entry.state, entry.txHash)", body)
+
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("function estimatedBagValue(d, currency)", body)

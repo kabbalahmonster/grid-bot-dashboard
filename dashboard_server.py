@@ -922,6 +922,29 @@ DASHBOARD_HTML = """\
   .sigil-modal-stage svg { width: 100%; height: 100%; max-width: none; }
   .sigil-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
   .sigil-modal-close:hover, .sigil-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
+  body.history-modal-open { overflow: hidden; }
+  .history-modal { position: fixed; inset: 0; z-index: 1001; display: grid; place-items: center; padding: 1rem; background: rgba(2, 6, 23, 0.88); }
+  .history-modal[hidden] { display: none; }
+  .history-modal-content { position: relative; width: min(94vw, 720px); max-height: min(86vh, 760px); display: flex; flex-direction: column; border: 1px solid #475569; border-radius: 0.75rem; background: #111827; box-shadow: 0 1.5rem 5rem rgba(0, 0, 0, 0.72); overflow: hidden; }
+  .history-modal-header { padding: 1rem 3.6rem 0.8rem 1rem; border-bottom: 1px solid #334155; }
+  .history-modal-title { margin: 0; color: #f8fafc; font-size: 1.05rem; }
+  .history-modal-subtitle { margin-top: 0.25rem; color: #64748b; font-size: 0.75rem; }
+  .history-modal-close { position: absolute; top: 0.65rem; right: 0.65rem; z-index: 1; width: 2.4rem; height: 2.4rem; border: 1px solid #64748b; border-radius: 999px; background: rgba(15, 23, 42, 0.88); color: #e2e8f0; font-size: 1.5rem; line-height: 1; cursor: pointer; }
+  .history-modal-close:hover, .history-modal-close:focus-visible { border-color: #facc15; color: #facc15; outline: none; }
+  .history-list { overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 1rem 1rem; }
+  .history-row { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(9rem, 1.5fr) auto; gap: 0.75rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid #253247; font-size: 0.8rem; }
+  .history-row:last-child { border-bottom: 0; }
+  .history-coin { color: #f8fafc; font-weight: 700; overflow-wrap: anywhere; }
+  .history-detail { color: #cbd5e1; }
+  .history-detail.positive { color: #4ade80; }
+  .history-detail.negative { color: #f87171; }
+  .history-when { color: #64748b; text-align: right; white-space: nowrap; }
+  .history-tx { display: block; margin-top: 0.2rem; color: #f8fafc; font-size: 0.7rem; text-decoration: none; }
+  .history-tx:hover { text-decoration: underline; }
+  .history-empty { padding: 3rem 1rem; color: #64748b; text-align: center; }
+  .history-summary-button { cursor: pointer; color: #e2e8f0; }
+  .history-summary-button:hover, .history-summary-button:focus-visible { border-color: #64748b; color: #fff; outline: none; }
+  @media (max-width: 560px) { .history-row { grid-template-columns: 1fr auto; } .history-detail { grid-column: 1 / -1; grid-row: 2; } .history-when { grid-column: 2; grid-row: 1; } }
   .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
   .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
@@ -1013,6 +1036,17 @@ DASHBOARD_HTML = """\
   </div>
 </div>
 
+<div class="history-modal" id="history-modal" role="dialog" aria-modal="true" aria-labelledby="history-modal-title" hidden>
+  <div class="history-modal-content">
+    <button class="history-modal-close" type="button" aria-label="Close history">×</button>
+    <div class="history-modal-header">
+      <h2 class="history-modal-title" id="history-modal-title">Fleet history</h2>
+      <div class="history-modal-subtitle" id="history-modal-subtitle"></div>
+    </div>
+    <div class="history-list" id="history-list"></div>
+  </div>
+</div>
+
 <script>
 (function() {
   const container = document.getElementById('bots-container');
@@ -1033,6 +1067,13 @@ DASHBOARD_HTML = """\
   const sigilModalStage = sigilModal.querySelector('.sigil-modal-stage');
   const sigilModalClose = sigilModal.querySelector('.sigil-modal-close');
   let sigilModalReturnFocus = null;
+  const historyModal = document.getElementById('history-modal');
+  const historyModalTitle = document.getElementById('history-modal-title');
+  const historyModalSubtitle = document.getElementById('history-modal-subtitle');
+  const historyList = document.getElementById('history-list');
+  const historyModalClose = historyModal.querySelector('.history-modal-close');
+  let historyModalReturnFocus = null;
+  let summaryBotIds = [];
   const notificationsButton = document.getElementById('notifications');
   const reconnectCardsButton = document.getElementById('reconnect-cards');
   const notificationMenu = document.getElementById('notification-menu');
@@ -1424,12 +1465,96 @@ DASHBOARD_HTML = """\
     sigilModalClose.focus();
   }
 
+  function historyTimestamp(value) {
+    const parsed = Date.parse(value || '');
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function historyAgo(value) {
+    const timestamp = historyTimestamp(value);
+    if (!timestamp) return 'time unknown';
+    const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+    if (seconds < 60) return seconds + 's ago';
+    if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
+    if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ago';
+    if (seconds < 604800) return Math.floor(seconds / 86400) + 'd ago';
+    return new Date(timestamp).toLocaleDateString();
+  }
+
+  function historyTxUrl(state, txHash) {
+    const chain = chainMetadata[parseInt(state.chain_id, 10)];
+    return chain && txHash ? chain.explorer.replace('/address/', '/tx/') + txHash : '';
+  }
+
+  function closeHistoryModal() {
+    if (historyModal.hidden) return;
+    historyModal.hidden = true;
+    historyList.replaceChildren();
+    document.body.classList.remove('history-modal-open');
+    if (historyModalReturnFocus && historyModalReturnFocus.isConnected) historyModalReturnFocus.focus();
+    historyModalReturnFocus = null;
+  }
+
+  function openFleetHistory(kind, trigger) {
+    const entries = [];
+    summaryBotIds.forEach(function(botId) {
+      const state = bots[botId];
+      if (!state) return;
+      const coin = state.token_symbol || state.display_name || botId;
+      if (kind === 'sells') {
+        (state.trades_history || []).forEach(function(trade) {
+          if (String(trade.side || '').toLowerCase() !== 'sell') return;
+          entries.push({ state: state, coin: coin, timestamp: trade.timestamp, txHash: trade.tx_hash, trade: trade });
+        });
+      } else {
+        (state.events || []).forEach(function(event) {
+          if (event.level !== 'success' || event.code !== 'usdg_banked') return;
+          entries.push({ state: state, coin: coin, timestamp: event.timestamp, txHash: event.tx_hash, event: event });
+        });
+      }
+    });
+    entries.sort(function(a, b) { return historyTimestamp(b.timestamp) - historyTimestamp(a.timestamp); });
+    historyModalTitle.textContent = kind === 'sells' ? 'Recent sells' : 'Successful banking';
+    historyModalSubtitle.textContent = entries.length + ' retained entr' + (entries.length === 1 ? 'y' : 'ies') + ' across ' + summaryBotIds.length + ' displayed bot' + (summaryBotIds.length === 1 ? '' : 's');
+    if (!entries.length) {
+      historyList.innerHTML = '<div class="history-empty">No retained ' + (kind === 'sells' ? 'sells' : 'successful banking events') + ' yet.</div>';
+    } else {
+      historyList.innerHTML = entries.map(function(entry) {
+        const txUrl = historyTxUrl(entry.state, entry.txHash);
+        let detail = '';
+        let detailClass = '';
+        if (kind === 'sells') {
+          const profit = parseFloat(entry.trade.profit_eth);
+          const received = parseFloat(entry.trade.eth_amount) || 0;
+          detail = Number.isFinite(profit) ? (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH profit' : received.toFixed(8) + ' ETH received';
+          detailClass = Number.isFinite(profit) ? (profit >= 0 ? ' positive' : ' negative') : '';
+        } else {
+          const sourceAmount = parseFloat(entry.event.source_amount);
+          const usdgAmount = parseFloat(entry.event.usdg_amount);
+          detail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(entry.event.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(entry.event.message || 'Banking confirmed'));
+        }
+        return '<div class="history-row"><div class="history-coin">' + esc(entry.coin) + '</div>' +
+          '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">View transaction ↗</a>' : '') + '</div>' +
+          '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
+      }).join('');
+    }
+    historyModalReturnFocus = trigger;
+    historyModal.hidden = false;
+    document.body.classList.add('history-modal-open');
+    historyModalClose.focus();
+  }
+
   sigilModalClose.addEventListener('click', closeSigilModal);
   sigilModal.addEventListener('click', function(event) {
     if (event.target === sigilModal) closeSigilModal();
   });
+  historyModalClose.addEventListener('click', closeHistoryModal);
+  historyModal.addEventListener('click', function(event) {
+    if (event.target === historyModal) closeHistoryModal();
+  });
   document.addEventListener('keydown', function(event) {
     if (event.key === 'Escape' && !sigilModal.hidden) closeSigilModal();
+    if (event.key === 'Escape' && !historyModal.hidden) closeHistoryModal();
   });
 
   function wireSigilAnimation(panel, stage) {
@@ -1531,6 +1656,7 @@ DASHBOARD_HTML = """\
   }
 
   function updateSummary(botIds) {
+    summaryBotIds = botIds.slice();
     const states = botIds.map(function(id) { return bots[id]; });
     const needsPositions = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -1627,7 +1753,9 @@ DASHBOARD_HTML = """\
       (usdgCadValue === null ? '' : '<span class="summary-detail">' + formatBagValue(usdgCadValue, 'cad') + ' CAD</span>') + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
-      '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>';
+      '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>' +
+      '<button class="summary-item history-summary-button" type="button" data-fleet-history="sells">Recent sells</button>' +
+      '<button class="summary-item history-summary-button" type="button" data-fleet-history="banking">Successful banking</button>';
     const periodSelectorOpen = document.activeElement && document.activeElement.matches('[data-realized-period]');
     if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
   }
@@ -2427,6 +2555,11 @@ DASHBOARD_HTML = """\
   setInterval(fetchEthPrices, 60000);
   setInterval(fetchMarketData, 60000);
   summaryBar.addEventListener('click', function(event) {
+    const historyButton = event.target.closest('[data-fleet-history]');
+    if (historyButton) {
+      openFleetHistory(historyButton.dataset.fleetHistory, historyButton);
+      return;
+    }
     const focusLink = event.target.closest('[data-focus-bot]');
     if (focusLink) {
       const card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
