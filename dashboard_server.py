@@ -94,7 +94,9 @@ _STATUS_FIELDS = frozenset({
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "sell_attempt",
-    "chain_id", "swap_provider", "token_symbol", "token_address", "wallet_address",
+    "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
+    "token_tax_detection_source", "token_tax_detection_observations",
+    "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
@@ -105,7 +107,11 @@ _EVENT_FIELDS = frozenset({
     "source_amount", "source_asset", "usdg_amount",
 })
 _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
-_SELL_ATTEMPT_FIELDS = frozenset({"status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth"})
+_SELL_ATTEMPT_FIELDS = frozenset({
+    "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
+    "observed_fee_percent", "matching_observations", "confirmations_required",
+    "detected_fee_percent",
+})
 _REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "24h", "6h", "1h"})
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -842,7 +848,8 @@ DASHBOARD_HTML = """\
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
-  .chain-badge, .provider-badge, .group-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
+  .chain-badge, .provider-badge, .group-badge, .tax-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
+  .tax-badge { color: #fde68a; background: #713f12; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
@@ -2306,9 +2313,16 @@ DASHBOARD_HTML = """\
       html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
+      const taxFee = parseFloat(d.token_transfer_fee_percent);
+      const taxSource = String(d.token_tax_detection_source || 'none');
+      const taxBadge = d.taxed_token && Number.isFinite(taxFee) && taxFee > 0
+        ? '<span class="tax-badge" title="' + esc(taxSource === 'auto-detected' ? 'Runtime auto-detected transfer fee' : 'Declared transfer fee') + '">' +
+          (taxSource === 'auto-detected' ? 'AUTO TAX ' : 'TAX ') + esc(taxFee.toFixed(1)) + '%</span>'
+        : '';
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
+        taxBadge +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 
       if (d.capacity_warning) {
