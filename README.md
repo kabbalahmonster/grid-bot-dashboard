@@ -29,7 +29,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
   active dashboard filters and updates in place from live bot status reports
   while preserving the reader's scroll position. Sell/banking history changes
   refresh directly from the SSE update handler rather than waiting for the
-  touch-aware full-card render scheduler.
+  touch-aware full-card render scheduler. Coin names are controls that close
+  the feed and focus the corresponding bot card.
 - Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session profit,
   session buy or sell count, realized profit, confirmed USDG treasury sent, position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
