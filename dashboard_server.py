@@ -941,6 +941,9 @@ DASHBOARD_HTML = """\
   .history-when { color: #64748b; text-align: right; white-space: nowrap; }
   .history-tx { display: block; margin-top: 0.2rem; color: #f8fafc; font-size: 0.7rem; text-decoration: none; }
   .history-tx:hover { text-decoration: underline; }
+  .history-banking { margin-top: 0.45rem; padding: 0.4rem 0.5rem; border-left: 3px solid #22c55e; border-radius: 0.2rem; background: #10251d; color: #86efac; font-size: 0.75rem; }
+  .history-banking.unmatched { border-left-color: #38bdf8; background: #102330; color: #7dd3fc; }
+  .history-unbanked { margin-top: 0.35rem; color: #64748b; font-size: 0.72rem; }
   .history-empty { padding: 3rem 1rem; color: #64748b; text-align: center; }
   .history-summary-button { cursor: pointer; color: #e2e8f0; }
   .history-summary-button:hover, .history-summary-button:focus-visible { border-color: #64748b; color: #fff; outline: none; }
@@ -1495,46 +1498,74 @@ DASHBOARD_HTML = """\
     historyModalReturnFocus = null;
   }
 
-  function openFleetHistory(kind, trigger) {
+  function openFleetHistory(trigger) {
     const entries = [];
     summaryBotIds.forEach(function(botId) {
       const state = bots[botId];
       if (!state) return;
       const coin = state.token_symbol || state.display_name || botId;
-      if (kind === 'sells') {
-        (state.trades_history || []).forEach(function(trade) {
-          if (String(trade.side || '').toLowerCase() !== 'sell') return;
-          entries.push({ state: state, coin: coin, timestamp: trade.timestamp, txHash: trade.tx_hash, trade: trade });
+      const sells = (state.trades_history || []).filter(function(trade) {
+        return String(trade.side || '').toLowerCase() === 'sell';
+      }).map(function(trade) {
+        return { state: state, coin: coin, timestamp: trade.timestamp, txHash: trade.tx_hash, trade: trade, banking: null };
+      });
+      const bankingEvents = (state.events || []).filter(function(event) {
+        return event.level === 'success' && event.code === 'usdg_banked';
+      }).sort(function(a, b) { return historyTimestamp(a.timestamp) - historyTimestamp(b.timestamp); });
+      const usedBanking = new Set();
+      sells.forEach(function(sell) {
+        const sellTime = historyTimestamp(sell.timestamp);
+        let bestIndex = -1;
+        let bestDelay = Infinity;
+        bankingEvents.forEach(function(event, index) {
+          if (usedBanking.has(index)) return;
+          const delay = historyTimestamp(event.timestamp) - sellTime;
+          if (delay >= 0 && delay <= 10 * 60 * 1000 && delay < bestDelay) {
+            bestIndex = index;
+            bestDelay = delay;
+          }
         });
-      } else {
-        (state.events || []).forEach(function(event) {
-          if (event.level !== 'success' || event.code !== 'usdg_banked') return;
-          entries.push({ state: state, coin: coin, timestamp: event.timestamp, txHash: event.tx_hash, event: event });
-        });
-      }
+        if (bestIndex >= 0) {
+          sell.banking = bankingEvents[bestIndex];
+          usedBanking.add(bestIndex);
+        }
+        entries.push(sell);
+      });
+      bankingEvents.forEach(function(event, index) {
+        if (!usedBanking.has(index)) entries.push({ state: state, coin: coin, timestamp: event.timestamp, event: event, unmatchedBanking: true });
+      });
     });
     entries.sort(function(a, b) { return historyTimestamp(b.timestamp) - historyTimestamp(a.timestamp); });
-    historyModalTitle.textContent = kind === 'sells' ? 'Recent sells' : 'Successful banking';
+    historyModalTitle.textContent = 'Sell history';
     historyModalSubtitle.textContent = entries.length + ' retained entr' + (entries.length === 1 ? 'y' : 'ies') + ' across ' + summaryBotIds.length + ' displayed bot' + (summaryBotIds.length === 1 ? '' : 's');
     if (!entries.length) {
-      historyList.innerHTML = '<div class="history-empty">No retained ' + (kind === 'sells' ? 'sells' : 'successful banking events') + ' yet.</div>';
+      historyList.innerHTML = '<div class="history-empty">No retained sells or successful banking events yet.</div>';
     } else {
       historyList.innerHTML = entries.map(function(entry) {
+        if (entry.unmatchedBanking) {
+          const event = entry.event;
+          const sourceAmount = parseFloat(event.source_amount);
+          const usdgAmount = parseFloat(event.usdg_amount);
+          const bankingTxUrl = historyTxUrl(entry.state, event.tx_hash);
+          const bankingDetail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(event.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(event.message || 'Banking confirmed'));
+          return '<div class="history-row"><div class="history-coin">' + esc(entry.coin) + '</div><div class="history-detail"><div class="history-banking unmatched">🏦 Banking confirmed · ' + bankingDetail + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div></div>' +
+            '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
+        }
         const txUrl = historyTxUrl(entry.state, entry.txHash);
-        let detail = '';
-        let detailClass = '';
-        if (kind === 'sells') {
-          const profit = parseFloat(entry.trade.profit_eth);
-          const received = parseFloat(entry.trade.eth_amount) || 0;
-          detail = Number.isFinite(profit) ? (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH profit' : received.toFixed(8) + ' ETH received';
-          detailClass = Number.isFinite(profit) ? (profit >= 0 ? ' positive' : ' negative') : '';
-        } else {
-          const sourceAmount = parseFloat(entry.event.source_amount);
-          const usdgAmount = parseFloat(entry.event.usdg_amount);
-          detail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(entry.event.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(entry.event.message || 'Banking confirmed'));
+        const profit = parseFloat(entry.trade.profit_eth);
+        const received = parseFloat(entry.trade.eth_amount) || 0;
+        const detail = Number.isFinite(profit) ? (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH profit' : received.toFixed(8) + ' ETH received';
+        const detailClass = Number.isFinite(profit) ? (profit >= 0 ? ' positive' : ' negative') : '';
+        let bankingHtml = '<div class="history-unbanked">No successful banking recorded for this sell</div>';
+        if (entry.banking) {
+          const sourceAmount = parseFloat(entry.banking.source_amount);
+          const usdgAmount = parseFloat(entry.banking.usdg_amount);
+          const bankingTxUrl = historyTxUrl(entry.state, entry.banking.tx_hash);
+          const bankingDetail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(entry.banking.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(entry.banking.message || 'Banking confirmed'));
+          bankingHtml = '<div class="history-banking">🏦 Banked · ' + bankingDetail + ' · ' + esc(historyAgo(entry.banking.timestamp)) + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div>';
         }
         return '<div class="history-row"><div class="history-coin">' + esc(entry.coin) + '</div>' +
-          '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">View transaction ↗</a>' : '') + '</div>' +
+          '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">Sell transaction ↗</a>' : '') + bankingHtml + '</div>' +
           '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
       }).join('');
     }
@@ -1754,8 +1785,7 @@ DASHBOARD_HTML = """\
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
       '<span class="summary-item">Filled positions: ' + filled + '</span>' +
       '<span class="summary-item">Longest uptime: ' + uptimeText + '</span>' +
-      '<button class="summary-item history-summary-button" type="button" data-fleet-history="sells">Recent sells</button>' +
-      '<button class="summary-item history-summary-button" type="button" data-fleet-history="banking">Successful banking</button>';
+      '<button class="summary-item history-summary-button" type="button" data-fleet-history>Sell history</button>';
     const periodSelectorOpen = document.activeElement && document.activeElement.matches('[data-realized-period]');
     if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
   }
@@ -2557,7 +2587,7 @@ DASHBOARD_HTML = """\
   summaryBar.addEventListener('click', function(event) {
     const historyButton = event.target.closest('[data-fleet-history]');
     if (historyButton) {
-      openFleetHistory(historyButton.dataset.fleetHistory, historyButton);
+      openFleetHistory(historyButton);
       return;
     }
     const focusLink = event.target.closest('[data-focus-bot]');

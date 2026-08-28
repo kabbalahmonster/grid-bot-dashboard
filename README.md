@@ -22,9 +22,11 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Latest state and bounded history persisted across dashboard restarts
 - Aggregate active-bot, session-profit, persistent realized-profit with oldest-period age and daily/hourly averages,
   confirmed USDG treasury-sent, and filled-position totals
-- Fleet-wide Recent sells and Successful banking summary dialogs, newest-first
-  and scrollable, with coin, realized profit or banked amount, relative time,
-  and transaction links. The dialogs follow the active dashboard filters.
+- A fleet-wide Sell history dialog, newest-first and scrollable, with coin,
+  realized profit, relative time, and transaction links. Successful banking is
+  paired directly beneath its originating sell when both retained timestamps
+  are available; unmatched banking remains visible. The feed follows the
+  active dashboard filters.
 - Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session profit,
   session buy or sell count, realized profit, confirmed USDG treasury sent, position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
