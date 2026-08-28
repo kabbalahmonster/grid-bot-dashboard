@@ -36,6 +36,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Reversible ascending/descending sorting with sensible per-field defaults
 - Clickable realized-profit summary cycling ETH, CAD, and USD for its total and daily/hourly averages
 - Optional bot display names/groups and chain badges
+- Manual `TAX n.n%` and guarded `AUTO TAX n.n%` badges, including retained
+  detection source and observation evidence from current bot payloads
 - Bounded ETH-denominated bot trade history with explorer links
 - Bounded structured success/warning/error history with repeat counts and expandable provider details
 - Round-scoped sell-check indication that clears automatically with the next report that omits it
@@ -337,6 +339,14 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 ```
 
 Bots may additionally send `display_name`, `group`, and up to 50 entries in `trades_history`. Trade entries contain timestamp, side, ETH amount, token amount, execution price, transaction hash, and sell profit when applicable. They are recorded from swaps the bot already executes, so this adds no RPC or third-party API calls.
+
+Fee-on-transfer state is optional and backward compatible. `taxed_token`
+enables the badge, `token_transfer_fee_percent` supplies its effective fee, and
+`swap_slippage_percent` reports the total bounded provider tolerance.
+`token_tax_detection_source` is `manual`, `auto-detected`, or `none`, while
+`token_tax_detection_observations` carries the supporting observation count.
+Auto-detected tokens render a distinct **AUTO TAX n.n%** badge; manually
+configured tokens render **TAX n.n%**. Older payloads may omit every field.
 
 Bots may also send up to 50 structured `events`. The dashboard renders them newest-first in a collapsible Events panel, distinguishes green successes, amber warnings, and red errors, and shows a repeat count for deduplicated events. Events with a `tx_hash` include a white explorer link; confirmed USDG banking swaps use this to make the banking transaction directly auditable. This feed is intended for meaningful operational outcomes and blocked actions, not raw bot output or routine no-trade polling.
 
