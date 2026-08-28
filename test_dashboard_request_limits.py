@@ -111,6 +111,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("delay <= 10 * 60 * 1000", body)
         self.assertIn("No successful banking recorded for this sell", body)
         self.assertIn("Banking transaction ↗", body)
+        self.assertIn("if (!historyModal.hidden) openFleetHistory(null, true)", body)
+        self.assertIn("historyList.scrollTop = preservedScrollTop", body)
 
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)

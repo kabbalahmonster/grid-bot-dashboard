@@ -1498,7 +1498,8 @@ DASHBOARD_HTML = """\
     historyModalReturnFocus = null;
   }
 
-  function openFleetHistory(trigger) {
+  function openFleetHistory(trigger, refreshOnly) {
+    const preservedScrollTop = historyList.scrollTop;
     const entries = [];
     summaryBotIds.forEach(function(botId) {
       const state = bots[botId];
@@ -1568,6 +1569,10 @@ DASHBOARD_HTML = """\
           '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">Sell transaction ↗</a>' : '') + bankingHtml + '</div>' +
           '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
       }).join('');
+    }
+    if (refreshOnly) {
+      historyList.scrollTop = preservedScrollTop;
+      return;
     }
     historyModalReturnFocus = trigger;
     historyModal.hidden = false;
@@ -1788,6 +1793,7 @@ DASHBOARD_HTML = """\
       '<button class="summary-item history-summary-button" type="button" data-fleet-history>Sell history</button>';
     const periodSelectorOpen = document.activeElement && document.activeElement.matches('[data-realized-period]');
     if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
+    if (!historyModal.hidden) openFleetHistory(null, true);
   }
 
   function fetchEthPrices() {
