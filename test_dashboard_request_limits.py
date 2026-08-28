@@ -116,6 +116,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("function sellHistoryIdentity(state)", body)
         self.assertIn("const historyChanged = sellHistoryIdentity(previousState) !== sellHistoryIdentity(nextState)", body)
         self.assertIn("historyChanged && !historyModal.hidden && summaryBotIds.includes(entry.bot_id)", body)
+        self.assertIn('data-history-focus-bot="', body)
+        self.assertIn("focusButton.dataset.historyFocusBot", body)
+        self.assertIn("card.scrollIntoView({ behavior: 'smooth', block: 'start' })", body)
 
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)

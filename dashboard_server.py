@@ -934,7 +934,8 @@ DASHBOARD_HTML = """\
   .history-list { overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 1rem 1rem; }
   .history-row { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(9rem, 1.5fr) auto; gap: 0.75rem; align-items: center; padding: 0.7rem 0; border-bottom: 1px solid #253247; font-size: 0.8rem; }
   .history-row:last-child { border-bottom: 0; }
-  .history-coin { color: #f8fafc; font-weight: 700; overflow-wrap: anywhere; }
+  .history-coin { appearance: none; border: 0; padding: 0; background: none; color: #f8fafc; font: inherit; font-weight: 700; text-align: left; text-decoration: underline; text-decoration-color: #475569; text-underline-offset: 0.18rem; overflow-wrap: anywhere; cursor: pointer; }
+  .history-coin:hover, .history-coin:focus-visible { color: #facc15; text-decoration-color: #facc15; outline: none; }
   .history-detail { color: #cbd5e1; }
   .history-detail.positive { color: #4ade80; }
   .history-detail.negative { color: #f87171; }
@@ -1526,7 +1527,7 @@ DASHBOARD_HTML = """\
       const sells = (state.trades_history || []).filter(function(trade) {
         return String(trade.side || '').toLowerCase() === 'sell';
       }).map(function(trade) {
-        return { state: state, coin: coin, timestamp: trade.timestamp, txHash: trade.tx_hash, trade: trade, banking: null };
+        return { state: state, botId: botId, coin: coin, timestamp: trade.timestamp, txHash: trade.tx_hash, trade: trade, banking: null };
       });
       const bankingEvents = (state.events || []).filter(function(event) {
         return event.level === 'success' && event.code === 'usdg_banked';
@@ -1551,7 +1552,7 @@ DASHBOARD_HTML = """\
         entries.push(sell);
       });
       bankingEvents.forEach(function(event, index) {
-        if (!usedBanking.has(index)) entries.push({ state: state, coin: coin, timestamp: event.timestamp, event: event, unmatchedBanking: true });
+        if (!usedBanking.has(index)) entries.push({ state: state, botId: botId, coin: coin, timestamp: event.timestamp, event: event, unmatchedBanking: true });
       });
     });
     entries.sort(function(a, b) { return historyTimestamp(b.timestamp) - historyTimestamp(a.timestamp); });
@@ -1567,7 +1568,7 @@ DASHBOARD_HTML = """\
           const usdgAmount = parseFloat(event.usdg_amount);
           const bankingTxUrl = historyTxUrl(entry.state, event.tx_hash);
           const bankingDetail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(event.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(event.message || 'Banking confirmed'));
-          return '<div class="history-row"><div class="history-coin">' + esc(entry.coin) + '</div><div class="history-detail"><div class="history-banking unmatched">🏦 Banking confirmed · ' + bankingDetail + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div></div>' +
+          return '<div class="history-row"><button class="history-coin" type="button" data-history-focus-bot="' + esc(entry.botId) + '">' + esc(entry.coin) + '</button><div class="history-detail"><div class="history-banking unmatched">🏦 Banking confirmed · ' + bankingDetail + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div></div>' +
             '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
         }
         const txUrl = historyTxUrl(entry.state, entry.txHash);
@@ -1583,7 +1584,7 @@ DASHBOARD_HTML = """\
           const bankingDetail = (Number.isFinite(sourceAmount) ? sourceAmount.toFixed(8) + ' ' + esc(entry.banking.source_asset || 'ETH') + ' → ' : '') + (Number.isFinite(usdgAmount) ? usdgAmount.toFixed(2) + ' USDG' : esc(entry.banking.message || 'Banking confirmed'));
           bankingHtml = '<div class="history-banking">🏦 Banked · ' + bankingDetail + ' · ' + esc(historyAgo(entry.banking.timestamp)) + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div>';
         }
-        return '<div class="history-row"><div class="history-coin">' + esc(entry.coin) + '</div>' +
+        return '<div class="history-row"><button class="history-coin" type="button" data-history-focus-bot="' + esc(entry.botId) + '">' + esc(entry.coin) + '</button>' +
           '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">Sell transaction ↗</a>' : '') + bankingHtml + '</div>' +
           '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
       }).join('');
@@ -1604,6 +1605,19 @@ DASHBOARD_HTML = """\
   });
   historyModalClose.addEventListener('click', closeHistoryModal);
   historyModal.addEventListener('click', function(event) {
+    const focusButton = event.target.closest('[data-history-focus-bot]');
+    if (focusButton) {
+      const botId = focusButton.dataset.historyFocusBot;
+      closeHistoryModal();
+      const card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
+        return candidate.dataset.botId === botId;
+      });
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        card.focus({ preventScroll: true });
+      }
+      return;
+    }
     if (event.target === historyModal) closeHistoryModal();
   });
   document.addEventListener('keydown', function(event) {
