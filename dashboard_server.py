@@ -1206,6 +1206,19 @@ DASHBOARD_HTML = """\
     return String(trade.tx_hash || [trade.timestamp, trade.side, trade.eth_amount, trade.token_amount].join(':'));
   }
 
+  function sellHistoryIdentity(state) {
+    if (!state) return '';
+    const sells = (state.trades_history || []).filter(function(trade) {
+      return String(trade.side || '').toLowerCase() === 'sell';
+    }).map(tradeIdentity);
+    const banking = (state.events || []).filter(function(event) {
+      return event.level === 'success' && event.code === 'usdg_banked';
+    }).map(function(event) {
+      return [event.timestamp, event.tx_hash, event.source_amount, event.usdg_amount].join(':');
+    });
+    return sells.join('|') + '//' + banking.join('|');
+  }
+
   function processBotNotifications(botId, previous, next) {
     if (!browserNotificationsEnabled() || !previous || !next) return;
     const name = next.display_name || botId;
@@ -1313,8 +1326,13 @@ DASHBOARD_HTML = """\
       lastLiveMessageAt = Date.now();
       const entry = JSON.parse(e.data);
       const nextState = entry.data || entry;
-      processBotNotifications(entry.bot_id, bots[entry.bot_id], nextState);
+      const previousState = bots[entry.bot_id];
+      const historyChanged = sellHistoryIdentity(previousState) !== sellHistoryIdentity(nextState);
+      processBotNotifications(entry.bot_id, previousState, nextState);
       bots[entry.bot_id] = nextState;
+      if (historyChanged && !historyModal.hidden && summaryBotIds.includes(entry.bot_id)) {
+        openFleetHistory(null, true);
+      }
       scheduleRoutineRender(entry.bot_id);
       scheduleMarketDataFetch();
     });

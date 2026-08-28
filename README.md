@@ -27,7 +27,9 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
   paired directly beneath its originating sell when both retained timestamps
   are available; unmatched banking remains visible. The feed follows the
   active dashboard filters and updates in place from live bot status reports
-  while preserving the reader's scroll position.
+  while preserving the reader's scroll position. Sell/banking history changes
+  refresh directly from the SSE update handler rather than waiting for the
+  touch-aware full-card render scheduler.
 - Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session profit,
   session buy or sell count, realized profit, confirmed USDG treasury sent, position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults

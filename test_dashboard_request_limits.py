@@ -113,6 +113,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Banking transaction ↗", body)
         self.assertIn("if (!historyModal.hidden) openFleetHistory(null, true)", body)
         self.assertIn("historyList.scrollTop = preservedScrollTop", body)
+        self.assertIn("function sellHistoryIdentity(state)", body)
+        self.assertIn("const historyChanged = sellHistoryIdentity(previousState) !== sellHistoryIdentity(nextState)", body)
+        self.assertIn("historyChanged && !historyModal.hidden && summaryBotIds.includes(entry.bot_id)", body)
 
     def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)
@@ -192,7 +195,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("dashboard-notification-preferences", body)
         self.assertIn("dashboard-notifications-enabled", body)
         self.assertIn("notificationsMasterEnabled && 'Notification' in window", body)
-        self.assertIn("processBotNotifications(entry.bot_id, bots[entry.bot_id], nextState)", body)
+        self.assertIn("processBotNotifications(entry.bot_id, previousState, nextState)", body)
         self.assertIn("const previousTrades = new Set", body)
         self.assertIn("previous.capacity_warning && next.capacity_warning", body)
         self.assertIn("previousAge === 'offline'", body)
