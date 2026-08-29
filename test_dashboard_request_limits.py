@@ -58,6 +58,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         for key in (
             "dashboard-bot-filter", "dashboard-chain-filter", "dashboard-provider-filter",
+            "dashboard-tax-filter",
             "dashboard-sort-mode", "dashboard-sort-direction", "dashboard-profit-currency",
             "dashboard-realized-profit-unit", "dashboard-realized-profit-period",
             "dashboard-sigil-animation", "dashboard-notification-preferences",
@@ -237,6 +238,15 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("clearAllFilters.addEventListener('click'", body)
         self.assertIn("chainFilter.value = '';", body)
         self.assertIn("providerFilter.value = '';", body)
+        self.assertIn("taxFilterEnabled = false;", body)
+
+    def test_tax_coin_filter_includes_declared_and_auto_detected_tokens(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="tax-filter" type="button" aria-pressed="false"', body)
+        self.assertIn("['manual', 'declared', 'auto-detected'].includes(taxSource)", body)
+        self.assertIn("d.taxed_token === true", body)
+        self.assertIn("!taxFilterEnabled || isTaxedToken", body)
+        self.assertIn("Tax coins only ✓", body)
 
     def test_connection_status_exposes_live_diagnostics(self):
         body = self.client.get("/").get_data(as_text=True)

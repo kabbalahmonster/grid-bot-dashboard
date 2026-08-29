@@ -824,6 +824,7 @@ DASHBOARD_HTML = """\
   .card:focus { outline: 2px solid #f59e0b; outline-offset: 3px; }
   @keyframes capacity-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.25); } 50% { box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.12); } }
   .toolbar select, .toolbar input, .toolbar button { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 0.35rem; padding: 0.45rem 0.6rem; }
+  .toolbar button[aria-pressed="true"] { color: #fde68a; background: #713f12; border-color: #d97706; }
   .notification-wrap { position: relative; }
   .notification-menu { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 20; width: min(19rem, calc(100vw - 2rem)); padding: 0.75rem; border: 1px solid #475569; border-radius: 0.45rem; background: #1e293b; box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.45); }
   .notification-menu[hidden] { display: none; }
@@ -1012,6 +1013,7 @@ DASHBOARD_HTML = """\
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
+    <button id="tax-filter" type="button" aria-pressed="false" title="Show only manually declared or auto-detected taxed tokens">Tax coins</button>
     <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
@@ -1072,6 +1074,7 @@ DASHBOARD_HTML = """\
   const clearAllFilters = document.getElementById('clear-all-filters');
   const chainFilter = document.getElementById('chain-filter');
   const providerFilter = document.getElementById('provider-filter');
+  const taxFilter = document.getElementById('tax-filter');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
   const sigilModal = document.getElementById('sigil-modal');
@@ -1123,6 +1126,12 @@ DASHBOARD_HTML = """\
   if (chainFilter.querySelector('option[value="' + CSS.escape(storedChainFilter) + '"]')) chainFilter.value = storedChainFilter;
   const storedProviderFilter = localStorage.getItem('dashboard-provider-filter') || '';
   if (providerFilter.querySelector('option[value="' + CSS.escape(storedProviderFilter) + '"]')) providerFilter.value = storedProviderFilter;
+  let taxFilterEnabled = localStorage.getItem('dashboard-tax-filter') === 'true';
+  function updateTaxFilterButton() {
+    taxFilter.setAttribute('aria-pressed', String(taxFilterEnabled));
+    taxFilter.textContent = taxFilterEnabled ? 'Tax coins only ✓' : 'Tax coins';
+  }
+  updateTaxFilterButton();
   clearFilter.style.display = botFilter.value ? 'block' : 'none';
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
@@ -2196,8 +2205,12 @@ DASHBOARD_HTML = """\
       const haystack = [id, d.display_name, d.token_symbol, d.group, provider].join(' ').toLowerCase();
       const providerMatches = !wantedProvider ||
         (wantedProvider === '__unreported' ? !provider : provider === wantedProvider);
+      const taxSource = String(d.token_tax_detection_source || '').toLowerCase();
+      const isTaxedToken = d.taxed_token === true ||
+        ['manual', 'declared', 'auto-detected'].includes(taxSource);
       return (!query || haystack.includes(query)) &&
-        (!wantedChain || String(d.chain_id) === wantedChain) && providerMatches;
+        (!wantedChain || String(d.chain_id) === wantedChain) && providerMatches &&
+        (!taxFilterEnabled || isTaxedToken);
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
       let result;
@@ -2277,7 +2290,7 @@ DASHBOARD_HTML = """\
     });
     updateSummary(botIds);
     if (botIds.length === 0) {
-      const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider);
+      const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider || taxFilterEnabled);
       emptyState.querySelector('p').textContent = filtered ? 'No bots match your filters' : 'No bots reporting yet';
       emptyState.querySelector('span').textContent = filtered ? 'Clear the active filters to show the fleet.' : 'Waiting for status updates…';
       clearAllFilters.hidden = !filtered;
@@ -2706,9 +2719,12 @@ DASHBOARD_HTML = """\
     botFilter.value = '';
     chainFilter.value = '';
     providerFilter.value = '';
+    taxFilterEnabled = false;
     localStorage.setItem('dashboard-bot-filter', '');
     localStorage.setItem('dashboard-chain-filter', '');
     localStorage.setItem('dashboard-provider-filter', '');
+    localStorage.setItem('dashboard-tax-filter', 'false');
+    updateTaxFilterButton();
     clearFilter.style.display = 'none';
     render(true);
   });
@@ -2724,6 +2740,12 @@ DASHBOARD_HTML = """\
   });
   providerFilter.addEventListener('input', function() {
     localStorage.setItem('dashboard-provider-filter', providerFilter.value);
+    render(true);
+  });
+  taxFilter.addEventListener('click', function() {
+    taxFilterEnabled = !taxFilterEnabled;
+    localStorage.setItem('dashboard-tax-filter', String(taxFilterEnabled));
+    updateTaxFilterButton();
     render(true);
   });
   function updateSortDirectionButton() {

@@ -31,7 +31,7 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
   refresh directly from the SSE update handler rather than waiting for the
   touch-aware full-card render scheduler. Coin names are controls that close
   the feed and focus the corresponding bot card.
-- Bot filtering by name/group, chain, and swap provider; sorting by AVG or top-position P&L, session profit,
+- Bot filtering by name/group, chain, swap provider, and manually declared or auto-detected taxed-token status; sorting by AVG or top-position P&L, session profit,
   session buy or sell count, realized profit, confirmed USDG treasury sent, position utilization, ETH or USDG balance, or status
 - Reversible ascending/descending sorting with sensible per-field defaults
 - Clickable realized-profit summary cycling ETH, CAD, and USD for its total and daily/hourly averages
@@ -456,7 +456,9 @@ curl -X POST https://doomdash.ca/api/status \
 ## Browser operations and recovery controls
 
 The toolbar search covers bot ID, display name, token symbol, group, and swap
-provider. Chain and provider selectors apply additional filters. If bots exist
+provider. Chain and provider selectors apply additional filters. The **Tax
+coins** toggle includes both manually declared and auto-detected taxed tokens
+and persists locally in the browser. If bots exist
 but none match, the empty state says **No bots match your filters** and offers
 **Clear all filters**. Search, filters, sort, currencies, notifications, and
 sigil animation preferences are stored in that browser profile.
