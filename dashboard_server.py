@@ -22,6 +22,7 @@ Security:
 """
 
 import atexit
+import gzip
 import json
 import logging
 import os
@@ -30,6 +31,7 @@ import re
 import threading
 import time
 import uuid
+import zlib
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -128,6 +130,52 @@ logging.basicConfig(
 )
 logger = logging.getLogger("dashboard")
 
+
+def _append_vary(response, value):
+    existing = [item.strip() for item in response.headers.get("Vary", "").split(",") if item.strip()]
+    if value not in existing:
+        existing.append(value)
+    response.headers["Vary"] = ", ".join(existing)
+
+
+def compress_regular_response(response):
+    """Compress sizeable non-streaming responses for constrained clients."""
+    accepts_gzip = request.accept_encodings["gzip"] > 0
+    if (
+        not accepts_gzip
+        or response.status_code < 200
+        or response.status_code in (204, 304)
+        or response.is_streamed
+        or response.headers.get("Content-Encoding")
+    ):
+        return response
+    payload = response.get_data()
+    if len(payload) < 1024:
+        return response
+    compressed = gzip.compress(payload, compresslevel=6)
+    if len(compressed) >= len(payload):
+        return response
+    response.set_data(compressed)
+    response.headers["Content-Encoding"] = "gzip"
+    response.headers["Content-Length"] = str(len(compressed))
+    _append_vary(response, "Accept-Encoding")
+    return response
+
+
+def _gzip_stream(chunks):
+    """Gzip a streaming response while flushing every SSE message promptly."""
+    compressor = zlib.compressobj(level=6, method=zlib.DEFLATED, wbits=31)
+    try:
+        for chunk in chunks:
+            raw = chunk.encode("utf-8") if isinstance(chunk, str) else bytes(chunk)
+            encoded = compressor.compress(raw) + compressor.flush(zlib.Z_SYNC_FLUSH)
+            if encoded:
+                yield encoded
+    finally:
+        tail = compressor.flush(zlib.Z_FINISH)
+        if tail:
+            yield tail
+
 # ---------------------------------------------------------------------------
 # Flask app
 # ---------------------------------------------------------------------------
@@ -138,6 +186,7 @@ app = Flask(__name__)
 # unbounded JSON document.
 app.config["MAX_CONTENT_LENGTH"] = MAX_STATUS_REQUEST_BYTES
 CORS(app)
+app.after_request(compress_regular_response)
 
 # ---------------------------------------------------------------------------
 # In-memory storage (thread-safe via locks)
@@ -546,6 +595,7 @@ def remove_bot(bot_id: str):
 @app.route("/api/stream")
 def sse_stream():
     """SSE endpoint for live browser updates."""
+    accepts_gzip = request.accept_encodings["gzip"] > 0
     q: queue.Queue = queue.Queue(maxsize=SSE_CLIENT_QUEUE_SIZE)
 
     with _sse_lock:
@@ -574,8 +624,8 @@ def sse_stream():
                     _sse_subscribers.remove(q)
             logger.info("SSE client disconnected (%d remaining)", len(_sse_subscribers))
 
-    return Response(
-        generate(),
+    response = Response(
+        _gzip_stream(generate()) if accepts_gzip else generate(),
         mimetype="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -583,6 +633,10 @@ def sse_stream():
             "Connection": "keep-alive",
         },
     )
+    if accepts_gzip:
+        response.headers["Content-Encoding"] = "gzip"
+        _append_vary(response, "Accept-Encoding")
+    return response
 
 
 @app.route("/api/health", methods=["GET"])

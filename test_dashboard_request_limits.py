@@ -1,3 +1,4 @@
+import gzip
 import unittest
 
 import dashboard_server
@@ -21,6 +22,20 @@ class TestDashboardRequestLimits(unittest.TestCase):
             dashboard_server.API_KEY = original_api_key
         self.assertEqual(response.status_code, 413)
         self.assertIn("byte limit", response.get_json()["error"])
+
+    def test_large_dashboard_response_is_gzipped_when_supported(self):
+        plain = self.client.get("/")
+        compressed = self.client.get("/", headers={"Accept-Encoding": "gzip"})
+        self.assertNotIn("Content-Encoding", plain.headers)
+        self.assertEqual(compressed.headers["Content-Encoding"], "gzip")
+        self.assertIn("Accept-Encoding", compressed.headers["Vary"])
+        self.assertEqual(gzip.decompress(compressed.data), plain.data)
+        self.assertLess(len(compressed.data), len(plain.data) // 2)
+
+    def test_sse_stream_gzip_flushes_each_message(self):
+        chunks = list(dashboard_server._gzip_stream(["event: one\ndata: 1\n\n", "event: two\ndata: 2\n\n"]))
+        self.assertEqual(gzip.decompress(b"".join(chunks)), b"event: one\ndata: 1\n\nevent: two\ndata: 2\n\n")
+        self.assertGreaterEqual(len(chunks), 2)
 
     def test_dashboard_offers_symbol_sort(self):
         response = self.client.get("/")
