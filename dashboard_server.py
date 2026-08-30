@@ -112,7 +112,7 @@ _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
     "observed_fee_percent", "matching_observations", "confirmations_required",
-    "detected_fee_percent",
+    "detected_fee_percent", "tracked_sell_amount_raw", "wallet_balance_raw", "deficit_raw",
 })
 _REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "24h", "6h", "1h"})
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
@@ -912,6 +912,9 @@ DASHBOARD_HTML = """\
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
+  .card.balance-mismatch { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35); }
+  .balance-mismatch-alert { background: #7f1d1d; border: 1px solid #ef4444; color: #fee2e2; border-radius: 0.35rem; padding: 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
+  .balance-mismatch-alert strong { color: #fecaca; display: block; margin-bottom: 0.2rem; }
   .capacity-alert { background: #78350f; border: 1px solid #f59e0b; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
   .sell-attempt { display: flex; align-items: center; gap: 0.65rem; background: linear-gradient(90deg, rgba(14, 116, 144, 0.22), rgba(15, 23, 42, 0.3)); border: 1px solid #0e7490; color: #cffafe; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
@@ -1085,6 +1088,7 @@ DASHBOARD_HTML = """\
         <label class="notification-option"><input type="checkbox" data-notification-type="stoploss"> Stop-loss sells</label>
         <label class="notification-option"><input type="checkbox" data-notification-type="treasury"> Treasury/banking success</label>
         <label class="notification-option"><input type="checkbox" data-notification-type="errors"> Persistent errors</label>
+        <label class="notification-option"><input type="checkbox" data-notification-type="safety"> Balance safety faults</label>
         <button class="notification-enable" id="notification-enable" type="button">Enable browser notifications</button>
         <span class="notification-note" id="notification-note">Alerts work while this dashboard is open. Choices are saved in this browser.</span>
       </div>
@@ -1166,7 +1170,7 @@ DASHBOARD_HTML = """\
   const openEvents = new Set();
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
-  const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false };
+  const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false, safety: true };
   let notificationPreferences = Object.assign({}, notificationDefaults);
   let notificationsMasterEnabled = localStorage.getItem('dashboard-notifications-enabled') === 'true';
   try { notificationPreferences = Object.assign(notificationPreferences, JSON.parse(localStorage.getItem('dashboard-notification-preferences') || '{}')); } catch (_) {}
@@ -1318,6 +1322,14 @@ DASHBOARD_HTML = """\
     });
     if (notificationPreferences.positions && !previous.capacity_warning && next.capacity_warning) {
       sendBrowserNotification('Needs new positions · ' + name, 'All ' + (next.capacity_warning.max_positions || next.max_positions || '') + ' position slots are filled' + symbol, 'positions:' + botId);
+    }
+    const previousMismatch = previous.sell_attempt && previous.sell_attempt.status === 'position_balance_mismatch';
+    const nextMismatch = next.sell_attempt && next.sell_attempt.status === 'position_balance_mismatch';
+    if (notificationPreferences.safety && !previousMismatch && nextMismatch) {
+      const deficit = String(next.sell_attempt.deficit_raw || '?');
+      sendBrowserNotification('BALANCE MISMATCH · ' + name, 'Sell blocked for position #' + String(next.sell_attempt.position_id || '?') + ' · raw deficit ' + deficit + symbol, 'balance-mismatch:' + botId);
+    } else if (notificationPreferences.safety && previousMismatch && !nextMismatch) {
+      sendBrowserNotification('Balance reconciled · ' + name, 'Position accounting matches the wallet again' + symbol, 'balance-recovered:' + botId);
     }
     const previousAge = reportAge(previous.received_at).status;
     if (notificationPreferences.recovered && previousAge === 'offline' && reportAge(next.received_at).status === 'running') {
@@ -2451,7 +2463,8 @@ DASHBOARD_HTML = """\
       const rawOpen = openRawJson.has(botKey);
       const chartOpen = openCharts.has(botKey);
       const sigilOpen = !closedSigils.has(botKey);
-      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
+      const hasBalanceMismatch = d.sell_attempt && d.sell_attempt.status === 'position_balance_mismatch';
+      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + (hasBalanceMismatch ? ' balance-mismatch' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
       const taxFee = parseFloat(d.token_transfer_fee_percent);
@@ -2473,6 +2486,14 @@ DASHBOARD_HTML = """\
           'Buy point reached, but all ' + esc(d.capacity_warning.max_positions) + ' position slots are filled. ' +
           'Highest P&amp;L: ' + esc(Number.isFinite(warningPnl) ? warningPnl.toFixed(1) : '?') +
           '% · Buy point: ' + esc(Number.isFinite(warningThreshold) ? warningThreshold.toFixed(1) : '?') + '%</div>';
+      }
+
+      if (hasBalanceMismatch) {
+        const mismatch = d.sell_attempt;
+        html += '<div class="balance-mismatch-alert" role="alert"><strong>🚨 POSITION BALANCE MISMATCH — SELL BLOCKED</strong>' +
+          'Position #' + esc(mismatch.position_id || '?') + ' tracks ' + esc(mismatch.tracked_sell_amount_raw || '?') +
+          ' raw units, but the wallet has ' + esc(mismatch.wallet_balance_raw || '?') +
+          ' · deficit ' + esc(mismatch.deficit_raw || '?') + '. Reconcile position accounting before restarting sales.</div>';
       }
 
       if (d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum') {

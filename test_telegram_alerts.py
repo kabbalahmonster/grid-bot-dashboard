@@ -61,6 +61,23 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertEqual(buttons[0]["text"], "View transaction ↗")
         self.assertEqual(buttons[0]["url"], "https://base.blockscout.com/tx/0xbank")
 
+    def test_balance_mismatch_alerts_immediately_once_and_recovers(self):
+        mismatch = {
+            "status": "position_balance_mismatch", "position_id": "1",
+            "tracked_sell_amount_raw": 1000, "wallet_balance_raw": 400, "deficit_raw": 600,
+        }
+        current = {"display_name": "BOW", "sell_attempt": mismatch}
+
+        self.alerts.process_status("bow", {}, current)
+        self.alerts.process_status("bow", {}, current)
+        self.assertEqual(self.alerts.send.call_count, 1)
+        self.assertIn("POSITION BALANCE MISMATCH · BOW", self.alerts.send.call_args.args[0])
+        self.assertIn("Deficit: 600 raw", self.alerts.send.call_args.args[0])
+
+        self.alerts.process_status("bow", current, {"display_name": "BOW"})
+        self.assertEqual(self.alerts.send.call_count, 2)
+        self.assertIn("Balance reconciled · BOW", self.alerts.send.call_args.args[0])
+
     def test_offline_and_recovery_are_edge_triggered(self):
         old = (datetime.now(timezone.utc) - timedelta(minutes=6)).isoformat()
         self.states["bot-1"] = {"display_name": "OLDIE", "received_at": old}

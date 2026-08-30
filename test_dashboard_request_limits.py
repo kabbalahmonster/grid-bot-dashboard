@@ -231,7 +231,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("@media (max-width: 600px)", body)
         self.assertIn("bottom: calc(1rem + env(safe-area-inset-bottom, 0px))", body)
         self.assertIn("max-height: calc(100dvh - 2rem - env(safe-area-inset-bottom, 0px))", body)
-        for alert_type in ("sells", "positions", "offline", "recovered", "buys", "stoploss", "treasury", "errors"):
+        for alert_type in ("sells", "positions", "offline", "recovered", "buys", "stoploss", "treasury", "errors", "safety"):
             self.assertIn(f'data-notification-type="{alert_type}"', body)
         self.assertIn("const notificationDefaults = { sells: true, positions: false, offline: false", body)
         self.assertIn("dashboard-notification-preferences", body)
@@ -244,6 +244,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("nextTreasury > previousTreasury", body)
         self.assertIn("event.code !== 'usdg_banked'", body)
         self.assertIn("count >= 3 && (previousEvents.get(key) || 0) < 3", body)
+        self.assertIn("POSITION BALANCE MISMATCH — SELL BLOCKED", body)
+        self.assertIn("!previousMismatch && nextMismatch", body)
+        self.assertIn("previousMismatch && !nextMismatch", body)
         self.assertIn("Notification.requestPermission()", body)
         self.assertIn('id="notification-note"', body)
         self.assertIn("Notification.permission === 'denied'", body)

@@ -21,6 +21,7 @@ DEFAULT_PREFERENCES = {
     "treasury": False,
     "errors": False,
     "funds": True,
+    "safety": True,
 }
 CHAIN_EXPLORERS = {
     1: "https://etherscan.io/tx/",
@@ -192,9 +193,23 @@ class TelegramAlerts:
         return prefix + tx_hash if prefix and tx_hash else ""
 
     def process_status(self, bot_id, previous, current):
-        if not self.enabled or not previous:
+        if not self.enabled:
             return
         name = self._name(bot_id, current)
+        if not previous:
+            attempt = current.get("sell_attempt") or {}
+            if self._wanted("safety") and attempt.get("status") == "position_balance_mismatch":
+                identity = f"balance-mismatch:{bot_id}:{attempt.get('position_id')}:{attempt.get('deficit_raw')}"
+                if self._remember(identity):
+                    self.send(
+                        f"🚨 POSITION BALANCE MISMATCH · {name}\n"
+                        f"Sell blocked for position #{attempt.get('position_id', '?')}\n"
+                        f"Tracked: {attempt.get('tracked_sell_amount_raw', '?')} raw\n"
+                        f"Wallet: {attempt.get('wallet_balance_raw', '?')} raw\n"
+                        f"Deficit: {attempt.get('deficit_raw', '?')} raw",
+                        reply_markup=self._alert_buttons(),
+                    )
+            return
         previous_trades = {self._trade_id(trade) for trade in previous.get("trades_history", [])}
         for trade in current.get("trades_history", []):
             trade_id = self._trade_id(trade)
@@ -226,6 +241,27 @@ class TelegramAlerts:
             if self._remember(identity):
                 maximum = current["capacity_warning"].get("max_positions") or current.get("max_positions") or "all"
                 self.send(f"⚑ Needs new positions · {name}\nAll {maximum} position slots are filled",
+                          reply_markup=self._alert_buttons())
+
+        previous_attempt = previous.get("sell_attempt") or {}
+        current_attempt = current.get("sell_attempt") or {}
+        previous_mismatch = previous_attempt.get("status") == "position_balance_mismatch"
+        current_mismatch = current_attempt.get("status") == "position_balance_mismatch"
+        if self._wanted("safety") and current_mismatch and not previous_mismatch:
+            identity = f"balance-mismatch:{bot_id}:{current_attempt.get('position_id')}:{current_attempt.get('deficit_raw')}"
+            if self._remember(identity):
+                self.send(
+                    f"🚨 POSITION BALANCE MISMATCH · {name}\n"
+                    f"Sell blocked for position #{current_attempt.get('position_id', '?')}\n"
+                    f"Tracked: {current_attempt.get('tracked_sell_amount_raw', '?')} raw\n"
+                    f"Wallet: {current_attempt.get('wallet_balance_raw', '?')} raw\n"
+                    f"Deficit: {current_attempt.get('deficit_raw', '?')} raw",
+                    reply_markup=self._alert_buttons(),
+                )
+        elif self._wanted("safety") and previous_mismatch and not current_mismatch:
+            identity = f"balance-recovered:{bot_id}:{previous_attempt.get('position_id')}:{previous_attempt.get('deficit_raw')}"
+            if self._remember(identity):
+                self.send(f"✅ Balance reconciled · {name}\nPosition accounting matches the wallet again",
                           reply_markup=self._alert_buttons())
 
         previous_treasury = float(previous.get("treasury_sent_usdg") or 0)
@@ -484,7 +520,7 @@ class TelegramAlerts:
         return (balance, reserve, threshold) if balance <= threshold else None
 
     def _attention_text(self):
-        sections = {"offline": [], "stale": [], "positions": [], "sells": [], "errors": [], "funds": []}
+        sections = {"offline": [], "stale": [], "positions": [], "sells": [], "safety": [], "errors": [], "funds": []}
         for bot_id, state in self.state_provider().items():
             name = self._name(bot_id, state)
             age = self._age_seconds(state)
@@ -496,13 +532,15 @@ class TelegramAlerts:
                 sections["positions"].append(name)
             if state.get("sell_attempt"):
                 sections["sells"].append(name)
+            if (state.get("sell_attempt") or {}).get("status") == "position_balance_mismatch":
+                sections["safety"].append(name)
             if self._funds_issue(state):
                 sections["funds"].append(name)
             repeated = [event for event in state.get("events", [])
                         if event.get("level") == "error" and int(event.get("count") or 1) >= 3]
             if repeated or str(state.get("rpc_status", "ok")).lower() not in ("", "ok"):
                 sections["errors"].append(name)
-        labels = (("offline", "🔴 Offline"), ("stale", "🟠 Stale"), ("positions", "⚑ Needs positions"),
+        labels = (("offline", "🔴 Offline"), ("stale", "🟠 Stale"), ("safety", "🚨 Balance mismatch"), ("positions", "⚑ Needs positions"),
                   ("sells", "🔎 Sell checks"), ("errors", "🚨 Errors/RPC"), ("funds", "⛽ Low funds"))
         lines = ["🚦 DoomDash attention", ""]
         for key, label in labels:
