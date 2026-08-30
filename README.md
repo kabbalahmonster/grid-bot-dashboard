@@ -49,6 +49,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Live report age with running, stale, and offline states
 - Optional per-type browser notifications for confirmed trades, capacity, availability, treasury activity, and persistent errors when served over HTTPS
 - Filter-aware empty state with one-tap filter clearing, plus live-message/snapshot/reconnect diagnostics behind the connection indicator
+- Clickable Active, Stale, and Offline fleet summaries with accessible bot
+  lists, report age/context, and one-tap card focus
 - Durable Telegram commands for fleet status, exceptions, period profit, recent trades, and per-bot inspection
 - Deduplicated Telegram low-ETH/unbanked-USDG warnings and a configurable daily operational digest
 - `X-API-Key` authentication for writes and deletion

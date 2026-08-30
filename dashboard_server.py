@@ -865,6 +865,10 @@ DASHBOARD_HTML = """\
   .summary-detail { display: block; margin-top: 0.2rem; color: #94a3b8; font-size: 0.68rem; white-space: nowrap; }
   button.summary-item { color: inherit; font-family: inherit; text-align: left; cursor: pointer; }
   button.summary-item:hover, button.summary-item:focus-visible { border-color: #64748b; outline: none; }
+  button.summary-item.status-summary { text-align: center; min-width: 5.5rem; }
+  button.summary-item.status-summary.running { border-color: #166534; }
+  button.summary-item.status-summary.stale { border-color: #a16207; }
+  button.summary-item.status-summary.offline { border-color: #7f1d1d; }
   .realized-summary { min-width: 15rem; }
   .realized-first-line { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
   .realized-amount { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
@@ -1141,6 +1145,7 @@ DASHBOARD_HTML = """\
   const historyList = document.getElementById('history-list');
   const historyModalClose = historyModal.querySelector('.history-modal-close');
   let historyModalReturnFocus = null;
+  let historyModalMode = 'history';
   let summaryBotIds = [];
   const notificationsButton = document.getElementById('notifications');
   const reconnectCardsButton = document.getElementById('reconnect-cards');
@@ -1401,7 +1406,7 @@ DASHBOARD_HTML = """\
       const historyChanged = sellHistoryIdentity(previousState) !== sellHistoryIdentity(nextState);
       processBotNotifications(entry.bot_id, previousState, nextState);
       bots[entry.bot_id] = nextState;
-      if (historyChanged && !historyModal.hidden && summaryBotIds.includes(entry.bot_id)) {
+      if (historyChanged && !historyModal.hidden && historyModalMode === 'history' && summaryBotIds.includes(entry.bot_id)) {
         openFleetHistory(null, true);
       }
       scheduleRoutineRender(entry.bot_id);
@@ -1585,6 +1590,7 @@ DASHBOARD_HTML = """\
     document.body.classList.remove('history-modal-open');
     if (historyModalReturnFocus && historyModalReturnFocus.isConnected) historyModalReturnFocus.focus();
     historyModalReturnFocus = null;
+    historyModalMode = 'history';
   }
 
   function openFleetHistory(trigger, refreshOnly) {
@@ -1663,10 +1669,82 @@ DASHBOARD_HTML = """\
       historyList.scrollTop = preservedScrollTop;
       return;
     }
+    historyModalMode = 'history';
     historyModalReturnFocus = trigger;
     historyModal.hidden = false;
     document.body.classList.add('history-modal-open');
     historyModalClose.focus();
+  }
+
+  function openStatusList(wantedStatus, trigger, refreshOnly) {
+    const preservedScrollTop = historyList.scrollTop;
+    const entries = summaryBotIds.map(function(botId) {
+      const state = bots[botId];
+      const age = reportAge(state && state.received_at);
+      return { botId: botId, state: state, age: age };
+    }).filter(function(entry) {
+      return entry.state && entry.age.status === wantedStatus;
+    }).sort(function(a, b) {
+      const aName = String(a.state.token_symbol || a.state.display_name || a.botId);
+      const bName = String(b.state.token_symbol || b.state.display_name || b.botId);
+      return aName.localeCompare(bName);
+    });
+    const labels = { running: 'Active bots', stale: 'Stale bots', offline: 'Offline bots' };
+    historyModalTitle.textContent = labels[wantedStatus] || 'Bots';
+    historyModalSubtitle.textContent = entries.length + ' bot' + (entries.length === 1 ? '' : 's') +
+      ' in the current filtered view · select a coin to jump to its card';
+    historyList.innerHTML = entries.length ? entries.map(function(entry) {
+      const state = entry.state;
+      const coin = state.token_symbol || state.display_name || entry.botId;
+      const chain = chainMetadata[parseInt(state.chain_id, 10)];
+      const provider = state.swap_provider ? String(state.swap_provider) : 'provider unreported';
+      const positions = (parseInt(state.filled_positions, 10) || 0) + '/' + (parseInt(state.max_positions, 10) || 0) + ' positions';
+      const detail = [chain ? chain.name : 'Unknown chain', provider, positions].join(' · ');
+      return '<div class="history-row"><button class="history-coin" type="button" data-history-focus-bot="' + esc(entry.botId) + '">' + esc(coin) + '</button>' +
+        '<div class="history-detail">' + esc(detail) + '</div>' +
+        '<div class="history-when" title="' + esc(state.received_at || '') + '">' + esc(entry.age.text) + '</div></div>';
+    }).join('') : '<div class="history-empty">No ' + esc(wantedStatus) + ' bots in the current view.</div>';
+    historyModalMode = 'status:' + wantedStatus;
+    if (refreshOnly) {
+      historyList.scrollTop = preservedScrollTop;
+      return;
+    }
+    historyModalReturnFocus = trigger;
+    historyModal.hidden = false;
+    document.body.classList.add('history-modal-open');
+    historyModalClose.focus();
+  }
+
+  function refreshOpenHistoryModal() {
+    if (historyModal.hidden) return;
+    if (historyModalMode === 'history') openFleetHistory(null, true);
+    else if (historyModalMode.startsWith('status:')) openStatusList(historyModalMode.slice(7), null, true);
+  }
+
+  function focusBotCard(botId) {
+    let card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
+      return candidate.dataset.botId === botId;
+    });
+    if (!card && bots[botId]) {
+      botFilter.value = '';
+      chainFilter.value = '';
+      providerFilter.value = '';
+      taxFilterEnabled = false;
+      localStorage.setItem('dashboard-bot-filter', '');
+      localStorage.setItem('dashboard-chain-filter', '');
+      localStorage.setItem('dashboard-provider-filter', '');
+      localStorage.setItem('dashboard-tax-filter', 'false');
+      updateTaxFilterButton();
+      clearFilter.style.display = 'none';
+      render(true);
+      card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
+        return candidate.dataset.botId === botId;
+      });
+    }
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      card.focus({ preventScroll: true });
+    }
   }
 
   sigilModalClose.addEventListener('click', closeSigilModal);
@@ -1679,13 +1757,7 @@ DASHBOARD_HTML = """\
     if (focusButton) {
       const botId = focusButton.dataset.historyFocusBot;
       closeHistoryModal();
-      const card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
-        return candidate.dataset.botId === botId;
-      });
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        card.focus({ preventScroll: true });
-      }
+      focusBotCard(botId);
       return;
     }
     if (event.target === historyModal) closeHistoryModal();
@@ -1805,6 +1877,7 @@ DASHBOARD_HTML = """\
       return Boolean(state.sell_attempt) && reportAge(state.received_at).status === 'running';
     });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
+    const stale = states.filter(function(d) { return reportAge(d.received_at).status === 'stale'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const allRealizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
@@ -1869,8 +1942,9 @@ DASHBOARD_HTML = """\
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].display_name || id) + '</button>';
           }).join(', ') + ')</span></span>'
         : '') +
-      '<span class="summary-item">Active: ' + active + ' / ' + states.length + '</span>' +
-      '<span class="summary-item">Offline: ' + offline + '</span>' +
+      '<button class="summary-item status-summary running" type="button" data-status-list="running" title="List active bots">Active: ' + active + ' / ' + states.length + '</button>' +
+      '<button class="summary-item status-summary stale" type="button" data-status-list="stale" title="List stale bots">Stale: ' + stale + '</button>' +
+      '<button class="summary-item status-summary offline" type="button" data-status-list="offline" title="List offline bots">Offline: ' + offline + '</button>' +
       '<span class="summary-item" title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
       (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') +
       ' <button class="currency-toggle" type="button" data-bag-currency-toggle>' + fiatCode + '</button>' +
@@ -1895,7 +1969,7 @@ DASHBOARD_HTML = """\
       '<button class="summary-item history-summary-button" type="button" data-fleet-history>Sell history</button>';
     const periodSelectorOpen = document.activeElement && document.activeElement.matches('[data-realized-period]');
     if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml) summaryBar.innerHTML = nextSummaryHtml;
-    if (!historyModal.hidden) openFleetHistory(null, true);
+    refreshOpenHistoryModal();
   }
 
   function fetchEthPrices() {
@@ -2704,6 +2778,11 @@ DASHBOARD_HTML = """\
   setInterval(fetchEthPrices, 60000);
   setInterval(fetchMarketData, 60000);
   summaryBar.addEventListener('click', function(event) {
+    const statusButton = event.target.closest('[data-status-list]');
+    if (statusButton) {
+      openStatusList(statusButton.dataset.statusList, statusButton);
+      return;
+    }
     const historyButton = event.target.closest('[data-fleet-history]');
     if (historyButton) {
       openFleetHistory(historyButton);
@@ -2711,13 +2790,7 @@ DASHBOARD_HTML = """\
     }
     const focusLink = event.target.closest('[data-focus-bot]');
     if (focusLink) {
-      const card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
-        return candidate.dataset.botId === focusLink.dataset.focusBot;
-      });
-      if (card) {
-        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        card.focus({ preventScroll: true });
-      }
+      focusBotCard(focusLink.dataset.focusBot);
       return;
     }
     if (event.target.closest('[data-realized-unit-toggle]')) {
