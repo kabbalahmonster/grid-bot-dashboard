@@ -73,10 +73,15 @@ class TelegramAlerts:
  
     def start(self):
         """Start command polling once; called by the authenticated status path."""
-        if self.enabled and self._thread is None:
-            self._baseline_existing_offline_states()
-            self._thread = threading.Thread(target=self._run, name="telegram-alerts", daemon=True)
-            self._thread.start()
+        if not self.enabled:
+            return
+        self._baseline_existing_offline_states()
+        with self._lock:
+            if self._thread is not None:
+                return
+            thread = threading.Thread(target=self._run, name="telegram-alerts", daemon=True)
+            self._thread = thread
+        thread.start()
 
     def _baseline_existing_offline_states(self):
         """Do not replay pre-existing offline conditions when alerts start/restart."""

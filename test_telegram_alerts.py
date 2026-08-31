@@ -1,4 +1,5 @@
 import tempfile
+import threading
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -98,6 +99,17 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts._baseline_existing_offline_states()
         self.assertIn("already-offline", self.alerts._offline_notified)
         self.alerts.send.assert_not_called()
+
+    def test_concurrent_start_creates_only_one_poller(self):
+        self.alerts._run = Mock()
+        callers = [threading.Thread(target=self.alerts.start) for _ in range(8)]
+        for caller in callers:
+            caller.start()
+        for caller in callers:
+            caller.join()
+        if self.alerts._thread:
+            self.alerts._thread.join()
+        self.assertEqual(self.alerts._run.call_count, 1)
 
     def test_alert_command_updates_durable_preference(self):
         self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/alerts buys on"})
