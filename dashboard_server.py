@@ -1501,6 +1501,14 @@ DASHBOARD_HTML = """\
     return div.innerHTML;
   }
 
+  function formatTokenAmount(value) {
+    const amount = parseFloat(value || 0);
+    if (!Number.isFinite(amount) || amount === 0) return '0';
+    const magnitude = Math.abs(amount);
+    const decimals = magnitude >= 1000 ? 2 : magnitude >= 1 ? 6 : magnitude >= 0.01 ? 8 : 12;
+    return amount.toFixed(decimals).replace(/\\.?0+$/, '');
+  }
+
   function sigilSvg(sigil) {
     const seed = sigil && String(sigil.seed || '').toLowerCase();
     const key = sigil && String(sigil.key || '').toUpperCase();
@@ -2652,7 +2660,7 @@ DASHBOARD_HTML = """\
         recentTrades.forEach(function(trade) {
           const txUrl = chain && trade.tx_hash ? chain.explorer.replace('/address/', '/tx/') + trade.tx_hash : '';
           html += '<div class="trade"><strong class="' + esc(trade.side) + '">' + esc(String(trade.side).toUpperCase()) + '</strong>' +
-            '<span>' + esc(parseFloat(trade.eth_amount || 0).toFixed(8)) + ' ETH · ' + esc(parseFloat(trade.token_amount || 0).toFixed(2)) + ' tokens</span>' +
+            '<span>' + esc(parseFloat(trade.eth_amount || 0).toFixed(8)) + ' ETH · ' + esc(formatTokenAmount(trade.token_amount)) + ' tokens</span>' +
             (txUrl ? '<a href="' + esc(txUrl) + '" target="_blank" rel="noopener noreferrer">tx</a>' : '') + '</div>';
         });
         html += '</details>';
@@ -2680,7 +2688,7 @@ DASHBOARD_HTML = """\
           }
           html += '</div>';
           html += '<div class="pos-details">';
-          html += 'Amount: ' + esc(parseFloat(pos.buy_amount_token || 0).toFixed(0)) + ' | ';
+          html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';
           html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(8)) + ' ETH';
           html += '</div></div>';
         });

@@ -8,6 +8,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def setUp(self):
         self.client = dashboard_server.app.test_client()
 
+    def test_token_amounts_use_adaptive_precision(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("function formatTokenAmount(value)", body)
+        self.assertIn("formatTokenAmount(pos.buy_amount_token)", body)
+        self.assertIn("formatTokenAmount(trade.token_amount)", body)
+        self.assertNotIn("parseFloat(pos.buy_amount_token || 0).toFixed(0)", body)
+
     def test_status_body_limit_returns_json_413(self):
         original_api_key = dashboard_server.API_KEY
         dashboard_server.API_KEY = "test-key"
