@@ -30,17 +30,18 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts.process_status("cashcat", previous, current)
         self.alerts.process_status("cashcat", previous, current)
 
-        self.assertEqual(self.alerts.send.call_count, 1)
-        self.assertIn("Sell confirmed · CASHCAT", self.alerts.send.call_args.args[0])
+        self.assertEqual(self.alerts.send.call_count, 2)
+        sell_call = next(call for call in self.alerts.send.call_args_list if "Sell confirmed" in call.args[0])
+        self.assertIn("Sell confirmed · CASHCAT", sell_call.args[0])
         self.assertEqual(
-            self.alerts.send.call_args.kwargs["reply_markup"]["inline_keyboard"][0][0]["url"],
+            sell_call.kwargs["reply_markup"]["inline_keyboard"][0][0]["url"],
             "https://base.blockscout.com/tx/0xabc",
         )
 
     def test_stop_loss_uses_high_priority_category(self):
         current = {"trades_history": [{"side": "sell", "tx_hash": "0xloss", "profit_eth": -0.002}]}
         self.alerts.process_status("loser", {"trades_history": []}, current)
-        self.assertIn("Stop-loss sell", self.alerts.send.call_args.args[0])
+        self.assertTrue(any("Stop-loss sell" in call.args[0] for call in self.alerts.send.call_args_list))
 
     def test_profit_banked_alert_includes_transaction_button(self):
         self.alerts._preferences["treasury"] = True
@@ -198,6 +199,43 @@ class TestTelegramAlerts(unittest.TestCase):
         commands = post.call_args.kwargs["json"]["commands"]
         self.assertIn({"command": "attention", "description": "Operational exceptions"}, commands)
         self.assertIn({"command": "digest", "description": "Daily report now"}, commands)
+        self.assertIn({"command": "leaderboard", "description": "Fleet rankings"}, commands)
+        self.assertIn({"command": "recap", "description": "Shareable fleet recap"}, commands)
+
+    def test_leaderboard_supports_profit_winrate_and_treasury(self):
+        self.states.update({
+            "winner": {"realized_profit_periods": {"24h": 0.02}, "treasury_sent_usdg": 5,
+                       "trades_history": [{"side": "sell", "profit_eth": 0.02}]},
+            "other": {"realized_profit_periods": {"24h": -0.01}, "treasury_sent_usdg": 10,
+                      "trades_history": [{"side": "sell", "profit_eth": -0.01}]},
+        })
+        self.assertIn("🥇 winner · +0.02000000 ETH", self.alerts._leaderboard_text("24h"))
+        self.assertIn("1/1 · 100%", self.alerts._leaderboard_text("winrate"))
+        self.assertIn("🥇 other · 10.00 USDG", self.alerts._leaderboard_text("treasury"))
+
+    def test_oracle_is_deterministic_for_the_day(self):
+        self.states["fox"] = {"realized_profit_periods": {"24h": 0.01}, "sigil": {"seed": "ab" * 32}}
+        self.assertEqual(self.alerts._oracle_text(), self.alerts._oracle_text())
+        self.assertIn("feral prosperity", self.alerts._oracle_text())
+
+    def test_recap_command_sends_png(self):
+        if self.alerts._recap_image("week") is None:
+            self.skipTest("Pillow unavailable")
+        self.alerts.send_photo = Mock(return_value=True)
+        self.states["winner"] = {"realized_profit_periods": {"week": 0.01}}
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/recap week"})
+        image = self.alerts.send_photo.call_args.args[0]
+        self.assertEqual(image.read(8), b"\x89PNG\r\n\x1a\n")
+
+    @patch("telegram_alerts.requests.post")
+    def test_inline_callback_can_mute_one_bot(self, post):
+        post.return_value.raise_for_status.return_value = None
+        self.alerts._handle_callback({
+            "id": "callback-2", "data": "mutebot:lemon",
+            "message": {"chat": {"id": 7045629589}, "message_id": 13},
+        })
+        self.assertTrue(self.alerts._is_muted("lemon"))
+        self.assertFalse(self.alerts._is_muted("printer"))
 
 
 if __name__ == "__main__":

@@ -1,14 +1,21 @@
 """Server-side Telegram alerts with durable deduplication and chat commands."""
 
 import json
+import hashlib
 import logging
 import os
 import re
 import threading
+from io import BytesIO
 from collections import deque
 from datetime import datetime, timedelta, timezone
 
 import requests
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:  # Recaps remain optional until dependencies are installed.
+    Image = ImageDraw = ImageFont = None
 
 
 DEFAULT_PREFERENCES = {
@@ -22,6 +29,7 @@ DEFAULT_PREFERENCES = {
     "errors": False,
     "funds": True,
     "safety": True,
+    "fun": True,
 }
 CHAIN_EXPLORERS = {
     1: "https://etherscan.io/tx/",
@@ -57,6 +65,9 @@ class TelegramAlerts:
         self._last_digest_date = None
         self._update_offset = 0
         self._muted_until = None
+        self._muted_bots = {}
+        self._achievement_state = {}
+        self._leader = None
         self._load()
         self._thread = None
  
@@ -97,6 +108,9 @@ class TelegramAlerts:
             self._update_offset = int(state.get("update_offset", 0))
             muted_until = state.get("muted_until")
             self._muted_until = datetime.fromisoformat(muted_until) if muted_until else None
+            self._muted_bots = dict(state.get("muted_bots", {}))
+            self._achievement_state = dict(state.get("achievement_state", {}))
+            self._leader = state.get("leader")
         except (FileNotFoundError, TypeError, ValueError, json.JSONDecodeError):
             pass
 
@@ -115,6 +129,9 @@ class TelegramAlerts:
                 "last_digest_date": self._last_digest_date,
                 "update_offset": self._update_offset,
                 "muted_until": self._muted_until.isoformat() if self._muted_until else None,
+                "muted_bots": self._muted_bots,
+                "achievement_state": self._achievement_state,
+                "leader": self._leader,
             }, handle, indent=2)
         os.replace(temporary, self.state_file)
 
@@ -133,14 +150,22 @@ class TelegramAlerts:
         with self._lock:
             return bool(self._preferences.get(category))
 
-    def _is_muted(self):
+    def _is_muted(self, bot_id=None):
         with self._lock:
-            return self._muted_until is not None and self._muted_until > datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc)
+            if self._muted_until is not None and self._muted_until > now:
+                return True
+            if bot_id:
+                try:
+                    return datetime.fromisoformat(self._muted_bots.get(bot_id, "")) > now
+                except ValueError:
+                    pass
+            return False
 
-    def send(self, text, disable_preview=True, reply_markup=None, force=False):
+    def send(self, text, disable_preview=True, reply_markup=None, force=False, bot_id=None):
         if not self.enabled:
             return False
-        if not force and self._is_muted():
+        if not force and self._is_muted(bot_id):
             return False
         try:
             payload = {
@@ -161,12 +186,126 @@ class TelegramAlerts:
             self.log.warning("Telegram send failed: %s", exc)
             return False
 
-    def _alert_buttons(self, tx_url=""):
+    def send_photo(self, image, caption, reply_markup=None, force=False):
+        if not self.enabled or (not force and self._is_muted()):
+            return False
+        try:
+            image.seek(0)
+            data = {"chat_id": self.chat_id, "caption": caption}
+            if reply_markup:
+                data["reply_markup"] = json.dumps(reply_markup)
+            response = requests.post(
+                f"https://api.telegram.org/bot{self.token}/sendPhoto",
+                data=data, files={"photo": ("doomdash-recap.png", image, "image/png")},
+                timeout=self.request_timeout,
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as exc:
+            self.log.warning("Telegram recap send failed: %s", exc)
+            return False
+
+    def _alert_buttons(self, tx_url="", bot_id="", category=""):
         row = []
         if tx_url:
             row.append({"text": "View transaction ↗", "url": tx_url})
-        row.append({"text": "Open DoomDash ↗", "url": self.dashboard_url})
-        return {"inline_keyboard": [row]}
+        target = self.dashboard_url
+        if bot_id:
+            target += f"?bot={requests.utils.quote(bot_id)}&chart=1"
+        row.append({"text": "Open bot + chart ↗" if bot_id else "Open DoomDash ↗", "url": target})
+        rows = [row]
+        controls = []
+        if bot_id:
+            controls.append({"text": "Mute bot 6h", "callback_data": f"mutebot:{bot_id}"})
+        if category in DEFAULT_PREFERENCES:
+            controls.append({"text": f"Disable {category}", "callback_data": f"disable:{category}"})
+        if controls:
+            rows.append(controls)
+        return {"inline_keyboard": rows}
+
+    @staticmethod
+    def _sell_stats(state):
+        sells = [trade for trade in state.get("trades_history", [])
+                 if str(trade.get("side", "")).lower() == "sell"]
+        wins = sum(float(trade.get("profit_eth") or 0) > 0 for trade in sells)
+        return len(sells), wins
+
+    def _fun_buttons(self, bot_id, category, tx_url=""):
+        return self._alert_buttons(tx_url, bot_id=bot_id, category=category)
+
+    def _drama(self, bot_id, profit):
+        if not self._wanted("fun"):
+            return ""
+        magnitude = abs(profit)
+        if profit >= 0.01:
+            choices = ("ABSOLUTE CINEMA.", "THE MACHINE DEMANDS APPLAUSE.", "CAPITAL HAS BEEN SUMMONED.")
+        elif profit >= 0.003:
+            choices = ("A juicy little extraction.", "Another victim of the grid.", "The fox approves.")
+        elif profit <= -0.01:
+            choices = ("A financially educational event.", "We have angered the chart gods.", "That candle chose violence.")
+        elif profit < 0:
+            choices = ("A small blood offering.", "Character development.", "The market collected rent.")
+        else:
+            return ""
+        digest = hashlib.sha256(f"{bot_id}:{profit:.12f}".encode()).digest()[0]
+        return choices[digest % len(choices)] if magnitude else ""
+
+    def _achievement_messages(self, bot_id, previous, current):
+        if not self._wanted("fun"):
+            return []
+        before_sells, before_wins = self._sell_stats(previous)
+        saved = self._achievement_state.get(bot_id, {})
+        old_total = int(saved.get("sells", before_sells))
+        old_wins = int(saved.get("wins", before_wins))
+        previous_ids = {self._trade_id(trade) for trade in previous.get("trades_history", [])}
+        new_sells = [trade for trade in current.get("trades_history", [])
+                     if str(trade.get("side", "")).lower() == "sell" and self._trade_id(trade) not in previous_ids]
+        sells = old_total + len(new_sells)
+        wins = old_wins + sum(float(trade.get("profit_eth") or 0) > 0 for trade in new_sells)
+        messages = []
+        if old_total == 0 < sells:
+            messages.append("FIRST BLOOD · first confirmed sell")
+        for milestone in (10, 25, 50, 100, 250, 500, 1000):
+            if old_total < milestone <= sells:
+                messages.append(f"{milestone} confirmed sells")
+        if old_wins < 10 <= wins:
+            messages.append("10 profitable sells")
+        chronological = sorted(
+            (trade for trade in current.get("trades_history", [])
+             if str(trade.get("side", "")).lower() == "sell"),
+            key=lambda trade: str(trade.get("timestamp", "")), reverse=True,
+        )
+        streak = 0
+        for trade in chronological:
+            if float(trade.get("profit_eth") or 0) <= 0:
+                break
+            streak += 1
+        previous_streak = int(self._achievement_state.get(bot_id, {}).get("win_streak", 0))
+        if streak in (3, 5, 10) and previous_streak < streak:
+            messages.append(f"{streak}-sell profit streak")
+        with self._lock:
+            self._achievement_state[bot_id] = {"win_streak": streak, "sells": sells, "wins": wins}
+            self._save_locked()
+        return messages
+
+    def _scan_rivalry(self):
+        if not self._wanted("fun"):
+            return
+        states = self.state_provider()
+        if len(states) < 2:
+            return
+        ranked = sorted(states.items(), key=lambda item: self._realized_for_period(item[1], "24h"), reverse=True)
+        leader_id, leader_state = ranked[0]
+        old_leader = self._leader
+        with self._lock:
+            self._leader = leader_id
+            self._save_locked()
+        if old_leader and old_leader != leader_id:
+            old_state = states.get(old_leader, {})
+            message = (f"⚔️ Fleet rivalry\n{self._name(leader_id, leader_state)} stole the 24h crown from "
+                       f"{self._name(old_leader, old_state)}. The leaderboard has become personal.")
+            if self._remember(f"rivalry:{old_leader}:{leader_id}:{datetime.now(timezone.utc).date()}"):
+                self.send(message, reply_markup=self._fun_buttons(leader_id, "fun"), bot_id=leader_id)
 
     @staticmethod
     def _trade_id(trade):
@@ -233,8 +372,18 @@ class TelegramAlerts:
                 icon = "🔻" if category == "stoploss" else "💰"
                 detail = f"{profit:+.8f} ETH profit" if profit is not None else f"{float(trade.get('eth_amount') or 0):.8f} ETH received"
                 message = f"{icon} {'Stop-loss sell' if category == 'stoploss' else 'Sell confirmed'} · {name}\n{detail}"
+                drama = self._drama(bot_id, profit or 0)
+                if drama:
+                    message += f"\n{drama}"
             tx_url = self._tx_url(current, str(trade.get("tx_hash") or ""))
-            self.send(message, reply_markup=self._alert_buttons(tx_url))
+            self.send(message, reply_markup=self._fun_buttons(bot_id, category, tx_url), bot_id=bot_id)
+
+        for achievement in self._achievement_messages(bot_id, previous, current):
+            identity = f"achievement:{bot_id}:{achievement}"
+            if self._remember(identity):
+                self.send(f"🏆 Achievement unlocked · {name}\n{achievement}",
+                          reply_markup=self._fun_buttons(bot_id, "fun"), bot_id=bot_id)
+        self._scan_rivalry()
 
         if self._wanted("positions") and not previous.get("capacity_warning") and current.get("capacity_warning"):
             identity = f"positions:{bot_id}:{current.get('received_at', '')}"
@@ -380,7 +529,7 @@ class TelegramAlerts:
         if ranked:
             lines.extend((f"Best: {ranked[0][0]} · {ranked[0][1]:+.8f} ETH",
                           f"Worst: {ranked[-1][0]} · {ranked[-1][1]:+.8f} ETH"))
-        lines.extend(("", self._attention_text()))
+        lines.extend(("", self._attention_text(), "", self._oracle_text()))
         return "\n".join(lines)
 
     def scan_daily_digest(self, now=None):
@@ -479,6 +628,102 @@ class TelegramAlerts:
             lines.extend((f"Best: {ranked[0][0]} · {ranked[0][1]:+.8f} ETH",
                           f"Worst: {ranked[-1][0]} · {ranked[-1][1]:+.8f} ETH"))
         return "\n".join(lines)
+
+    def _leaderboard_text(self, mode="24h"):
+        states = self.state_provider()
+        rows = []
+        if mode == "winrate":
+            for bot_id, state in states.items():
+                sells, wins = self._sell_stats(state)
+                rows.append((bot_id, state, wins / sells if sells else -1, f"{wins}/{sells} · {(100 * wins / sells):.0f}%" if sells else "no sells"))
+            title = "Win rate · recent history"
+        elif mode == "treasury":
+            for bot_id, state in states.items():
+                value = float(state.get("treasury_sent_usdg") or 0)
+                rows.append((bot_id, state, value, f"{value:.2f} USDG"))
+            title = "Treasury contribution · all time"
+        else:
+            for bot_id, state in states.items():
+                value = self._realized_for_period(state, mode)
+                rows.append((bot_id, state, value, f"{value:+.8f} ETH"))
+            title = f"Realized profit · {mode}"
+        rows.sort(key=lambda row: row[2], reverse=True)
+        medals = ("🥇", "🥈", "🥉")
+        lines = [f"🏁 DoomDash leaderboard\n{title}", ""]
+        for index, (bot_id, state, _, display) in enumerate(rows[:10]):
+            rank = medals[index] if index < 3 else f"{index + 1}."
+            lines.append(f"{rank} {self._name(bot_id, state)} · {display}")
+        return "\n".join(lines) if rows else "No bots on the leaderboard yet."
+
+    def _oracle_text(self):
+        states = self.state_provider()
+        if not states:
+            return "🔮 The Doom Oracle sees only an empty fleet. Feed the machine."
+        ranked = sorted(states.items(), key=lambda item: self._realized_for_period(item[1], "24h"), reverse=True)
+        leader_id, leader = ranked[0]
+        total = sum(self._realized_for_period(state, "24h") for state in states.values())
+        sigil = str((leader.get("sigil") or {}).get("seed") or leader_id)
+        sigil_key = str((leader.get("sigil") or {}).get("key") or "UNMARKED")
+        fortunes = (
+            "The grid hums. Take clean profit and do not become emotionally attached to a candle.",
+            "Volatility approaches wearing cheap perfume. Keep the gas tanks fed.",
+            "The treasury desires tribute. The chart desires humiliation. Only one gets paid.",
+            "A green candle is not a personality. Let the bots remain disciplined.",
+            "The fox sees opportunity, but also several extremely suspicious wicks.",
+            "Today favors patience, sharp exits, and refusing to marry the bags.",
+        )
+        index = hashlib.sha256(f"{datetime.now(timezone.utc).date()}:{sigil}".encode()).digest()[0] % len(fortunes)
+        mood = "feral prosperity" if total > 0 else "character development" if total < 0 else "ominous neutrality"
+        return (f"🔮 Daily Doom Oracle\nFleet mood: {mood}\nChosen vessel: {self._name(leader_id, leader)}\n"
+                f"Sigil of the day: {sigil_key}\n\n"
+                f"{fortunes[index]}")
+
+    @staticmethod
+    def _font(size, bold=False):
+        if ImageFont is None:
+            return None
+        paths = (["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                  "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf"] if bold else
+                 ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                  "/usr/share/fonts/google-noto-vf/NotoSans[wght].ttf"])
+        for path in paths:
+            try:
+                return ImageFont.truetype(path, size)
+            except OSError:
+                continue
+        return ImageFont.load_default()
+
+    def _recap_image(self, period):
+        if Image is None:
+            return None
+        states = self.state_provider()
+        ranked = sorted(states.items(), key=lambda item: self._realized_for_period(item[1], period), reverse=True)
+        trades = self._recent_trades(period)
+        realized = sum(self._realized_for_period(state, period) for state in states.values())
+        treasury = sum(float(state.get("treasury_sent_usdg") or 0) for state in states.values())
+        image = Image.new("RGB", (1200, 675), "#07111f")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((0, 0, 1200, 16), fill="#facc15")
+        draw.text((70, 55), "DOOMDASH", font=self._font(64, True), fill="#f8fafc")
+        draw.text((73, 130), f"{period.upper()} FLEET RECAP", font=self._font(28, True), fill="#facc15")
+        profit_color = "#22c55e" if realized >= 0 else "#ef4444"
+        draw.text((70, 220), f"{realized:+.8f} ETH", font=self._font(52, True), fill=profit_color)
+        draw.text((73, 285), f"REALIZED · {len(trades)} TRADES · {treasury:.2f} USDG TREASURY", font=self._font(21), fill="#94a3b8")
+        draw.text((700, 65), "LEADERBOARD", font=self._font(28, True), fill="#f8fafc")
+        for index, (bot_id, state) in enumerate(ranked[:5]):
+            value = self._realized_for_period(state, period)
+            y = 125 + index * 72
+            draw.text((700, y), f"{index + 1}", font=self._font(24, True), fill="#facc15")
+            draw.text((750, y), self._name(bot_id, state)[:22], font=self._font(24, True), fill="#e2e8f0")
+            draw.text((750, y + 31), f"{value:+.8f} ETH", font=self._font(18), fill="#94a3b8")
+        winner = self._name(ranked[0][0], ranked[0][1]) if ranked else "THE VOID"
+        draw.text((70, 410), "MVP", font=self._font(22, True), fill="#facc15")
+        draw.text((70, 450), winner, font=self._font(42, True), fill="#f8fafc")
+        draw.text((70, 610), "doomdash.ca  ·  THE GRID NEVER SLEEPS", font=self._font(18, True), fill="#64748b")
+        output = BytesIO()
+        image.save(output, "PNG", optimize=True)
+        output.seek(0)
+        return output
 
     def _recent_trades(self, period):
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self._period_hours(period))
@@ -624,6 +869,27 @@ class TelegramAlerts:
         if command == "/digest":
             self.send(self._daily_digest_text(), reply_markup=self._alert_buttons(), force=True)
             return
+        if command == "/oracle":
+            self.send(self._oracle_text(), reply_markup=self._alert_buttons(), force=True)
+            return
+        if command == "/leaderboard":
+            mode = parts[1] if len(parts) == 2 else "24h"
+            if mode not in ("24h", "week", "month", "all", "winrate", "treasury"):
+                self.send("Use /leaderboard 24h, week, month, all, winrate, or treasury.", force=True)
+            else:
+                self.send(self._leaderboard_text(mode), reply_markup=self._alert_buttons(), force=True)
+            return
+        if command == "/recap":
+            period = parts[1] if len(parts) == 2 else "week"
+            if period not in ("24h", "week", "month"):
+                self.send("Use /recap 24h, week, or month.", force=True)
+                return
+            image = self._recap_image(period)
+            if image is None:
+                self.send("Recap image support is unavailable until Pillow is installed.", force=True)
+            else:
+                self.send_photo(image, f"🦊 DoomDash {period} fleet recap", self._alert_buttons(), force=True)
+            return
         if command == "/bot" and len(parts) >= 2:
             self.send(self._bot_text(" ".join(parts[1:])), reply_markup=self._alert_buttons(), force=True)
             return
@@ -648,6 +914,7 @@ class TelegramAlerts:
                 "DoomDash commands\n\n/status — fleet snapshot\n/needs — bots needing positions\n"
                 "/attention — exceptions\n/profit [period] — realized performance\n"
                 "/trades [period] — recent activity\n/digest — daily report now\n/bot <name> — one bot\n"
+                "/leaderboard [mode] — fleet rankings\n/recap [period] — share card\n/oracle — daily fleet omen\n"
                 "/alerts — alert toggles\n/mute 1h|6h|12h|24h\n"
                 "/unmute\n/test",
                 reply_markup=self._alert_buttons(), force=True,
@@ -667,31 +934,47 @@ class TelegramAlerts:
         message = callback.get("message") or {}
         chat_id = str((message.get("chat") or {}).get("id", ""))
         data = str(callback.get("data") or "")
-        if chat_id != self.chat_id or not data.startswith("toggle:"):
+        if chat_id != self.chat_id or ":" not in data:
             return
-        category = data.split(":", 1)[1]
-        if category not in DEFAULT_PREFERENCES:
+        action, value = data.split(":", 1)
+        answer = "Updated"
+        edit_settings = False
+        if action == "toggle" and value in DEFAULT_PREFERENCES:
+            with self._lock:
+                self._preferences[value] = not self._preferences[value]
+                enabled = self._preferences[value]
+                self._save_locked()
+            answer = f"{value}: {'on' if enabled else 'off'}"
+            edit_settings = True
+        elif action == "disable" and value in DEFAULT_PREFERENCES:
+            with self._lock:
+                self._preferences[value] = False
+                self._save_locked()
+            answer = f"{value} alerts disabled"
+        elif action == "mutebot" and re.fullmatch(r"[A-Za-z0-9._-]+", value):
+            with self._lock:
+                self._muted_bots[value] = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+                self._save_locked()
+            answer = f"{value} muted for 6h"
+        else:
             return
-        with self._lock:
-            self._preferences[category] = not self._preferences[category]
-            enabled = self._preferences[category]
-            self._save_locked()
         try:
             requests.post(
                 f"https://api.telegram.org/bot{self.token}/answerCallbackQuery",
-                json={"callback_query_id": callback_id, "text": f"{category}: {'on' if enabled else 'off'}"},
+                json={"callback_query_id": callback_id, "text": answer},
                 timeout=self.request_timeout,
             ).raise_for_status()
-            requests.post(
-                f"https://api.telegram.org/bot{self.token}/editMessageText",
-                json={
-                    "chat_id": self.chat_id,
-                    "message_id": message.get("message_id"),
-                    "text": self._preferences_text(),
-                    "reply_markup": self._settings_markup(),
-                },
-                timeout=self.request_timeout,
-            ).raise_for_status()
+            if edit_settings:
+                requests.post(
+                    f"https://api.telegram.org/bot{self.token}/editMessageText",
+                    json={
+                        "chat_id": self.chat_id,
+                        "message_id": message.get("message_id"),
+                        "text": self._preferences_text(),
+                        "reply_markup": self._settings_markup(),
+                    },
+                    timeout=self.request_timeout,
+                ).raise_for_status()
         except requests.RequestException as exc:
             self.log.warning("Telegram settings update failed: %s", exc)
 
@@ -713,7 +996,9 @@ class TelegramAlerts:
         commands = [
             ("status", "Fleet snapshot"), ("attention", "Operational exceptions"),
             ("profit", "Realized profit by period"), ("trades", "Recent trades by period"),
-            ("digest", "Daily report now"), ("needs", "Bots needing positions"),
+            ("digest", "Daily report now"), ("leaderboard", "Fleet rankings"),
+            ("recap", "Shareable fleet recap"), ("oracle", "Daily fleet omen"),
+            ("needs", "Bots needing positions"),
             ("bot", "Inspect one bot"), ("alerts", "Alert toggles"),
             ("mute", "Mute alerts"), ("unmute", "Unmute alerts"), ("help", "Command help"),
         ]

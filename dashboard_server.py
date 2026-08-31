@@ -1184,7 +1184,10 @@ DASHBOARD_HTML = """\
   let sortDirectionValue = ['asc', 'desc'].includes(storedSortDirection) ? storedSortDirection : (defaultSortDirections[sortBots.value] || 'asc');
   const storedProfitCurrency = localStorage.getItem('dashboard-profit-currency');
   let profitCurrency = ['cad', 'usd'].includes(storedProfitCurrency) ? storedProfitCurrency : 'cad';
-  botFilter.value = localStorage.getItem('dashboard-bot-filter') || '';
+  const launchParams = new URLSearchParams(window.location.search);
+  const launchedBot = (launchParams.get('bot') || '').trim();
+  botFilter.value = launchedBot || localStorage.getItem('dashboard-bot-filter') || '';
+  if (launchedBot && launchParams.get('chart') === '1') openCharts.add(encodeURIComponent(launchedBot));
   const storedChainFilter = localStorage.getItem('dashboard-chain-filter') || '';
   if (chainFilter.querySelector('option[value="' + CSS.escape(storedChainFilter) + '"]')) chainFilter.value = storedChainFilter;
   const storedProviderFilter = localStorage.getItem('dashboard-provider-filter') || '';

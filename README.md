@@ -60,7 +60,8 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Responsive inline frontend; no build step or database
 
 Telegram commands include `/status`, `/attention`, `/profit 24h`, `/trades 24h`,
-`/digest`, `/needs`, `/bot <name>`, `/alerts`, `/mute`, and `/unmute`. Profit
+`/digest`, `/leaderboard`, `/recap`, `/oracle`, `/needs`, `/bot <name>`, `/alerts`,
+`/mute`, and `/unmute`. Profit
 periods accept `1h`, `6h`, `24h`, `week`, `month`, or `all` (trades omit
 `all`). The daily digest is sent once after `TELEGRAM_DAILY_DIGEST_TIME` in UTC;
 set that value blank to disable scheduling while retaining `/digest` on demand.
@@ -173,11 +174,21 @@ commands. It reads the same in-memory snapshots used by the dashboard.
 | `/profit 1h\|6h\|24h\|week\|month\|all` | Period realized profit plus best/worst bot |
 | `/trades 1h\|6h\|24h\|week\|month` | Counts, realized sell profit, and up to ten recent trades |
 | `/digest` | Generate the daily operational report immediately |
+| `/leaderboard 24h\|week\|month\|all\|winrate\|treasury` | Rank up to ten bots by the selected measure |
+| `/recap 24h\|week\|month` | Generate and send a shareable PNG fleet card |
+| `/oracle` | Deterministic daily fleet mood, chosen vessel, sigil key, and omen |
 | `/needs` | Bots currently unable to add another position |
 | `/bot <name>` | One bot's status, capacity, balances, and profit |
 | `/alerts` | Inline per-category alert toggles |
 | `/mute 1h\|6h\|12h\|24h` / `/unmute` | Suppress unsolicited alerts temporarily; commands still answer |
 | `/help` | Command reference |
+
+The optional `fun` alert category adds deterministic trade drama, durable
+first-sell/trade-milestone/profit-streak achievements, and 24-hour crown-change
+rivalries. Trade and achievement alerts include buttons to open the bot's
+filtered DoomDash card with its chart expanded, mute that bot for six hours, or
+disable the alert category. These controls only affect monitoring; Telegram
+still has no trading, wallet, restart, or strategy-mutation authority.
 
 `TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
 an ETH balance at or below that sum triggers one `funds` alert. It re-arms
