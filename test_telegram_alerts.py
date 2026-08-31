@@ -225,6 +225,15 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertIn("1/1 · 100%", self.alerts._leaderboard_text("winrate"))
         self.assertIn("🥇 other · 10.00 USDG", self.alerts._leaderboard_text("treasury"))
 
+    def test_bounded_profit_period_zeroes_report_older_than_entire_window(self):
+        stale = {
+            "received_at": "2020-01-01T00:00:00+00:00",
+            "realized_profit_eth": 1.0,
+            "realized_profit_periods": {"24h": 0.25},
+        }
+        self.assertEqual(self.alerts._realized_for_period(stale, "24h"), 0.0)
+        self.assertEqual(self.alerts._realized_for_period(stale, "all"), 1.0)
+
     def test_oracle_is_deterministic_for_the_day(self):
         self.states["fox"] = {"realized_profit_periods": {"24h": 0.01}, "sigil": {"seed": "ab" * 32}}
         self.assertEqual(self.alerts._oracle_text(), self.alerts._oracle_text())

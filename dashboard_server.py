@@ -2046,10 +2046,12 @@ DASHBOARD_HTML = """\
 
   function realizedProfitForPeriod(d, period) {
     if (period === 'all') return parseFloat(d.realized_profit_eth) || 0;
-    const reported = parseFloat((d.realized_profit_periods || {})[period]);
-    if (Number.isFinite(reported)) return reported;
     const hours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[period];
     const cutoff = Date.now() - hours * 3600000;
+    const receivedAt = Date.parse(d.received_at || '');
+    if (Number.isFinite(receivedAt) && receivedAt <= cutoff) return 0;
+    const reported = parseFloat((d.realized_profit_periods || {})[period]);
+    if (Number.isFinite(reported)) return reported;
     const trackingStart = Date.parse(d.profit_tracking_started_at || '');
     if (Number.isFinite(trackingStart) && trackingStart >= cutoff) return parseFloat(d.realized_profit_eth) || 0;
     return (d.trades_history || []).reduce(function(total, trade) {

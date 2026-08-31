@@ -608,12 +608,18 @@ class TelegramAlerts:
     def _realized_for_period(self, state, period):
         if period == "all":
             return float(state.get("realized_profit_eth") or 0)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self._period_hours(period))
+        try:
+            received_at = datetime.fromisoformat(str(state.get("received_at", "")).replace("Z", "+00:00"))
+            if received_at <= cutoff:
+                return 0.0
+        except (TypeError, ValueError):
+            pass
         reported = (state.get("realized_profit_periods") or {}).get(period)
         try:
             return float(reported)
         except (TypeError, ValueError):
             pass
-        cutoff = datetime.now(timezone.utc) - timedelta(hours=self._period_hours(period))
         total = 0.0
         for trade in state.get("trades_history", []):
             try:
