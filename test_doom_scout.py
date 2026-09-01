@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from unittest.mock import Mock
@@ -62,6 +63,21 @@ class TestDoomScout(unittest.TestCase):
             scout.watch(TOKEN, "LEMON", budget_eth=0.004, positions=4)
             restored = DoomScout(path)
             self.assertEqual(restored.snapshot()["watchlist"][0]["label"], "LEMON")
+
+    def test_forget_removes_watch_report_and_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state_file = os.path.join(directory, "scout.json")
+            scout = DoomScout(state_file=state_file)
+            scout.watch(TOKEN, "LEMON")
+            scout._reports[TOKEN.lower()] = {"address": TOKEN}
+            scout._history[TOKEN.lower()] = [{"score": 85}]
+            scout._save_locked()
+
+            self.assertTrue(scout.forget(TOKEN))
+            restored = DoomScout(state_file=state_file)
+            self.assertEqual(restored.snapshot()["watchlist"], [])
+            self.assertEqual(restored.snapshot()["reports"], [])
+            self.assertEqual(restored.history(TOKEN), [])
             with self.assertRaises(ValueError):
                 restored.watch("not-an-address")
 

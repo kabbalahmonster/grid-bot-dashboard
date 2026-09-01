@@ -153,6 +153,18 @@ class DoomScout:
             self._save_locked()
         return removed is not None
 
+    def forget(self, address):
+        """Remove a candidate, its latest report, and its score history."""
+        address = self.validate_address(address).lower()
+        with self._lock:
+            removed = any((
+                self._watchlist.pop(address, None) is not None,
+                self._reports.pop(address, None) is not None,
+                self._history.pop(address, None) is not None,
+            ))
+            self._save_locked()
+        return removed
+
     @staticmethod
     def validate_address(address):
         address = str(address or "").strip()

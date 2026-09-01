@@ -725,6 +725,15 @@ def scout_unwatch(address):
         return jsonify({"error": str(exc)}), 400
 
 
+@app.route("/api/scout/<address>", methods=["DELETE"])
+@require_api_key
+def scout_forget(address):
+    try:
+        return jsonify({"removed": doom_scout.forget(address)}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/api/eth-price", methods=["GET"])
 def eth_price():
     """Return cached ETH prices in USD and CAD from CoinGecko."""

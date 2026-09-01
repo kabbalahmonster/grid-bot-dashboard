@@ -191,6 +191,7 @@ commands. It reads the same in-memory snapshots used by the dashboard.
 | `/scout <contract> [budget_eth] [positions]` | Run planned-size Sushi and Uniswap buy→sell simulations and return a transparent verdict |
 | `/watch <contract> [label]` | Add and immediately assess a candidate; it is rescanned in the background |
 | `/unwatch <contract>` | Stop background checks without deleting retained reports |
+| `/forget <contract>` | Remove a candidate, its retained report, and score history |
 | `/candidates` | Rank retained candidates by DoomScout score |
 | `/discover` | List recent Robinhood Chain DexScreener token profiles; discovery is explicitly unscored until `/scout` or `/watch` is run |
 | `/alerts` | Inline per-category alert toggles |

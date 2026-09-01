@@ -887,6 +887,16 @@ class TelegramAlerts:
                 except ValueError as exc:
                     self.send(str(exc), force=True)
             return
+        if command == "/forget":
+            if self.scout is None or len(parts) != 2:
+                self.send("Use /forget 0xTOKEN.", force=True)
+            else:
+                try:
+                    removed = self.scout.forget(parts[1])
+                    self.send("Candidate and retained Scout history removed." if removed else "Scout did not know that token.", force=True)
+                except ValueError as exc:
+                    self.send(str(exc), force=True)
+            return
         if command == "/candidates":
             self.send(self._candidates_text(), force=True)
             return
@@ -997,7 +1007,7 @@ class TelegramAlerts:
                 "/trades [period] — recent activity\n/digest — daily report now\n/bot <name> — one bot\n"
                 "/leaderboard [mode] — fleet rankings\n/recap [period] — share card\n/oracle — daily fleet omen\n"
                 "/scout <contract> [budget] [positions] — executable exit test\n"
-                "/watch <contract> [label] — monitor candidate\n/unwatch <contract>\n/candidates — ranked watchlist\n"
+                "/watch <contract> [label] — monitor candidate\n/unwatch <contract> — stop rescans\n/forget <contract> — remove candidate and history\n/candidates — ranked watchlist\n"
                 "/discover — recent unscored token profiles\n"
                 "/alerts — alert toggles\n/mute 1h|6h|12h|24h\n"
                 "/unmute\n/test",
@@ -1084,7 +1094,8 @@ class TelegramAlerts:
             ("recap", "Shareable fleet recap"), ("oracle", "Daily fleet omen"),
             ("needs", "Bots needing positions"),
             ("scout", "Test a token's executable exits"), ("watch", "Watch a candidate"),
-            ("unwatch", "Stop watching a candidate"), ("candidates", "Ranked scout watchlist"),
+            ("unwatch", "Stop watching a candidate"), ("forget", "Remove a Scout candidate"),
+            ("candidates", "Ranked scout watchlist"),
             ("discover", "Recent unscored token profiles"),
             ("bot", "Inspect one bot"), ("alerts", "Alert toggles"),
             ("mute", "Mute alerts"), ("unmute", "Unmute alerts"), ("help", "Command help"),
