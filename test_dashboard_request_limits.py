@@ -15,6 +15,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatTokenAmount(trade.token_amount)", body)
         self.assertNotIn("parseFloat(pos.buy_amount_token || 0).toFixed(0)", body)
 
+    def test_scout_panel_is_collapsed_by_default_with_route_diagnostics(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<details class="scout-panel" id="scout-panel">', body)
+        self.assertNotIn('<details class="scout-panel" id="scout-panel" open>', body)
+        self.assertIn('class="scout-routes"', body)
+        self.assertIn("route.recovery_percent", body)
+        self.assertIn("scout-summary", body)
+
     def test_status_body_limit_returns_json_413(self):
         original_api_key = dashboard_server.API_KEY
         dashboard_server.API_KEY = "test-key"

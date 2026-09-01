@@ -1120,16 +1120,31 @@ DASHBOARD_HTML = """\
   .event-raw { margin-top: 0.3rem; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: monospace; color: #94a3b8; }
   .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
   .empty-clear { margin-top: 0.8rem; }
-  .scout-panel { margin-bottom: 1rem; padding: 0.9rem; border: 1px solid #334155; border-radius: 0.55rem; background: #111827; }
-  .scout-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.65rem; }
-  .scout-header h2 { margin: 0; font-size: 1rem; color: #f8fafc; }
-  .scout-header span { color: #64748b; font-size: 0.72rem; }
+  .scout-panel { margin-bottom: 1rem; border: 1px solid #334155; border-radius: 0.55rem; background: #111827; overflow: hidden; }
+  .scout-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.9rem; cursor: pointer; list-style: none; user-select: none; }
+  .scout-header::-webkit-details-marker { display: none; }
+  .scout-header::after { content: '▸'; color: #94a3b8; font-size: 0.9rem; transition: transform 0.15s ease; }
+  .scout-panel[open] .scout-header::after { transform: rotate(90deg); }
+  .scout-heading { display: flex; align-items: baseline; gap: 0.65rem; min-width: 0; }
+  .scout-title { margin: 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
+  .scout-header span { color: #94a3b8; font-size: 0.72rem; }
+  .scout-summary { margin-left: auto; white-space: nowrap; }
+  .scout-body { padding: 0 0.9rem 0.9rem; border-top: 1px solid #1e293b; }
+  .scout-note { margin: 0.65rem 0; color: #64748b; font-size: 0.7rem; }
   .scout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem; }
   .scout-card { padding: 0.7rem; border: 1px solid #334155; border-left-width: 4px; border-radius: 0.4rem; background: #0f172a; }
   .scout-card.pass { border-left-color: #22c55e; } .scout-card.caution { border-left-color: #eab308; } .scout-card.reject { border-left-color: #ef4444; }
   .scout-card-head { display: flex; justify-content: space-between; gap: 0.5rem; font-weight: 700; }
   .scout-score { color: #facc15; } .scout-meta { margin-top: 0.35rem; color: #94a3b8; font-size: 0.72rem; line-height: 1.45; }
   .scout-reason { margin-top: 0.35rem; color: #fca5a5; font-size: 0.68rem; overflow-wrap: anywhere; }
+  .scout-warning { margin-top: 0.3rem; color: #fcd34d; font-size: 0.68rem; overflow-wrap: anywhere; }
+  .scout-routes { margin-top: 0.45rem; padding-top: 0.4rem; border-top: 1px solid #1e293b; color: #94a3b8; font-size: 0.68rem; line-height: 1.45; }
+  .scout-route-ok { color: #86efac; } .scout-route-bad { color: #fca5a5; }
+  .scout-links { display: flex; gap: 0.65rem; margin-top: 0.45rem; }
+  .scout-links a { color: #93c5fd; font-size: 0.68rem; text-decoration: none; }
+  .scout-links a:hover { text-decoration: underline; }
+  .scout-stale { color: #f87171; font-weight: 700; }
+  @media (max-width: 640px) { .scout-heading > span { display: none; } .scout-summary { overflow: hidden; text-overflow: ellipsis; } }
 </style>
 </head>
 <body>
@@ -1146,10 +1161,16 @@ DASHBOARD_HTML = """\
 </div>
 
 <div class="container">
-  <section class="scout-panel" aria-labelledby="scout-title">
-    <div class="scout-header"><h2 id="scout-title">🔭 DoomScout</h2><span>Read-only executable round-trip safety · use /scout or /watch in Telegram</span></div>
-    <div class="scout-grid" id="scout-grid"><div class="scout-meta">No candidates assessed yet.</div></div>
-  </section>
+  <details class="scout-panel" id="scout-panel">
+    <summary class="scout-header" aria-controls="scout-body">
+      <span class="scout-heading"><span class="scout-title" id="scout-title">🔭 DoomScout</span><span>read-only executable exit safety</span></span>
+      <span class="scout-summary" id="scout-summary">Loading candidates…</span>
+    </summary>
+    <div class="scout-body" id="scout-body">
+      <div class="scout-note" id="scout-note">Exact planned-size buy → sell checks · use /scout or /watch in Telegram</div>
+      <div class="scout-grid" id="scout-grid"><div class="scout-meta">No candidates assessed yet.</div></div>
+    </div>
+  </details>
   <div class="summary-bar" id="summary-bar"></div>
   <div class="toolbar">
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
@@ -1213,6 +1234,8 @@ DASHBOARD_HTML = """\
   const connectionDiagnostics = document.getElementById('connection-diagnostics');
   const summaryBar = document.getElementById('summary-bar');
   const scoutGrid = document.getElementById('scout-grid');
+  const scoutSummary = document.getElementById('scout-summary');
+  const scoutNote = document.getElementById('scout-note');
   const botFilter = document.getElementById('bot-filter');
   const clearFilter = document.getElementById('clear-filter');
   const clearAllFilters = document.getElementById('clear-all-filters');
@@ -3027,7 +3050,22 @@ DASHBOARD_HTML = """\
   }
   function renderScout(snapshot) {
     const reports = Array.isArray(snapshot && snapshot.reports) ? snapshot.reports.slice() : [];
+    const watchlist = Array.isArray(snapshot && snapshot.watchlist) ? snapshot.watchlist : [];
+    const watched = new Map(watchlist.map(item => [String(item.address || '').toLowerCase(), item]));
     reports.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    const counts = reports.reduce(function(out, report) {
+      const verdict = ['pass', 'caution', 'reject'].includes(report.verdict) ? report.verdict : 'reject';
+      out[verdict] += 1;
+      return out;
+    }, {pass: 0, caution: 0, reject: 0});
+    scoutSummary.textContent = reports.length ?
+      counts.pass + ' pass · ' + counts.caution + ' caution · ' + counts.reject + ' reject · ' + watchlist.length + ' watched' :
+      'No candidates yet';
+    const intervalMinutes = Math.max(1, Math.round(Number(snapshot && snapshot.interval_seconds || 900) / 60));
+    const providerStatus = snapshot && snapshot.provider_status || {};
+    scoutNote.textContent = 'Exact planned-size buy → sell checks · watched tokens rescan every ' + intervalMinutes +
+      'm · Sushi ' + (providerStatus.sushiswap === 'configured' ? 'ready' : 'unavailable') +
+      ' · Uniswap ' + (providerStatus.uniswap === 'configured' ? 'ready' : 'not configured');
     if (!reports.length) {
       scoutGrid.innerHTML = '<div class="scout-meta">No candidates assessed yet. Use <strong>/scout 0xTOKEN</strong> in Telegram.</div>';
       return;
@@ -3036,13 +3074,35 @@ DASHBOARD_HTML = """\
       const market = report.market || {};
       const verdict = ['pass', 'caution', 'reject'].includes(report.verdict) ? report.verdict : 'reject';
       const reasons = Array.isArray(report.reasons) ? report.reasons : [];
+      const warnings = Array.isArray(report.warnings) ? report.warnings : [];
+      const providers = report.providers || {};
+      const watchedItem = watched.get(String(report.address || '').toLowerCase());
       const recovery = report.best_recovery_percent == null ? 'no exit' : Number(report.best_recovery_percent).toFixed(1) + '% recovery';
       const assessed = report.assessed_at ? new Date(report.assessed_at).toLocaleString() : 'never';
+      const ageMs = report.assessed_at ? Date.now() - new Date(report.assessed_at).getTime() : Infinity;
+      const stale = ageMs > Math.max(1800000, Number(snapshot && snapshot.interval_seconds || 900) * 2000);
+      const marketAge = market.age_hours == null ? 'age unknown' : Number(market.age_hours) < 48 ? Number(market.age_hours).toFixed(1) + 'h old' : (Number(market.age_hours) / 24).toFixed(1) + 'd old';
+      const change = Number(market.price_change_h24 || 0);
+      const routeHtml = ['sushiswap', 'uniswap'].map(function(name) {
+        const route = providers[name] || {};
+        const ok = Boolean(route.sell_success);
+        const detail = ok ? Number(route.recovery_percent || 0).toFixed(1) + '% recovery' : esc(route.error || (route.buy_success ? 'no sell route' : 'no buy route'));
+        return '<div class="' + (ok ? 'scout-route-ok' : 'scout-route-bad') + '">' + (ok ? '✓ ' : '× ') + esc(name === 'sushiswap' ? 'Sushi' : 'Uniswap') + ': ' + detail + '</div>';
+      }).join('');
+      const chartUrl = market.url && String(market.url).startsWith('https://') ? market.url : '';
+      const explorerBase = (CHAIN_INFO[Number(report.chain_id)] || {}).explorer || '';
       return '<article class="scout-card ' + verdict + '">' +
-        '<div class="scout-card-head"><span>' + esc(market.symbol || String(report.address || '').slice(0, 10)) + ' · ' + esc(verdict.toUpperCase()) + '</span><span class="scout-score">' + Number(report.score || 0) + '/100</span></div>' +
+        '<div class="scout-card-head"><span>' + esc(market.symbol || String(report.address || '').slice(0, 10)) + ' · ' + esc(verdict.toUpperCase()) + (watchedItem ? ' 👁' : '') + '</span><span class="scout-score">' + Number(report.score || 0) + '/100</span></div>' +
+        (market.name ? '<div class="scout-meta">' + esc(market.name) + '</div>' : '') +
         '<div class="scout-meta">' + esc(recovery) + ' · ' + Number(report.sell_provider_count || 0) + ' sell route(s)<br>' +
-        '$' + Number(market.liquidity_usd || 0).toLocaleString() + ' liquidity · ' + esc(assessed) + '</div>' +
+        '$' + Number(market.liquidity_usd || 0).toLocaleString() + ' liquidity · $' + Number(market.volume_h24 || 0).toLocaleString() + ' volume<br>' +
+        esc(marketAge) + ' · 24h ' + (change >= 0 ? '+' : '') + change.toFixed(1) + '% · ' + Number(report.budget_eth || 0) + ' ETH / ' + Number(report.positions || 0) + ' positions<br>' +
+        'Assessed ' + esc(assessed) + (stale ? ' · <span class="scout-stale">STALE</span>' : '') + '</div>' +
+        '<div class="scout-routes">' + routeHtml + '</div>' +
         (reasons.length ? '<div class="scout-reason">' + esc(reasons.join(' · ').replaceAll('_', ' ').toLowerCase()) + '</div>' : '') +
+        (warnings.length ? '<div class="scout-warning">' + esc(warnings.join(' · ')) + '</div>' : '') +
+        '<div class="scout-links">' + (chartUrl ? '<a href="' + esc(chartUrl) + '" target="_blank" rel="noopener noreferrer">Chart ↗</a>' : '') +
+        (explorerBase ? '<a href="' + esc(explorerBase + report.address) + '" target="_blank" rel="noopener noreferrer">Contract ↗</a>' : '') + '</div>' +
         '</article>';
     }).join('');
   }

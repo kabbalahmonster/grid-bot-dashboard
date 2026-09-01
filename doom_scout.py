@@ -162,7 +162,16 @@ class DoomScout:
 
     def snapshot(self):
         with self._lock:
-            return {"watchlist": list(self._watchlist.values()), "reports": list(self._reports.values())}
+            return {
+                "watchlist": list(self._watchlist.values()),
+                "reports": list(self._reports.values()),
+                "interval_seconds": self.interval_seconds,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "provider_status": {
+                    "sushiswap": "configured",
+                    "uniswap": "configured" if self.uniswap_api_key else "not_configured",
+                },
+            }
 
     def discover(self, limit=10):
         """Return recent DexScreener profiles for this chain without trusting or trading them."""

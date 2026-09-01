@@ -231,6 +231,20 @@ displayed explicitly instead of inventing a safety claim. Authenticated
 operations, while `GET /api/scout` and per-address history are public and
 read-only for the dashboard.
 
+The DoomDash Scout panel is collapsed by default so fleet operations remain
+the primary view. Its summary shows pass/caution/reject and watched counts;
+expanding it shows market liquidity/volume/age, planned budget and position
+count, assessment freshness, provider-by-provider executable recovery or error,
+warnings, and direct chart/contract links. Watched candidates are marked with
+an eye and rescanned at `DOOM_SCOUT_INTERVAL_SECONDS` (15 minutes by default).
+The panel also reports whether Sushi and the optional Uniswap quote provider
+are configured without exposing credentials.
+
+Keep `UNISWAP_API_KEY` in the production `.env` with owner-only permissions.
+It is used only for read-only quote requests. A dedicated Scout key is preferred
+so watch scans cannot consume the trading fleet's shared quota; until then,
+avoid aggressive scan intervals or repeated sampling.
+
 `TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
 an ETH balance at or below that sum triggers one `funds` alert. It re-arms
 after recovery. `TELEGRAM_UNBANKED_USDG_THRESHOLD` triggers once at the

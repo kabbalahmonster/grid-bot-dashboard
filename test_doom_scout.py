@@ -65,6 +65,18 @@ class TestDoomScout(unittest.TestCase):
             with self.assertRaises(ValueError):
                 restored.watch("not-an-address")
 
+    def test_snapshot_exposes_safe_runtime_metadata(self):
+        scout = DoomScout(state_file="/dev/null", interval_seconds=900, uniswap_api_key="x")
+        snapshot = scout.snapshot()
+        self.assertEqual(snapshot["interval_seconds"], 900)
+        self.assertEqual(snapshot["provider_status"]["sushiswap"], "configured")
+        self.assertEqual(snapshot["provider_status"]["uniswap"], "configured")
+        self.assertNotIn("uniswap_api_key", snapshot)
+
+    def test_snapshot_reports_missing_optional_uniswap_provider(self):
+        snapshot = DoomScout(state_file="/dev/null").snapshot()
+        self.assertEqual(snapshot["provider_status"]["uniswap"], "not_configured")
+
     def test_assessment_round_trips_each_provider(self):
         scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")
         scout._market = Mock(return_value={"symbol": "OK", "liquidity_usd": 100_000,
