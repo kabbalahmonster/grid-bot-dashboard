@@ -1164,7 +1164,7 @@ DASHBOARD_HTML = """\
 <div class="container">
   <details class="scout-panel" id="scout-panel">
     <summary class="scout-header" aria-controls="scout-body">
-      <span class="scout-icon" aria-hidden="true">📡</span>
+      <span class="scout-icon" aria-hidden="true">🧭</span>
       <span class="scout-heading"><span class="scout-title" id="scout-title">DoomScout</span><span>read-only executable exit safety</span></span>
       <span class="scout-summary" id="scout-summary">Loading candidates…</span>
     </summary>

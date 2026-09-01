@@ -23,7 +23,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("route.recovery_percent", body)
         self.assertIn("scout-summary", body)
         self.assertIn('class="scout-icon"', body)
-        self.assertIn('aria-hidden="true">📡</span>', body)
+        self.assertIn('aria-hidden="true">🧭</span>', body)
 
     def test_status_body_limit_returns_json_413(self):
         original_api_key = dashboard_server.API_KEY
