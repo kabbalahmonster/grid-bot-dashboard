@@ -1125,6 +1125,7 @@ DASHBOARD_HTML = """\
   .scout-header::-webkit-details-marker { display: none; }
   .scout-header::after { content: '▸'; color: #94a3b8; font-size: 0.9rem; transition: transform 0.15s ease; }
   .scout-panel[open] .scout-header::after { transform: rotate(90deg); }
+  .scout-icon { display: grid; place-items: center; flex: 0 0 2rem; width: 2rem; height: 2rem; margin: -0.25rem 0; border: 1px solid #334155; border-radius: 0.45rem; background: #0f172a; font-size: 1.05rem; }
   .scout-heading { display: flex; align-items: baseline; gap: 0.65rem; min-width: 0; }
   .scout-title { margin: 0; font-size: 1rem; color: #f8fafc; font-weight: 700; }
   .scout-header span { color: #94a3b8; font-size: 0.72rem; }
@@ -1163,7 +1164,8 @@ DASHBOARD_HTML = """\
 <div class="container">
   <details class="scout-panel" id="scout-panel">
     <summary class="scout-header" aria-controls="scout-body">
-      <span class="scout-heading"><span class="scout-title" id="scout-title">🔭 DoomScout</span><span>read-only executable exit safety</span></span>
+      <span class="scout-icon" aria-hidden="true">🔭</span>
+      <span class="scout-heading"><span class="scout-title" id="scout-title">DoomScout</span><span>read-only executable exit safety</span></span>
       <span class="scout-summary" id="scout-summary">Loading candidates…</span>
     </summary>
     <div class="scout-body" id="scout-body">
