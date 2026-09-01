@@ -9,6 +9,23 @@ TOKEN = "0x" + "12" * 20
 
 
 class TestDoomScout(unittest.TestCase):
+    def test_discovery_enriches_sparse_profiles(self):
+        scout = DoomScout(state_file="/dev/null")
+        profile_response = Mock()
+        profile_response.json.return_value = [{"chainId": "robinhood", "tokenAddress": TOKEN}]
+        market_response = Mock()
+        market_response.json.return_value = [{
+            "baseToken": {"address": TOKEN, "symbol": "FOX", "name": "Nullfox"},
+            "quoteToken": {"address": "0x" + "34" * 20, "symbol": "WETH"},
+            "liquidity": {"usd": 12000}, "volume": {"h24": 3400},
+            "priceChange": {"h24": 6.5}, "pairCreatedAt": 1,
+        }]
+        scout.http.get = Mock(side_effect=[profile_response, market_response])
+        found = scout.discover(10)
+        self.assertEqual(found[0]["symbol"], "FOX")
+        self.assertEqual(found[0]["name"], "Nullfox")
+        self.assertEqual(found[0]["liquidity_usd"], 12000)
+
     def test_wth_style_exit_is_rejected(self):
         result = score_assessment(
             {"liquidity_usd": 20_000, "volume_h24": 5_000, "age_hours": 48, "eth_usd": 4_000},

@@ -187,6 +187,50 @@ class DoomScout:
             })
             if len(found) >= max(1, min(50, int(limit))):
                 break
+        # The profiles feed is intentionally sparse and commonly omits even
+        # token names/symbols. Enrich candidates in one batch request; discovery
+        # remains unscored until an explicit assessment runs executable routes.
+        if found:
+            addresses = ",".join(item["address"] for item in found)
+            try:
+                market_response = self.http.get(
+                    f"https://api.dexscreener.com/tokens/v1/robinhood/{addresses}",
+                    timeout=self.timeout,
+                )
+                market_response.raise_for_status()
+                pairs = market_response.json()
+                if isinstance(pairs, list):
+                    richest = {}
+                    for pair in pairs:
+                        base = pair.get("baseToken") or {}
+                        quote = pair.get("quoteToken") or {}
+                        pair_addresses = {
+                            str(base.get("address") or "").lower(),
+                            str(quote.get("address") or "").lower(),
+                        }
+                        liquidity = _number((pair.get("liquidity") or {}).get("usd"))
+                        for item in found:
+                            key = item["address"].lower()
+                            if key not in pair_addresses or liquidity <= richest.get(key, (-1,))[0]:
+                                continue
+                            token = base if str(base.get("address") or "").lower() == key else quote
+                            created = _number(pair.get("pairCreatedAt"))
+                            if created > 1e12:
+                                created /= 1000
+                            richest[key] = (liquidity, {
+                                "symbol": str(token.get("symbol") or "")[:20],
+                                "name": str(token.get("name") or "")[:80],
+                                "liquidity_usd": liquidity,
+                                "volume_h24": _number((pair.get("volume") or {}).get("h24")),
+                                "price_change_h24": _number((pair.get("priceChange") or {}).get("h24")),
+                                "age_hours": round(max(0, time.time() - created) / 3600, 2) if created else None,
+                                "market_url": str(pair.get("url") or "")[:240],
+                            })
+                    for item in found:
+                        item.update(richest.get(item["address"].lower(), (0, {}))[1])
+            except (requests.RequestException, ValueError, TypeError):
+                # Raw discovery is still useful if enrichment is temporarily unavailable.
+                pass
         return found
 
     def history(self, address):

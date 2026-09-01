@@ -897,7 +897,22 @@ class TelegramAlerts:
                 try:
                     found = self.scout.discover(10)
                     lines = ["🛰 Recent Robinhood Chain token profiles (unscored)"]
-                    lines.extend(f"• {item['address']}" for item in found)
+                    for item in found:
+                        symbol = item.get("symbol") or "Unknown token"
+                        name = item.get("name") or ""
+                        title = f"{symbol} — {name}" if name and name.lower() != symbol.lower() else symbol
+                        details = []
+                        if item.get("liquidity_usd") is not None:
+                            details.append(f"liq ${item['liquidity_usd']:,.0f}")
+                        if item.get("volume_h24") is not None:
+                            details.append(f"24h vol ${item['volume_h24']:,.0f}")
+                        if item.get("price_change_h24") is not None:
+                            details.append(f"24h {item['price_change_h24']:+.1f}%")
+                        if item.get("age_hours") is not None:
+                            age = item["age_hours"]
+                            details.append(f"age {age / 24:.1f}d" if age >= 24 else f"age {age:.1f}h")
+                        lines.append(f"\n• {title}\n  {item['address']}" +
+                                     (f"\n  {' · '.join(details)}" if details else " · no market data"))
                     self.send("\n".join(lines) if found else "No recent Robinhood token profiles found.", force=True)
                 except Exception as exc:
                     self.log.warning("Scout discovery failed: %s", exc)
