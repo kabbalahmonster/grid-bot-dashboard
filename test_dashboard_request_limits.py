@@ -209,6 +209,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("taxFilterEnabled = false;", body)
         self.assertIn("body.history-modal-open { overflow: hidden; }", body)
 
+    def test_dashboard_surfaces_structured_needs_gas_warning(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn("Boolean(state.needs_gas)", body)
+        self.assertIn("⛽ Needs gas:", body)
+        self.assertIn("⛽ NEEDS GAS — TRADES MAY FAIL", body)
+        self.assertIn("d.needs_gas.shortfall_eth", body)
+
     def test_sell_checks_summary_lists_and_focuses_running_bots(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("const activeSellChecks = Object.keys(bots).filter", body)
