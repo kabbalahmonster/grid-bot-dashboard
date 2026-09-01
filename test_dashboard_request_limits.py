@@ -275,9 +275,17 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("reconnectCardsButton.addEventListener('click'", body)
         self.assertIn("reconnectCardsButton.textContent = 'Refreshing…'", body)
         self.assertIn("reconnectNow();", body)
+
         self.assertIn("fetch('/api/bots', { cache: 'no-store' })", body)
         self.assertIn("if (entry && entry.state) nextBots[botId] = entry.state", body)
         self.assertIn("refreshCardsFromApi()", body)
+
+    def test_scout_renderer_uses_dashboard_chain_metadata(self):
+        response = self.client.get("/")
+        body = response.get_data(as_text=True)
+
+        self.assertIn("(chainMetadata[Number(report.chain_id)] || {}).explorer", body)
+        self.assertNotIn("CHAIN_INFO[Number(report.chain_id)]", body)
         self.assertIn("render(true);", body)
         self.assertIn("fetchEthPrices();", body)
         self.assertIn("fetchMarketData();", body)

@@ -3092,7 +3092,7 @@ DASHBOARD_HTML = """\
         return '<div class="' + (ok ? 'scout-route-ok' : 'scout-route-bad') + '">' + (ok ? '✓ ' : '× ') + esc(name === 'sushiswap' ? 'Sushi' : 'Uniswap') + ': ' + detail + '</div>';
       }).join('');
       const chartUrl = market.url && String(market.url).startsWith('https://') ? market.url : '';
-      const explorerBase = (CHAIN_INFO[Number(report.chain_id)] || {}).explorer || '';
+      const explorerBase = (chainMetadata[Number(report.chain_id)] || {}).explorer || '';
       return '<article class="scout-card ' + verdict + '">' +
         '<div class="scout-card-head"><span>' + esc(market.symbol || String(report.address || '').slice(0, 10)) + ' · ' + esc(verdict.toUpperCase()) + (watchedItem ? ' 👁' : '') + '</span><span class="scout-score">' + Number(report.score || 0) + '/100</span></div>' +
         (market.name ? '<div class="scout-meta">' + esc(market.name) + '</div>' : '') +
