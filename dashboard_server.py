@@ -43,6 +43,7 @@ from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 from telegram_alerts import TelegramAlerts
+from doom_scout import DoomScout
 
 # Load .env file if present
 load_dotenv()
@@ -74,6 +75,9 @@ TELEGRAM_ALERT_STATE_FILE = os.environ.get("TELEGRAM_ALERT_STATE_FILE", "data/te
 TELEGRAM_LOW_FUNDS_BUFFER_ETH = float(os.environ.get("TELEGRAM_LOW_FUNDS_BUFFER_ETH", "0.0005"))
 TELEGRAM_UNBANKED_USDG_THRESHOLD = float(os.environ.get("TELEGRAM_UNBANKED_USDG_THRESHOLD", "10"))
 TELEGRAM_DAILY_DIGEST_TIME = os.environ.get("TELEGRAM_DAILY_DIGEST_TIME", "13:00")
+DOOM_SCOUT_STATE_FILE = os.environ.get("DOOM_SCOUT_STATE_FILE", "data/doom_scout.json")
+DOOM_SCOUT_INTERVAL_SECONDS = int(os.environ.get("DOOM_SCOUT_INTERVAL_SECONDS", "900"))
+UNISWAP_API_KEY = os.environ.get("UNISWAP_API_KEY", "")
 
 # Patterns that suggest private key material (checked against keys AND values)
 _PRIVATE_KEY_PATTERNS = [
@@ -325,6 +329,11 @@ def _telegram_state_snapshot():
         return {bot_id: dict(state) for bot_id, state in bot_states.items()}
 
 
+doom_scout = DoomScout(
+    state_file=DOOM_SCOUT_STATE_FILE,
+    interval_seconds=DOOM_SCOUT_INTERVAL_SECONDS,
+    uniswap_api_key=UNISWAP_API_KEY,
+)
 telegram_alerts = TelegramAlerts(
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
@@ -333,7 +342,11 @@ telegram_alerts = TelegramAlerts(
     low_funds_buffer_eth=TELEGRAM_LOW_FUNDS_BUFFER_ETH,
     unbanked_usdg_threshold=TELEGRAM_UNBANKED_USDG_THRESHOLD,
     daily_digest_time=TELEGRAM_DAILY_DIGEST_TIME,
+    scout=doom_scout,
 )
+doom_scout.notify = telegram_alerts.process_scout_transition
+doom_scout.start()
+atexit.register(doom_scout.close)
 atexit.register(telegram_alerts.close)
 
 # ---------------------------------------------------------------------------
@@ -652,6 +665,60 @@ def health():
         "sse_clients": sse_count,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }), 200
+
+
+@app.route("/api/scout", methods=["GET"])
+def scout_snapshot():
+    """Public, read-only scout cards; quote execution remains authenticated."""
+    return jsonify(doom_scout.snapshot()), 200
+
+
+@app.route("/api/scout/<address>/history", methods=["GET"])
+def scout_history(address):
+    try:
+        return jsonify({"address": address, "history": doom_scout.history(address)}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scout/assess", methods=["POST"])
+@require_api_key
+def scout_assess():
+    data = request.get_json(silent=True) or {}
+    try:
+        report = doom_scout.assess(
+            data.get("address"), chain_id=data.get("chain_id", 4663),
+            budget_eth=data.get("budget_eth", 0.003), positions=data.get("positions", 4),
+        )
+        return jsonify(report), 200
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        logger.warning("Scout assessment failed: %s", exc)
+        return jsonify({"error": "Scout providers temporarily unavailable"}), 502
+
+
+@app.route("/api/scout/watch", methods=["POST"])
+@require_api_key
+def scout_watch():
+    data = request.get_json(silent=True) or {}
+    try:
+        item = doom_scout.watch(
+            data.get("address"), data.get("label", ""), data.get("chain_id", 4663),
+            data.get("budget_eth", 0.003), data.get("positions", 4),
+        )
+        return jsonify(item), 201
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scout/watch/<address>", methods=["DELETE"])
+@require_api_key
+def scout_unwatch(address):
+    try:
+        return jsonify({"removed": doom_scout.unwatch(address)}), 200
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/eth-price", methods=["GET"])
@@ -1053,6 +1120,16 @@ DASHBOARD_HTML = """\
   .event-raw { margin-top: 0.3rem; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font-family: monospace; color: #94a3b8; }
   .currency-toggle { background: none; border: 1px solid #475569; color: #f1f5f9; border-radius: 0.25rem; padding: 0.1rem 0.35rem; cursor: pointer; }
   .empty-clear { margin-top: 0.8rem; }
+  .scout-panel { margin-bottom: 1rem; padding: 0.9rem; border: 1px solid #334155; border-radius: 0.55rem; background: #111827; }
+  .scout-header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 0.65rem; }
+  .scout-header h2 { margin: 0; font-size: 1rem; color: #f8fafc; }
+  .scout-header span { color: #64748b; font-size: 0.72rem; }
+  .scout-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.6rem; }
+  .scout-card { padding: 0.7rem; border: 1px solid #334155; border-left-width: 4px; border-radius: 0.4rem; background: #0f172a; }
+  .scout-card.pass { border-left-color: #22c55e; } .scout-card.caution { border-left-color: #eab308; } .scout-card.reject { border-left-color: #ef4444; }
+  .scout-card-head { display: flex; justify-content: space-between; gap: 0.5rem; font-weight: 700; }
+  .scout-score { color: #facc15; } .scout-meta { margin-top: 0.35rem; color: #94a3b8; font-size: 0.72rem; line-height: 1.45; }
+  .scout-reason { margin-top: 0.35rem; color: #fca5a5; font-size: 0.68rem; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -1069,6 +1146,10 @@ DASHBOARD_HTML = """\
 </div>
 
 <div class="container">
+  <section class="scout-panel" aria-labelledby="scout-title">
+    <div class="scout-header"><h2 id="scout-title">🔭 DoomScout</h2><span>Read-only executable round-trip safety · use /scout or /watch in Telegram</span></div>
+    <div class="scout-grid" id="scout-grid"><div class="scout-meta">No candidates assessed yet.</div></div>
+  </section>
   <div class="summary-bar" id="summary-bar"></div>
   <div class="toolbar">
     <span class="filter-wrap"><input id="bot-filter" placeholder="Filter bots or groups"><button id="clear-filter" class="clear-filter" type="button" aria-label="Clear filter">×</button></span>
@@ -1131,6 +1212,7 @@ DASHBOARD_HTML = """\
   const connectionButton = document.getElementById('connection-button');
   const connectionDiagnostics = document.getElementById('connection-diagnostics');
   const summaryBar = document.getElementById('summary-bar');
+  const scoutGrid = document.getElementById('scout-grid');
   const botFilter = document.getElementById('bot-filter');
   const clearFilter = document.getElementById('clear-filter');
   const clearAllFilters = document.getElementById('clear-all-filters');
@@ -2943,6 +3025,35 @@ DASHBOARD_HTML = """\
     }
     return 'Notifications are blocked. Allow them in this browser’s site settings, then reload.';
   }
+  function renderScout(snapshot) {
+    const reports = Array.isArray(snapshot && snapshot.reports) ? snapshot.reports.slice() : [];
+    reports.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    if (!reports.length) {
+      scoutGrid.innerHTML = '<div class="scout-meta">No candidates assessed yet. Use <strong>/scout 0xTOKEN</strong> in Telegram.</div>';
+      return;
+    }
+    scoutGrid.innerHTML = reports.map(function(report) {
+      const market = report.market || {};
+      const verdict = ['pass', 'caution', 'reject'].includes(report.verdict) ? report.verdict : 'reject';
+      const reasons = Array.isArray(report.reasons) ? report.reasons : [];
+      const recovery = report.best_recovery_percent == null ? 'no exit' : Number(report.best_recovery_percent).toFixed(1) + '% recovery';
+      const assessed = report.assessed_at ? new Date(report.assessed_at).toLocaleString() : 'never';
+      return '<article class="scout-card ' + verdict + '">' +
+        '<div class="scout-card-head"><span>' + esc(market.symbol || String(report.address || '').slice(0, 10)) + ' · ' + esc(verdict.toUpperCase()) + '</span><span class="scout-score">' + Number(report.score || 0) + '/100</span></div>' +
+        '<div class="scout-meta">' + esc(recovery) + ' · ' + Number(report.sell_provider_count || 0) + ' sell route(s)<br>' +
+        '$' + Number(market.liquidity_usd || 0).toLocaleString() + ' liquidity · ' + esc(assessed) + '</div>' +
+        (reasons.length ? '<div class="scout-reason">' + esc(reasons.join(' · ').replaceAll('_', ' ').toLowerCase()) + '</div>' : '') +
+        '</article>';
+    }).join('');
+  }
+  function refreshScout() {
+    fetch('/api/scout', {cache: 'no-store'}).then(function(response) {
+      if (!response.ok) throw new Error('scout unavailable');
+      return response.json();
+    }).then(renderScout).catch(function() {
+      scoutGrid.innerHTML = '<div class="scout-meta">Scout data is temporarily unavailable.</div>';
+    });
+  }
   notificationsButton.addEventListener('click', function() {
     const opening = notificationMenu.hidden;
     notificationMenu.hidden = !opening;
@@ -2998,6 +3109,8 @@ DASHBOARD_HTML = """\
     notificationsButton.setAttribute('aria-expanded', 'false');
   });
   updateNotificationControls();
+  refreshScout();
+  setInterval(refreshScout, 60000);
   refreshReportAges();
 })();
 </script>

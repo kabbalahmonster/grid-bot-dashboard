@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""DoomScout CLI: read-only executable route safety checks."""
+
+import argparse
+import json
+import os
+
+from doom_scout import DoomScout
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Assess whether a token is safe for the grid-bot's planned inventory")
+    parser.add_argument("address", nargs="?", help="token contract address")
+    parser.add_argument("--budget", type=float, default=0.003, help="total planned ETH inventory")
+    parser.add_argument("--positions", type=int, default=4)
+    parser.add_argument("--chain-id", type=int, default=4663)
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--watch", action="store_true", help="add token to the persistent watchlist")
+    parser.add_argument("--list", action="store_true", help="print current candidate reports")
+    parser.add_argument("--discover", action="store_true", help="list recent Robinhood Chain token profiles")
+    args = parser.parse_args()
+    scout = DoomScout(
+        state_file=os.environ.get("DOOM_SCOUT_STATE_FILE", "data/doom_scout.json"),
+        uniswap_api_key=os.environ.get("UNISWAP_API_KEY", ""),
+    )
+    if args.list:
+        print(json.dumps(scout.snapshot(), indent=2))
+        return
+    if args.discover:
+        print(json.dumps(scout.discover(), indent=2))
+        return
+    if not args.address:
+        parser.error("address is required unless --list is used")
+    if args.watch:
+        scout.watch(args.address, chain_id=args.chain_id, budget_eth=args.budget, positions=args.positions)
+    report = scout.assess(args.address, args.chain_id, args.budget, args.positions)
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return
+    market = report.get("market") or {}
+    print(f"{market.get('symbol') or 'TOKEN'}: {report['verdict'].upper()} ({report['score']}/100)")
+    print(f"Budget: {report['budget_eth']:.6f} ETH across {report['positions']} positions")
+    print(f"Liquidity: ${float(market.get('liquidity_usd') or 0):,.0f}")
+    for name, route in report["providers"].items():
+        recovery = route.get("recovery_percent")
+        print(f"{name}: {recovery:.2f}% round-trip recovery" if recovery is not None else f"{name}: unavailable ({route.get('error')})")
+    for reason in report["reasons"]:
+        print(f"FLAG: {reason}")
+    for warning in report["warnings"]:
+        print(f"WARN: {warning}")
+
+
+if __name__ == "__main__":
+    main()

@@ -41,7 +41,7 @@ CHAIN_EXPLORERS = {
 class TelegramAlerts:
     def __init__(self, token, chat_id, state_file, state_provider, offline_seconds=300, request_timeout=10,
                  dashboard_url="https://doomdash.ca", low_funds_buffer_eth=0.0005,
-                 unbanked_usdg_threshold=10.0, daily_digest_time="13:00"):
+                 unbanked_usdg_threshold=10.0, daily_digest_time="13:00", scout=None):
         self.token = str(token or "").strip()
         self.chat_id = str(chat_id or "").strip()
         self.state_file = state_file
@@ -52,6 +52,7 @@ class TelegramAlerts:
         self.low_funds_buffer_eth = max(0.0, float(low_funds_buffer_eth))
         self.unbanked_usdg_threshold = max(0.0, float(unbanked_usdg_threshold))
         self.daily_digest_time = str(daily_digest_time or "").strip()
+        self.scout = scout
         self.log = logging.getLogger("dashboard.telegram")
         self.enabled = bool(self.token and self.chat_id)
         self._lock = threading.Lock()
@@ -848,6 +849,60 @@ class TelegramAlerts:
         text = str(message.get("text") or "").strip().lower()
         parts = text.split()
         command = parts[0].split("@")[0] if parts else ""
+        if command == "/scout":
+            if self.scout is None:
+                self.send("DoomScout is unavailable.", force=True)
+            elif len(parts) < 2:
+                self.send("Use /scout 0xTOKEN [budget_eth] [positions].", force=True)
+            else:
+                try:
+                    budget = float(parts[2]) if len(parts) >= 3 else 0.003
+                    positions = int(parts[3]) if len(parts) >= 4 else 4
+                    self.send("🔭 Scouting executable exits now…", force=True)
+                    self.send(self._scout_text(self.scout.assess(parts[1], budget_eth=budget, positions=positions)), force=True)
+                except (ValueError, TypeError) as exc:
+                    self.send(f"Scout rejected that request: {exc}", force=True)
+                except Exception as exc:
+                    self.log.warning("Scout command failed: %s", exc)
+                    self.send("Scout providers are temporarily unavailable.", force=True)
+            return
+        if command == "/watch":
+            if self.scout is None or len(parts) < 2:
+                self.send("Use /watch 0xTOKEN [label].", force=True)
+            else:
+                try:
+                    item = self.scout.watch(parts[1], " ".join(parts[2:]))
+                    report = self.scout.assess(item["address"], budget_eth=item["budget_eth"], positions=item["positions"])
+                    self.send("👁 Added to DoomScout watchlist.\n\n" + self._scout_text(report), force=True)
+                except (ValueError, TypeError) as exc:
+                    self.send(f"Could not watch token: {exc}", force=True)
+            return
+        if command == "/unwatch":
+            if self.scout is None or len(parts) != 2:
+                self.send("Use /unwatch 0xTOKEN.", force=True)
+            else:
+                try:
+                    removed = self.scout.unwatch(parts[1])
+                    self.send("Removed from DoomScout." if removed else "That token was not watched.", force=True)
+                except ValueError as exc:
+                    self.send(str(exc), force=True)
+            return
+        if command == "/candidates":
+            self.send(self._candidates_text(), force=True)
+            return
+        if command == "/discover":
+            if self.scout is None:
+                self.send("DoomScout is unavailable.", force=True)
+            else:
+                try:
+                    found = self.scout.discover(10)
+                    lines = ["🛰 Recent Robinhood Chain token profiles (unscored)"]
+                    lines.extend(f"• {item['address']}" for item in found)
+                    self.send("\n".join(lines) if found else "No recent Robinhood token profiles found.", force=True)
+                except Exception as exc:
+                    self.log.warning("Scout discovery failed: %s", exc)
+                    self.send("Discovery feed is temporarily unavailable.", force=True)
+            return
         if command in ("/start", "/alerts") and len(parts) == 1:
             self.send(self._preferences_text(), reply_markup=self._settings_markup(), force=True)
             return
@@ -926,6 +981,9 @@ class TelegramAlerts:
                 "/attention — exceptions\n/profit [period] — realized performance\n"
                 "/trades [period] — recent activity\n/digest — daily report now\n/bot <name> — one bot\n"
                 "/leaderboard [mode] — fleet rankings\n/recap [period] — share card\n/oracle — daily fleet omen\n"
+                "/scout <contract> [budget] [positions] — executable exit test\n"
+                "/watch <contract> [label] — monitor candidate\n/unwatch <contract>\n/candidates — ranked watchlist\n"
+                "/discover — recent unscored token profiles\n"
                 "/alerts — alert toggles\n/mute 1h|6h|12h|24h\n"
                 "/unmute\n/test",
                 reply_markup=self._alert_buttons(), force=True,
@@ -1010,6 +1068,9 @@ class TelegramAlerts:
             ("digest", "Daily report now"), ("leaderboard", "Fleet rankings"),
             ("recap", "Shareable fleet recap"), ("oracle", "Daily fleet omen"),
             ("needs", "Bots needing positions"),
+            ("scout", "Test a token's executable exits"), ("watch", "Watch a candidate"),
+            ("unwatch", "Stop watching a candidate"), ("candidates", "Ranked scout watchlist"),
+            ("discover", "Recent unscored token profiles"),
             ("bot", "Inspect one bot"), ("alerts", "Alert toggles"),
             ("mute", "Mute alerts"), ("unmute", "Unmute alerts"), ("help", "Command help"),
         ]
@@ -1019,6 +1080,50 @@ class TelegramAlerts:
             timeout=self.request_timeout,
         )
         response.raise_for_status()
+
+    @staticmethod
+    def _scout_text(report):
+        verdict = str(report.get("verdict", "unknown")).upper()
+        icon = {"PASS": "🟢", "CAUTION": "🟡", "REJECT": "🔴"}.get(verdict, "⚪")
+        market = report.get("market") or {}
+        providers = report.get("providers") or {}
+        routes = []
+        for name, route in providers.items():
+            recovery = route.get("recovery_percent")
+            routes.append(f"{name.title()}: {recovery:.2f}% recovery" if recovery is not None else f"{name.title()}: no round trip")
+        reasons = report.get("reasons") or []
+        reason_text = ", ".join(str(x).replace("_", " ").lower() for x in reasons) or "none"
+        return (
+            f"{icon} DoomScout: {verdict} · {report.get('score', 0)}/100\n"
+            f"{market.get('symbol') or 'TOKEN'} · budget {float(report.get('budget_eth') or 0):.6f} ETH\n"
+            f"Liquidity: ${float(market.get('liquidity_usd') or 0):,.0f} · 24h volume: ${float(market.get('volume_h24') or 0):,.0f}\n"
+            + "\n".join(routes) + f"\nProvider redundancy: {report.get('sell_provider_count', 0)}\nReasons: {reason_text}"
+        )
+
+    def _candidates_text(self):
+        if self.scout is None:
+            return "DoomScout is unavailable."
+        reports = sorted(self.scout.snapshot().get("reports", []), key=lambda item: item.get("score", 0), reverse=True)
+        if not reports:
+            return "🔭 DoomScout has no assessed candidates. Use /watch 0xTOKEN."
+        lines = ["🔭 DoomScout candidates"]
+        for report in reports[:12]:
+            market = report.get("market") or {}
+            icon = {"pass": "🟢", "caution": "🟡", "reject": "🔴"}.get(report.get("verdict"), "⚪")
+            lines.append(f"{icon} {market.get('symbol') or report.get('address', '')[:8]} — {report.get('score', 0)}/100 · {report.get('best_recovery_percent') or 0:.1f}% recovery")
+        return "\n".join(lines)
+
+    def process_scout_transition(self, previous, current):
+        """Send one meaningful alert when a watched candidate changes class."""
+        if not self._preferences.get("safety", True):
+            return
+        market = current.get("market") or {}
+        self.send(
+            f"🔭 DoomScout changed its mind about {market.get('symbol') or current.get('address', '')[:10]}: "
+            f"{str(previous.get('verdict')).upper()} → {str(current.get('verdict')).upper()}\n\n"
+            + self._scout_text(current),
+            force=False,
+        )
 
     def _run(self):
         try:

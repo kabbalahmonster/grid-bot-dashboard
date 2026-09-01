@@ -58,6 +58,9 @@ Each position shows token amount, ETH cost basis, and P&L percentage. **More inf
 - Recursive private-key detection and rejection
 - Bounded SSE client queues
 - Responsive inline frontend; no build step or database
+- DoomScout read-only candidate scoring with exact planned-size buy→sell quotes,
+  provider redundancy checks, liquidity/age/volume guards, durable history,
+  background watchlist rescans, Telegram alerts, and an on-dashboard ranking
 
 Telegram commands include `/status`, `/attention`, `/profit 24h`, `/trades 24h`,
 `/digest`, `/leaderboard`, `/recap`, `/oracle`, `/needs`, `/bot <name>`, `/alerts`,
@@ -98,6 +101,9 @@ TELEGRAM_ALERT_STATE_FILE=data/telegram_alert_state.json
 TELEGRAM_LOW_FUNDS_BUFFER_ETH=0.0005
 TELEGRAM_UNBANKED_USDG_THRESHOLD=10
 TELEGRAM_DAILY_DIGEST_TIME=13:00
+DOOM_SCOUT_STATE_FILE=data/doom_scout.json
+DOOM_SCOUT_INTERVAL_SECONDS=900
+UNISWAP_API_KEY=
 ```
 
 | Variable | Default | Purpose |
@@ -114,6 +120,9 @@ TELEGRAM_DAILY_DIGEST_TIME=13:00
 | `TELEGRAM_LOW_FUNDS_BUFFER_ETH` | `0.0005` | ETH buffer added to each reported gas reserve for low-funds alerts |
 | `TELEGRAM_UNBANKED_USDG_THRESHOLD` | `10` | Wallet USDG balance that triggers an awaiting-banking alert; `0` disables it |
 | `TELEGRAM_DAILY_DIGEST_TIME` | `13:00` | UTC `HH:MM`; empty disables scheduled digests |
+| `DOOM_SCOUT_STATE_FILE` | `data/doom_scout.json` | Durable candidate watchlist, latest reports, and bounded score history |
+| `DOOM_SCOUT_INTERVAL_SECONDS` | `900` | Watchlist rescan interval; minimum 60 seconds |
+| `UNISWAP_API_KEY` | empty | Optional read-only Trade API key used for a second independent route; missing keys produce a conservative no-redundancy caution |
 
 Generate a key:
 
@@ -179,6 +188,11 @@ commands. It reads the same in-memory snapshots used by the dashboard.
 | `/oracle` | Deterministic daily fleet mood, chosen vessel, sigil key, and omen |
 | `/needs` | Bots currently unable to add another position |
 | `/bot <name>` | One bot's status, capacity, balances, and profit |
+| `/scout <contract> [budget_eth] [positions]` | Run planned-size Sushi and Uniswap buy→sell simulations and return a transparent verdict |
+| `/watch <contract> [label]` | Add and immediately assess a candidate; it is rescanned in the background |
+| `/unwatch <contract>` | Stop background checks without deleting retained reports |
+| `/candidates` | Rank retained candidates by DoomScout score |
+| `/discover` | List recent Robinhood Chain DexScreener token profiles; discovery is explicitly unscored until `/scout` or `/watch` is run |
 | `/alerts` | Inline per-category alert toggles |
 | `/mute 1h\|6h\|12h\|24h` / `/unmute` | Suppress unsolicited alerts temporarily; commands still answer |
 | `/help` | Command reference |
@@ -189,6 +203,33 @@ rivalries. Trade and achievement alerts include buttons to open the bot's
 filtered DoomDash card with its chart expanded, mute that bot for six hours, or
 disable the alert category. These controls only affect monitoring; Telegram
 still has no trading, wallet, restart, or strategy-mutation authority.
+
+## DoomScout
+
+DoomScout never signs, approves, or broadcasts a transaction. For each token it
+requests exact-input quotes for the configured total inventory size, feeds the
+entire quoted token output into a reverse sell quote on the same provider, and
+scores the resulting recovery alongside liquidity, volume, pool age, planned
+capital share, and independent sell-provider count. A chart price is never
+treated as proof that inventory can exit.
+
+Run a one-off check or add a durable watch:
+
+```bash
+./doom-scout 0xTOKEN --budget 0.003 --positions 4
+./doom-scout 0xTOKEN --budget 0.003 --positions 4 --watch
+./doom-scout --list --json
+./doom-scout --discover
+```
+
+Verdicts are intentionally asymmetric: recovery below 85%, inadequate
+liquidity, planned capital too large for the pool, or no sell route is a hard
+reject. A healthy route on only one configured provider is `CAUTION`, never a
+clean pass. Contract security remains `unknown` on unsupported chains; that is
+displayed explicitly instead of inventing a safety claim. Authenticated
+`POST /api/scout/assess` and `POST/DELETE /api/scout/watch` endpoints drive
+operations, while `GET /api/scout` and per-address history are public and
+read-only for the dashboard.
 
 `TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
 an ETH balance at or below that sum triggers one `funds` alert. It re-arms
