@@ -2002,6 +2002,14 @@ DASHBOARD_HTML = """\
     window.setTimeout(refreshReportAges, animationVisible ? 10000 : 1000);
   }
 
+  function needsGasState(state) {
+    if (state && state.needs_gas) return state.needs_gas;
+    const balance = parseFloat(state && state.eth_balance);
+    const reserve = parseFloat(state && state.gas_reserve_eth);
+    if (!Number.isFinite(balance) || !Number.isFinite(reserve) || reserve <= 0 || balance >= reserve) return null;
+    return { balance_eth: balance, reserve_eth: reserve, shortfall_eth: reserve - balance };
+  }
+
   function updateSummary(botIds) {
     summaryBotIds = botIds.slice();
     const states = botIds.map(function(id) { return bots[id]; });
@@ -2011,7 +2019,7 @@ DASHBOARD_HTML = """\
     });
     const needsGas = Object.keys(bots).filter(function(id) {
       const state = bots[id];
-      return Boolean(state.needs_gas) && reportAge(state.received_at).status === 'running';
+      return Boolean(needsGasState(state)) && reportAge(state.received_at).status === 'running';
     });
     const activeSellChecks = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -2601,7 +2609,8 @@ DASHBOARD_HTML = """\
       const chartOpen = openCharts.has(botKey);
       const sigilOpen = !closedSigils.has(botKey);
       const hasBalanceMismatch = d.sell_attempt && d.sell_attempt.status === 'position_balance_mismatch';
-      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + (d.needs_gas ? ' needs-gas' : '') + (hasBalanceMismatch ? ' balance-mismatch' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
+      const gasWarning = needsGasState(d);
+      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + (gasWarning ? ' needs-gas' : '') + (hasBalanceMismatch ? ' balance-mismatch' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
       const taxFee = parseFloat(d.token_transfer_fee_percent);
@@ -2625,10 +2634,10 @@ DASHBOARD_HTML = """\
           '% · Buy point: ' + esc(Number.isFinite(warningThreshold) ? warningThreshold.toFixed(1) : '?') + '%</div>';
       }
 
-      if (d.needs_gas) {
-        const gasBalance = parseFloat(d.needs_gas.balance_eth);
-        const gasReserve = parseFloat(d.needs_gas.reserve_eth);
-        const gasShortfall = parseFloat(d.needs_gas.shortfall_eth);
+      if (gasWarning) {
+        const gasBalance = parseFloat(gasWarning.balance_eth);
+        const gasReserve = parseFloat(gasWarning.reserve_eth);
+        const gasShortfall = parseFloat(gasWarning.shortfall_eth);
         html += '<div class="gas-alert" role="alert"><strong>⛽ NEEDS GAS — TRADES MAY FAIL</strong>' +
           'ETH balance: ' + esc(Number.isFinite(gasBalance) ? gasBalance.toFixed(8) : '?') +
           ' · Reserve: ' + esc(Number.isFinite(gasReserve) ? gasReserve.toFixed(8) : '?') +
