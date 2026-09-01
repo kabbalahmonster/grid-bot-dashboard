@@ -99,7 +99,7 @@ _STATUS_FIELDS = frozenset({
     "price", "eth_balance", "gas_reserve_eth", "usdg_balance", "treasury_sent_usdg", "token_balance",
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
-    "filled_positions", "max_positions", "capacity_warning", "needs_gas", "sell_attempt",
+    "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "sell_attempt",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
@@ -114,6 +114,7 @@ _EVENT_FIELDS = frozenset({
 })
 _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
 _NEEDS_GAS_FIELDS = frozenset({"balance_eth", "reserve_eth", "shortfall_eth"})
+_FUNDING_WARNING_FIELDS = frozenset({"asset", "trade_balance", "minimum_trade_balance", "available_slots", "reason"})
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
     "observed_fee_percent", "matching_observations", "confirmations_required",
@@ -437,6 +438,7 @@ def _allowlisted_status_payload(data):
     for field, allowed in (
         ("capacity_warning", _CAPACITY_WARNING_FIELDS),
         ("needs_gas", _NEEDS_GAS_FIELDS),
+        ("funding_warning", _FUNDING_WARNING_FIELDS),
         ("sell_attempt", _SELL_ATTEMPT_FIELDS),
         ("sigil", _SIGIL_FIELDS),
         ("realized_profit_periods", _REALIZED_PERIOD_FIELDS),
@@ -946,6 +948,8 @@ DASHBOARD_HTML = """\
   .summary-item.needs-positions .bot-names { color: #fbbf24; }
   .summary-item.needs-gas { background: #7f1d1d; border-color: #ef4444; color: #fee2e2; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
   .summary-item.needs-gas .bot-names { color: #fca5a5; }
+  .summary-item.needs-funds { background: #4c1d95; border-color: #a78bfa; color: #ede9fe; font-weight: 700; animation: capacity-pulse 1.5s ease-in-out infinite; }
+  .summary-item.needs-funds .bot-names { color: #c4b5fd; }
   .summary-item.sell-checks-active { background: #164e63; border-color: #22d3ee; color: #cffafe; font-weight: 700; }
   .summary-item.sell-checks-active .bot-names { color: #67e8f9; }
   .needs-position-link { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 0.15rem; cursor: pointer; }
@@ -984,6 +988,7 @@ DASHBOARD_HTML = """\
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
   .card.needs-gas { border-color: #ef4444; box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35); }
+  .card.needs-funds { border-color: #a78bfa; box-shadow: 0 0 0 1px rgba(167, 139, 250, 0.35); }
   .card.balance-mismatch { border-color: #ef4444; box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35); }
   .balance-mismatch-alert { background: #7f1d1d; border: 1px solid #ef4444; color: #fee2e2; border-radius: 0.35rem; padding: 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .balance-mismatch-alert strong { color: #fecaca; display: block; margin-bottom: 0.2rem; }
@@ -991,6 +996,8 @@ DASHBOARD_HTML = """\
   .capacity-alert strong { color: #fbbf24; display: block; margin-bottom: 0.15rem; }
   .gas-alert { background: #7f1d1d; border: 1px solid #ef4444; color: #fee2e2; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .gas-alert strong { color: #fca5a5; display: block; margin-bottom: 0.15rem; }
+  .funding-alert { background: #4c1d95; border: 1px solid #a78bfa; color: #ede9fe; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
+  .funding-alert strong { color: #c4b5fd; display: block; margin-bottom: 0.15rem; }
   .sell-attempt { display: flex; align-items: center; gap: 0.65rem; background: linear-gradient(90deg, rgba(14, 116, 144, 0.22), rgba(15, 23, 42, 0.3)); border: 1px solid #0e7490; color: #cffafe; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .sell-attempt-dot { width: 0.55rem; height: 0.55rem; flex: 0 0 auto; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); animation: sell-pulse 1.7s ease-out infinite; }
   .sell-attempt-copy { min-width: 0; flex: 1; }
@@ -2021,6 +2028,10 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(needsGasState(state)) && reportAge(state.received_at).status === 'running';
     });
+    const needsFunds = Object.keys(bots).filter(function(id) {
+      const state = bots[id];
+      return Boolean(state.funding_warning) && reportAge(state.received_at).status === 'running';
+    });
     const activeSellChecks = Object.keys(bots).filter(function(id) {
       const state = bots[id];
       return Boolean(state.sell_attempt) && reportAge(state.received_at).status === 'running';
@@ -2088,6 +2099,12 @@ DASHBOARD_HTML = """\
       (needsGas.length
         ? '<span class="summary-item needs-gas" aria-live="polite">⛽ Needs gas: ' + needsGas.length +
           ' <span class="bot-names">(' + needsGas.map(function(id) {
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          }).join(', ') + ')</span></span>'
+        : '') +
+      (needsFunds.length
+        ? '<span class="summary-item needs-funds" aria-live="polite">💸 Needs funds: ' + needsFunds.length +
+          ' <span class="bot-names">(' + needsFunds.map(function(id) {
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
           }).join(', ') + ')</span></span>'
         : '') +
@@ -2610,7 +2627,7 @@ DASHBOARD_HTML = """\
       const sigilOpen = !closedSigils.has(botKey);
       const hasBalanceMismatch = d.sell_attempt && d.sell_attempt.status === 'position_balance_mismatch';
       const gasWarning = needsGasState(d);
-      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + (gasWarning ? ' needs-gas' : '') + (hasBalanceMismatch ? ' balance-mismatch' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
+      html += '<div class="card' + (d.capacity_warning ? ' capacity-warning' : '') + (gasWarning ? ' needs-gas' : '') + (d.funding_warning ? ' needs-funds' : '') + (hasBalanceMismatch ? ' balance-mismatch' : '') + '" data-bot-id="' + esc(botId) + '" tabindex="-1">';
       html += '<h2>Bot</h2>';
       const chain = chainMetadata[Number(d.chain_id)];
       const taxFee = parseFloat(d.token_transfer_fee_percent);
@@ -2642,6 +2659,16 @@ DASHBOARD_HTML = """\
           'ETH balance: ' + esc(Number.isFinite(gasBalance) ? gasBalance.toFixed(8) : '?') +
           ' · Reserve: ' + esc(Number.isFinite(gasReserve) ? gasReserve.toFixed(8) : '?') +
           ' · Shortfall: ' + esc(Number.isFinite(gasShortfall) ? gasShortfall.toFixed(8) : '?') + ' ETH</div>';
+      }
+
+      if (d.funding_warning) {
+        const fundingBalance = parseFloat(d.funding_warning.trade_balance);
+        const fundingMinimum = parseFloat(d.funding_warning.minimum_trade_balance);
+        html += '<div class="funding-alert" role="alert"><strong>💸 BUY BLOCKED — NEEDS TRADING FUNDS</strong>' +
+          esc(d.funding_warning.asset || 'ETH') + ' available after gas reserve: ' +
+          esc(Number.isFinite(fundingBalance) ? fundingBalance.toFixed(8) : '?') +
+          ' · Minimum: ' + esc(Number.isFinite(fundingMinimum) ? fundingMinimum.toFixed(8) : '?') +
+          ' · Open slots: ' + esc(d.funding_warning.available_slots ?? '?') + '</div>';
       }
 
       if (hasBalanceMismatch) {

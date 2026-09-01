@@ -219,6 +219,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("⛽ NEEDS GAS — TRADES MAY FAIL", body)
         self.assertIn("gasWarning.shortfall_eth", body)
 
+    def test_dashboard_surfaces_buy_blocked_funding_warning(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn("Boolean(state.funding_warning)", body)
+        self.assertIn("💸 Needs funds:", body)
+        self.assertIn("💸 BUY BLOCKED — NEEDS TRADING FUNDS", body)
+        self.assertIn("d.funding_warning.minimum_trade_balance", body)
+
     def test_sell_checks_summary_lists_and_focuses_running_bots(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("const activeSellChecks = Object.keys(bots).filter", body)
