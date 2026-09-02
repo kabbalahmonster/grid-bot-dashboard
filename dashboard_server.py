@@ -107,7 +107,10 @@ _STATUS_FIELDS = frozenset({
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
-_TRADE_FIELDS = frozenset({"timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash", "profit_eth"})
+_TRADE_FIELDS = frozenset({
+    "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
+    "profit_eth", "gas_fee_eth",
+})
 _EVENT_FIELDS = frozenset({
     "timestamp", "level", "code", "message", "count", "tx_hash",
     "source_amount", "source_asset", "usdg_amount",
@@ -1102,6 +1105,7 @@ DASHBOARD_HTML = """\
   .history-detail { color: #cbd5e1; }
   .history-detail.positive { color: #4ade80; }
   .history-detail.negative { color: #f87171; }
+  .history-gas { display: block; margin-top: 0.15rem; color: #94a3b8; font-size: 0.68rem; }
   .history-when { color: #64748b; text-align: right; white-space: nowrap; }
   .history-tx { display: block; margin-top: 0.2rem; color: #f8fafc; font-size: 0.7rem; text-decoration: none; }
   .history-tx:hover { text-decoration: underline; }
@@ -1126,8 +1130,9 @@ DASHBOARD_HTML = """\
   .sigil-meta { color: #64748b; font: 0.68rem monospace; text-align: center; margin: 0.35rem 0 0.55rem; letter-spacing: 0.08em; }
   .dex-chart { width: 100%; height: 520px; border: 1px solid #334155; border-radius: 0.375rem; margin-top: 0.5rem; background: #0f172a; }
   .trades { margin-top: 0.75rem; }
-  .trade { display: grid; grid-template-columns: 3.5rem 1fr auto; gap: 0.5rem; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
+  .trade { display: grid; grid-template-columns: 3.5rem 1fr auto auto; gap: 0.5rem; align-items: center; background: #0f172a; border-radius: 0.25rem; padding: 0.45rem; margin-top: 0.35rem; font-size: 0.75rem; }
   .trade .buy { color: #22c55e; } .trade .sell { color: #ef4444; }
+  .trade-gas { color: #94a3b8; font-size: 0.66rem; white-space: nowrap; }
   .trade a { color: #f1f5f9; text-decoration: none; }
   .trade a:hover { text-decoration: underline; }
   .events { margin-top: 0.75rem; }
@@ -1808,6 +1813,8 @@ DASHBOARD_HTML = """\
         const profit = parseFloat(entry.trade.profit_eth);
         const received = parseFloat(entry.trade.eth_amount) || 0;
         const detail = Number.isFinite(profit) ? (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH profit' : received.toFixed(8) + ' ETH received';
+        const gasFee = parseFloat(entry.trade.gas_fee_eth);
+        const gasHtml = Number.isFinite(gasFee) ? '<span class="history-gas">⛽ ' + esc(gasFee.toFixed(8)) + ' ETH</span>' : '';
         const detailClass = Number.isFinite(profit) ? (profit >= 0 ? ' positive' : ' negative') : '';
         let bankingHtml = '<div class="history-unbanked">No successful banking recorded for this sell</div>';
         if (entry.banking) {
@@ -1818,7 +1825,7 @@ DASHBOARD_HTML = """\
           bankingHtml = '<div class="history-banking">🏦 Banked · ' + bankingDetail + ' · ' + esc(historyAgo(entry.banking.timestamp)) + (bankingTxUrl ? '<a class="history-tx" href="' + esc(bankingTxUrl) + '" target="_blank" rel="noopener">Banking transaction ↗</a>' : '') + '</div>';
         }
         return '<div class="history-row"><button class="history-coin" type="button" data-history-focus-bot="' + esc(entry.botId) + '">' + esc(entry.coin) + '</button>' +
-          '<div class="history-detail' + detailClass + '">' + detail + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">Sell transaction ↗</a>' : '') + bankingHtml + '</div>' +
+          '<div class="history-detail' + detailClass + '">' + detail + gasHtml + (txUrl ? '<a class="history-tx" href="' + esc(txUrl) + '" target="_blank" rel="noopener">Sell transaction ↗</a>' : '') + bankingHtml + '</div>' +
           '<div class="history-when" title="' + esc(entry.timestamp || '') + '">' + esc(historyAgo(entry.timestamp)) + '</div></div>';
       }).join('');
     }
@@ -2876,9 +2883,11 @@ DASHBOARD_HTML = """\
         html += '<details class="trades" data-trades-key="' + esc(botKey) + '"' + (openTrades.has(botKey) ? ' open' : '') + '><summary class="toggle-raw">Trade history (' + recentTrades.length + ')</summary>';
         recentTrades.forEach(function(trade) {
           const txUrl = chain && trade.tx_hash ? chain.explorer.replace('/address/', '/tx/') + trade.tx_hash : '';
+          const gasFee = parseFloat(trade.gas_fee_eth);
+          const gasHtml = Number.isFinite(gasFee) ? '<small class="trade-gas">⛽ ' + esc(gasFee.toFixed(8)) + ' ETH</small>' : '';
           html += '<div class="trade"><strong class="' + esc(trade.side) + '">' + esc(String(trade.side).toUpperCase()) + '</strong>' +
             '<span>' + esc(parseFloat(trade.eth_amount || 0).toFixed(8)) + ' ETH · ' + esc(formatTokenAmount(trade.token_amount)) + ' tokens</span>' +
-            (txUrl ? '<a href="' + esc(txUrl) + '" target="_blank" rel="noopener noreferrer">tx</a>' : '') + '</div>';
+            gasHtml + (txUrl ? '<a href="' + esc(txUrl) + '" target="_blank" rel="noopener noreferrer">tx</a>' : '') + '</div>';
         });
         html += '</details>';
       }

@@ -15,6 +15,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatTokenAmount(trade.token_amount)", body)
         self.assertNotIn("parseFloat(pos.buy_amount_token || 0).toFixed(0)", body)
 
+    def test_trade_histories_show_confirmed_gas_fee_when_available(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("trade.gas_fee_eth", body)
+        self.assertIn('class="trade-gas">⛽ ', body)
+        self.assertIn('class="history-gas">⛽ ', body)
+
     def test_scout_panel_is_collapsed_by_default_with_route_diagnostics(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('<details class="scout-panel" id="scout-panel">', body)

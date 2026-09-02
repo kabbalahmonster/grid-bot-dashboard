@@ -19,7 +19,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "swap_slippage_percent": 5.0,
             "private_config": "do-not-persist",
             "positions": [{"id": "1", "pnl": 5.0, "private_note": "nope"}],
-            "trades_history": [{"side": "buy", "tx_hash": "0xabc", "api_key": "nope"}],
+            "trades_history": [{"side": "buy", "tx_hash": "0xabc", "gas_fee_eth": 0.00001234, "api_key": "nope"}],
             "events": [{"level": "warning", "message": "safe", "provider_response": "nope"}],
             "capacity_warning": {"max_positions": 10, "internal_reason": "nope"},
             "sell_attempt": {
@@ -48,7 +48,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "token_tax_detection_observations": 2,
                 "swap_slippage_percent": 5.0,
                 "positions": [{"id": "1", "pnl": 5.0}],
-                "trades_history": [{"side": "buy", "tx_hash": "0xabc"}],
+                "trades_history": [{"side": "buy", "tx_hash": "0xabc", "gas_fee_eth": 0.00001234}],
                 "events": [{"level": "warning", "message": "safe"}],
                 "capacity_warning": {"max_positions": 10},
                 "sell_attempt": {
