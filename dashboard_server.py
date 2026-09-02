@@ -1021,6 +1021,10 @@ DASHBOARD_HTML = """\
   .metric .value { color: #f1f5f9; font-weight: 500; }
   .metric .value a { color: inherit; text-decoration: none; }
   .metric .value a:hover { text-decoration: underline; }
+  .address-value { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .copy-address { appearance: none; border: 0; padding: 0.05rem; background: transparent; color: #94a3b8; font: inherit; line-height: 1; cursor: pointer; }
+  .copy-address:hover, .copy-address:focus-visible { color: #67e8f9; outline: none; }
+  .copy-address.copied { color: #22c55e; }
   .metric .value.positive { color: #22c55e; }
   .metric .value.negative { color: #ef4444; }
   details.market-movement { border-bottom: 1px solid #1e293b; }
@@ -2168,6 +2172,36 @@ DASHBOARD_HTML = """\
     return value.length > 9 ? value.slice(0, 5) + '…' + value.slice(-3) : value;
   }
 
+  function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(value);
+    return new Promise(function(resolve, reject) {
+      const input = document.createElement('textarea');
+      input.value = value;
+      input.setAttribute('readonly', '');
+      input.style.position = 'fixed';
+      input.style.opacity = '0';
+      document.body.appendChild(input);
+      input.select();
+      try {
+        if (!document.execCommand('copy')) throw new Error('copy command failed');
+        resolve();
+      } catch (error) {
+        reject(error);
+      } finally {
+        input.remove();
+      }
+    });
+  }
+
+  function addressValue(address, url, label) {
+    if (!address) return null;
+    const copyButton = '<button class="copy-address" type="button" data-copy-address="' + esc(address) + '" aria-label="Copy ' + esc(label) + ' address" title="Copy ' + esc(label) + ' address">📋</button>';
+    const addressLink = url
+      ? '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" title="' + esc(address) + '">' + esc(shortenAddress(address)) + '</a>'
+      : '<span title="' + esc(address) + '">' + esc(shortenAddress(address)) + '</span>';
+    return '<span class="address-value">' + copyButton + addressLink + '</span>';
+  }
+
   function formatCompactUsd(value) {
     const amount = Number(value);
     if (!Number.isFinite(amount)) return '—';
@@ -2716,16 +2750,12 @@ DASHBOARD_HTML = """\
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
         ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Treasury Sent', 'treasury_sent_usdg'], ['Token Balance', 'token_balance'],
-        ['Wallet', 'wallet_link'], ['Token', 'token_link'],
+        ['Wallet', 'wallet_link'], ['Contract', 'token_link'],
         ['RPC', 'rpc_status'], ['Polling', 'poll_interval_seconds'], ['Uptime', 'uptime_seconds'],
       ];
 
-      d.wallet_link = d.wallet_address && chain
-        ? '<a href="' + esc(chain.explorer + d.wallet_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.wallet_address) + '">' + esc(shortenAddress(d.wallet_address)) + '</a>'
-        : (d.wallet_address ? esc(shortenAddress(d.wallet_address)) : null);
-      d.token_link = d.token_address && chain
-        ? '<a href="' + esc(chain.explorer + d.token_address) + '" target="_blank" rel="noopener noreferrer" title="' + esc(d.token_address) + '">' + esc(shortenAddress(d.token_address)) + '</a>'
-        : (d.token_address ? esc(shortenAddress(d.token_address)) : null);
+      d.wallet_link = addressValue(d.wallet_address, d.wallet_address && chain ? chain.explorer + d.wallet_address : '', 'wallet');
+      d.token_link = addressValue(d.token_address, d.token_address && chain ? chain.explorer + d.token_address : '', 'contract');
 
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
@@ -3026,6 +3056,24 @@ DASHBOARD_HTML = """\
     render(true);
   });
   container.addEventListener('click', function(event) {
+    const copyButton = event.target.closest('[data-copy-address]');
+    if (copyButton) {
+      copyText(copyButton.dataset.copyAddress).then(function() {
+        copyButton.textContent = '✓';
+        copyButton.classList.add('copied');
+        copyButton.title = 'Copied';
+        window.setTimeout(function() {
+          if (!copyButton.isConnected) return;
+          copyButton.textContent = '📋';
+          copyButton.classList.remove('copied');
+          copyButton.title = 'Copy address';
+        }, 1200);
+      }).catch(function() {
+        copyButton.textContent = '!';
+        copyButton.title = 'Copy failed';
+      });
+      return;
+    }
     if (!event.target.closest('[data-bag-currency-toggle]')) return;
     profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
     localStorage.setItem('dashboard-profit-currency', profitCurrency);
