@@ -393,7 +393,9 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
     "status": "quote_below_minimum",
     "position_id": "11",
     "pnl_percent": 8.4,
-    "quoted_profit_eth": 0.000087,
+    "quoted_profit_eth": 0.000206,
+    "projected_gas_eth": 0.000122,
+    "projected_net_profit_eth": 0.000084,
     "minimum_profit_eth": 0.0001
   },
   "chain_id": 4663,
@@ -433,7 +435,7 @@ contribute zero or omit the corresponding metric until updated.
 
 `usdg_balance` is an optional read-only ERC-20 balance, summed as **USDG** in the fleet header. `treasury_sent_usdg` is the bot's all-time total of successful USDG treasury sweeps from its local receipt log; the dashboard renders it in **More info** and sums it in the fleet header. Older bots remain compatible and contribute zero until updated. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
 
-`sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, compact quoted/minimum ETH values. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
+`sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, projected net profit after sell gas versus minimum profit. Older payloads fall back to quoted profit minus projected gas, then gross quoted profit when no gas estimate was reported. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
 Each card independently displays Dexscreener **Market Cap** immediately above
 AVG P&L. When Dexscreener does not provide circulating market cap but does

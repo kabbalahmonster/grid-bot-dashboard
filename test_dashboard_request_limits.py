@@ -248,6 +248,15 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertNotIn('Sell checks active: 0</span>', body)
         self.assertNotIn('Needs new positions: 0</span>', body)
 
+    def test_sell_check_displays_projected_net_profit_after_gas(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn("d.sell_attempt.projected_net_profit_eth", body)
+        self.assertIn("d.sell_attempt.projected_gas_eth", body)
+        self.assertIn("quoted - projectedGas", body)
+        self.assertIn("Projected net profit after sell gas / minimum profit", body)
+        self.assertIn("ETH net", body)
+
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("['Buy Point', 'buy_point_percent']", body)

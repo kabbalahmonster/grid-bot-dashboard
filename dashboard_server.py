@@ -120,6 +120,7 @@ _NEEDS_GAS_FIELDS = frozenset({"balance_eth", "reserve_eth", "shortfall_eth"})
 _FUNDING_WARNING_FIELDS = frozenset({"asset", "trade_balance", "minimum_trade_balance", "available_slots", "reason"})
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
+    "projected_gas_eth", "projected_net_profit_eth",
     "observed_fee_percent", "matching_observations", "confirmations_required",
     "detected_fee_percent", "tracked_sell_amount_raw", "wallet_balance_raw", "deficit_raw",
 })
@@ -2738,10 +2739,15 @@ DASHBOARD_HTML = """\
       }
 
       if (d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum') {
+        const reportedNet = parseFloat(d.sell_attempt.projected_net_profit_eth);
         const quoted = parseFloat(d.sell_attempt.quoted_profit_eth);
+        const projectedGas = parseFloat(d.sell_attempt.projected_gas_eth);
+        const net = Number.isFinite(reportedNet)
+          ? reportedNet
+          : (Number.isFinite(quoted) && Number.isFinite(projectedGas) ? quoted - projectedGas : quoted);
         const minimum = parseFloat(d.sell_attempt.minimum_profit_eth);
-        const detail = Number.isFinite(quoted) && Number.isFinite(minimum)
-          ? '<span class="sell-attempt-detail" title="Quoted profit / minimum profit">' + esc(quoted.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH</span>'
+        const detail = Number.isFinite(net) && Number.isFinite(minimum)
+          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit">' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net</span>'
           : '';
         html += '<div class="sell-attempt" role="status" aria-label="Sell attempted; quote is below minimum">' +
           '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
