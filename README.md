@@ -246,6 +246,12 @@ It is used only for read-only quote requests. A dedicated Scout key is preferred
 so watch scans cannot consume the trading fleet's shared quota; until then,
 avoid aggressive scan intervals or repeated sampling.
 
+Scout uses the tested-safe `curl/8.0` User-Agent for Uniswap quotes. Uniswap's
+edge has intermittently rejected byte-identical requests carrying the default
+`python-requests/*` User-Agent with a misleading packet-buffer 409 before a
+normal request ID is assigned. Provider errors retain the returned gateway
+detail and request ID, when present.
+
 `TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
 an ETH balance at or below that sum triggers one `funds` alert. It re-arms
 after recovery. `TELEGRAM_UNBANKED_USDG_THRESHOLD` triggers once at the

@@ -103,6 +103,24 @@ class TestDoomScout(unittest.TestCase):
         self.assertEqual(report["verdict"], "pass")
         self.assertEqual(scout._provider_roundtrip.call_count, 2)
 
+    def test_uniswap_quote_uses_safe_user_agent(self):
+        scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")
+        response = Mock(status_code=200, headers={})
+        response.json.return_value = {"quote": {"output": {"amount": "123"}}}
+        scout.http.post = Mock(return_value=response)
+        self.assertEqual(scout._uniswap_quote(TOKEN, "0x" + "34" * 20, 100, 4663), 123)
+        headers = scout.http.post.call_args.kwargs["headers"]
+        self.assertEqual(headers["User-Agent"], "curl/8.0")
+        self.assertEqual(headers["Accept"], "application/json")
+
+    def test_uniswap_quote_surfaces_gateway_error_and_request_id(self):
+        scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")
+        response = Mock(status_code=409, headers={"x-request-id": "trace-1"})
+        response.json.return_value = {"error": "packet failure"}
+        scout.http.post = Mock(return_value=response)
+        with self.assertRaisesRegex(LookupError, "packet failure; request_id=trace-1"):
+            scout._uniswap_quote(TOKEN, "0x" + "34" * 20, 100, 4663)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -307,12 +307,19 @@ class DoomScout:
         response = self.http.post("https://trade-api.gateway.uniswap.org/v1/quote", headers={
             "x-api-key": self.uniswap_api_key, "Content-Type": "application/json", "x-permit2-disabled": "true",
             "x-universal-router-version": "2.1.1", "x-erc20eth-enabled": "true",
+            "User-Agent": "curl/8.0", "Accept": "application/json",
         }, json={"tokenInChainId": chain_id, "tokenOutChainId": chain_id, "tokenIn": token_in,
                  "tokenOut": token_out, "swapper": "0x0000000000000000000000000000000000000001",
                  "amount": str(int(amount)), "type": "EXACT_INPUT", "slippageTolerance": 2.0}, timeout=self.timeout)
-        data = response.json()
+        try:
+            data = response.json()
+        except (ValueError, TypeError):
+            data = {}
         if response.status_code != 200:
-            raise LookupError(str(data.get("detail") or data.get("message") or f"HTTP {response.status_code}"))
+            detail = data.get("error") or data.get("detail") or data.get("message")
+            request_id = response.headers.get("x-request-id", "")
+            suffix = f"; request_id={request_id}" if request_id else ""
+            raise LookupError(str(detail or f"HTTP {response.status_code}") + suffix)
         return int((((data.get("quote") or {}).get("output") or {}).get("amount")) or 0)
 
     def _provider_roundtrip(self, provider, address, chain_id, budget_wei):
