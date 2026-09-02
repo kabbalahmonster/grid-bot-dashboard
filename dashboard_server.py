@@ -2023,11 +2023,17 @@ DASHBOARD_HTML = """\
   }
 
   function needsGasState(state) {
-    if (state && state.needs_gas) return state.needs_gas;
-    const balance = parseFloat(state && state.eth_balance);
-    const reserve = parseFloat(state && state.gas_reserve_eth);
-    if (!Number.isFinite(balance) || !Number.isFinite(reserve) || reserve <= 0 || balance >= reserve) return null;
-    return { balance_eth: balance, reserve_eth: reserve, shortfall_eth: reserve - balance };
+    const reported = state && state.needs_gas;
+    const balance = parseFloat(state && state.eth_balance !== undefined ? state.eth_balance : reported && reported.balance_eth);
+    const reserve = parseFloat(state && state.gas_reserve_eth !== undefined ? state.gas_reserve_eth : reported && reported.reserve_eth);
+    const warningThreshold = reserve * 0.5;
+    if (!Number.isFinite(balance) || !Number.isFinite(reserve) || reserve <= 0 || balance >= warningThreshold) return null;
+    return {
+      balance_eth: balance,
+      reserve_eth: reserve,
+      warning_threshold_eth: warningThreshold,
+      shortfall_eth: warningThreshold - balance,
+    };
   }
 
   function updateSummary(botIds) {
@@ -2697,10 +2703,12 @@ DASHBOARD_HTML = """\
       if (gasWarning) {
         const gasBalance = parseFloat(gasWarning.balance_eth);
         const gasReserve = parseFloat(gasWarning.reserve_eth);
+        const gasThreshold = parseFloat(gasWarning.warning_threshold_eth);
         const gasShortfall = parseFloat(gasWarning.shortfall_eth);
         html += '<div class="gas-alert" role="alert"><strong>⛽ NEEDS GAS — TRADES MAY FAIL</strong>' +
           'ETH balance: ' + esc(Number.isFinite(gasBalance) ? gasBalance.toFixed(8) : '?') +
           ' · Reserve: ' + esc(Number.isFinite(gasReserve) ? gasReserve.toFixed(8) : '?') +
+          ' · Warning below: ' + esc(Number.isFinite(gasThreshold) ? gasThreshold.toFixed(8) : '?') +
           ' · Shortfall: ' + esc(Number.isFinite(gasShortfall) ? gasShortfall.toFixed(8) : '?') + ' ETH</div>';
       }
 

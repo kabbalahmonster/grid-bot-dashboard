@@ -213,10 +213,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
 
         self.assertIn("function needsGasState(state)", body)
-        self.assertIn("balance >= reserve", body)
+        self.assertIn("const warningThreshold = reserve * 0.5", body)
+        self.assertIn("balance >= warningThreshold", body)
         self.assertIn("Boolean(needsGasState(state))", body)
         self.assertIn("⛽ Needs gas:", body)
         self.assertIn("⛽ NEEDS GAS — TRADES MAY FAIL", body)
+        self.assertIn("Warning below:", body)
         self.assertIn("gasWarning.shortfall_eth", body)
 
     def test_dashboard_surfaces_buy_blocked_funding_warning(self):
