@@ -93,6 +93,11 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertIn('data-market-window="h6"', body)
         self.assertIn("openMarketMovements", body)
 
+    def test_more_info_shows_estimated_moonbag_value(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("['Est. Moonbag Value', 'estimated_moonbag_value_eth']", body)
+        self.assertIn("key === 'estimated_moonbag_value_eth'", body)
+
     @patch("dashboard_server.http_requests.get")
     def test_missing_or_invalid_movements_are_null(self, get):
         get.return_value = response([

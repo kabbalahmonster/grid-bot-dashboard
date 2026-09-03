@@ -97,6 +97,7 @@ _PRIVATE_KEY_PATTERNS = [
 _STATUS_FIELDS = frozenset({
     "dashboard_schema_version", "bot_id", "timestamp", "uptime_seconds",
     "price", "eth_balance", "gas_reserve_eth", "usdg_balance", "treasury_sent_usdg", "token_balance",
+    "moonbag_balance", "estimated_moonbag_value_eth",
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "sell_attempt",
@@ -2771,6 +2772,7 @@ DASHBOARD_HTML = """\
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
         ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Treasury Sent', 'treasury_sent_usdg'], ['Token Balance', 'token_balance'],
+        ['Est. Moonbag Value', 'estimated_moonbag_value_eth'],
         ['Wallet', 'wallet_link'], ['Contract', 'token_link'],
         ['RPC', 'rpc_status'], ['Polling', 'poll_interval_seconds'], ['Uptime', 'uptime_seconds'],
       ];
@@ -2815,7 +2817,7 @@ DASHBOARD_HTML = """\
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
           } else if (key === 'poll_interval_seconds') {
             val = parseFloat(val) + 's';
-          } else if (key === 'next_buy_estimated_eth' || key === 'gas_reserve_eth') {
+          } else if (key === 'next_buy_estimated_eth' || key === 'gas_reserve_eth' || key === 'estimated_moonbag_value_eth') {
             val = parseFloat(val).toFixed(5).replace(/\\.?0+$/, '') + ' ETH';
           } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {
             val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : ((key === 'usdg_balance' || key === 'treasury_sent_usdg') ? 2 : 0));
