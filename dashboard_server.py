@@ -100,7 +100,7 @@ _STATUS_FIELDS = frozenset({
     "moonbag_balance", "estimated_moonbag_value_eth",
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
-    "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "sell_attempt",
+    "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "buy_attempt", "sell_attempt",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
@@ -119,6 +119,11 @@ _EVENT_FIELDS = frozenset({
 _CAPACITY_WARNING_FIELDS = frozenset({"highest_position_pnl", "buy_threshold", "max_positions"})
 _NEEDS_GAS_FIELDS = frozenset({"balance_eth", "reserve_eth", "shortfall_eth"})
 _FUNDING_WARNING_FIELDS = frozenset({"asset", "trade_balance", "minimum_trade_balance", "available_slots", "reason"})
+_BUY_ATTEMPT_FIELDS = frozenset({
+    "status", "position_id", "quote_provider", "projected_gas_eth",
+    "maximum_gas_eth", "gas_limit", "gas_price_wei", "buy_amount_eth",
+    "available_slots", "phase",
+})
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
     "projected_gas_eth", "projected_net_profit_eth",
@@ -446,6 +451,7 @@ def _allowlisted_status_payload(data):
         ("capacity_warning", _CAPACITY_WARNING_FIELDS),
         ("needs_gas", _NEEDS_GAS_FIELDS),
         ("funding_warning", _FUNDING_WARNING_FIELDS),
+        ("buy_attempt", _BUY_ATTEMPT_FIELDS),
         ("sell_attempt", _SELL_ATTEMPT_FIELDS),
         ("sigil", _SIGIL_FIELDS),
         ("realized_profit_periods", _REALIZED_PERIOD_FIELDS),
@@ -968,6 +974,8 @@ DASHBOARD_HTML = """\
   .summary-item.needs-funds .bot-names { color: #c4b5fd; }
   .summary-item.sell-checks-active { background: #164e63; border-color: #22d3ee; color: #cffafe; font-weight: 700; }
   .summary-item.sell-checks-active .bot-names { color: #67e8f9; }
+  .summary-item.buy-gas-blocked { background: #78350f; border-color: #f59e0b; color: #fef3c7; font-weight: 700; }
+  .summary-item.buy-gas-blocked .bot-names { color: #fbbf24; }
   .needs-position-link { appearance: none; border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: inherit; text-decoration: underline; text-underline-offset: 0.15rem; cursor: pointer; }
   .needs-position-link:hover, .needs-position-link:focus-visible { color: #fef3c7; outline: none; }
   .card:focus { outline: 2px solid #f59e0b; outline-offset: 3px; }
@@ -1019,6 +1027,8 @@ DASHBOARD_HTML = """\
   .sell-attempt-copy { min-width: 0; flex: 1; }
   .sell-attempt-copy strong { display: block; color: #67e8f9; font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.1rem; }
   .sell-attempt-detail { color: #94a3b8; font-size: 0.7rem; white-space: nowrap; }
+  .buy-attempt { display: flex; align-items: center; gap: 0.65rem; background: linear-gradient(90deg, rgba(120, 53, 15, 0.32), rgba(15, 23, 42, 0.3)); border: 1px solid #d97706; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
+  .buy-attempt strong { color: #fbbf24; display: block; font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.1rem; }
   @keyframes sell-pulse { 70%, 100% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); } }
   .card h2 { font-size: 1rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .card .bot-id { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; margin-bottom: 0.75rem; }
@@ -2066,6 +2076,10 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(state.sell_attempt) && reportAge(state.received_at).status === 'running';
     });
+    const buyGasBlocked = Object.keys(bots).filter(function(id) {
+      const state = bots[id];
+      return Boolean(state.buy_attempt && state.buy_attempt.status === 'projected_gas_above_cap') && reportAge(state.received_at).status === 'running';
+    });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const stale = states.filter(function(d) { return reportAge(d.received_at).status === 'stale'; }).length;
     const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
@@ -2120,7 +2134,13 @@ DASHBOARD_HTML = """\
       return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
     };
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
-      const nextSummaryHtml = (activeSellChecks.length
+      const nextSummaryHtml = (buyGasBlocked.length
+        ? '<span class="summary-item buy-gas-blocked" aria-live="polite">● Buy gas blocked: ' + buyGasBlocked.length +
+          ' <span class="bot-names">(' + buyGasBlocked.map(function(id) {
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          }).join(', ') + ')</span></span>'
+        : '') +
+      (activeSellChecks.length
         ? '<span class="summary-item sell-checks-active" aria-live="polite">● Sell checks active: ' + activeSellChecks.length +
           ' <span class="bot-names">(' + activeSellChecks.map(function(id) {
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
@@ -2741,6 +2761,22 @@ DASHBOARD_HTML = """\
           esc(Number.isFinite(fundingBalance) ? fundingBalance.toFixed(8) : '?') +
           ' · Minimum: ' + esc(Number.isFinite(fundingMinimum) ? fundingMinimum.toFixed(8) : '?') +
           ' · Open slots: ' + esc(d.funding_warning.available_slots ?? '?') + '</div>';
+      }
+
+      if (d.buy_attempt && d.buy_attempt.status === 'projected_gas_above_cap') {
+        const attempt = d.buy_attempt;
+        const projected = parseFloat(attempt.projected_gas_eth);
+        const maximum = parseFloat(attempt.maximum_gas_eth);
+        const amount = parseFloat(attempt.buy_amount_eth);
+        html += '<div class="buy-attempt" role="status" aria-label="Buy attempted but blocked by projected gas fee">' +
+          '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
+          '<span class="sell-attempt-copy"><strong>BUY ATTEMPT — GAS CAP BLOCKED</strong>' +
+          'Projected fee ' + esc(Number.isFinite(projected) ? projected.toFixed(8) : '?') +
+          ' ETH exceeds cap ' + esc(Number.isFinite(maximum) ? maximum.toFixed(8) : '?') +
+          ' ETH · source ' + esc(attempt.quote_provider || '?') +
+          (Number.isFinite(amount) ? ' · buy ' + esc(amount.toFixed(8)) + ' ETH' : '') +
+          (attempt.position_id ? ' · position #' + esc(attempt.position_id) : '') +
+          '</span></div>';
       }
 
       if (hasBalanceMismatch) {

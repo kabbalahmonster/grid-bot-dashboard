@@ -443,6 +443,15 @@ contribute zero or omit the corresponding metric until updated.
 
 `sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, projected net profit after sell gas versus minimum profit. Older payloads fall back to quoted profit minus projected gas, then gross quoted profit when no gas estimate was reported. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
+`buy_attempt` is optional transient state for a buy that reached an executable
+quote but was refused because projected gas exceeded the configured buy cap.
+The fleet summary shows an amber **Buy gas blocked** flag with clickable bot
+names. The bot card shows projected fee versus cap, the actual quote provider,
+intended ETH amount, and classic-grid position ID when applicable. It is live
+operational state rather than a persistent Event; because buys run after status
+reporting, it appears on the following report and clears when the next buy check
+does not reproduce the block.
+
 Each card independently displays Dexscreener **Market Cap** immediately above
 AVG P&L. When Dexscreener does not provide circulating market cap but does
 provide fully diluted valuation, the card says **FDV** instead; the two values

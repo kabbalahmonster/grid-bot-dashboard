@@ -267,6 +267,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("QUOTE DISAGREEMENT — SELL BLOCKED", body)
         self.assertIn("quote_divergence_percent", body)
 
+    def test_buy_gas_block_summary_and_card_show_fee_cap_and_provider(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn("const buyGasBlocked = Object.keys(bots).filter", body)
+        self.assertIn("Buy gas blocked: ' + buyGasBlocked.length", body)
+        self.assertIn("BUY ATTEMPT — GAS CAP BLOCKED", body)
+        self.assertIn("attempt.projected_gas_eth", body)
+        self.assertIn("attempt.maximum_gas_eth", body)
+        self.assertIn("attempt.quote_provider", body)
+
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("['Buy Point', 'buy_point_percent']", body)
