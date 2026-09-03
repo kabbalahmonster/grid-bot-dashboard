@@ -122,6 +122,8 @@ _FUNDING_WARNING_FIELDS = frozenset({"asset", "trade_balance", "minimum_trade_ba
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
     "projected_gas_eth", "projected_net_profit_eth",
+    "quote_provider", "previous_quote_provider", "quoted_return_eth",
+    "previous_quoted_return_eth", "quote_divergence_percent",
     "observed_fee_percent", "matching_observations", "confirmations_required",
     "detected_fee_percent", "tracked_sell_amount_raw", "wallet_balance_raw", "deficit_raw",
 })
@@ -2757,12 +2759,23 @@ DASHBOARD_HTML = """\
           ? reportedNet
           : (Number.isFinite(quoted) && Number.isFinite(projectedGas) ? quoted - projectedGas : quoted);
         const minimum = parseFloat(d.sell_attempt.minimum_profit_eth);
+        const provider = d.sell_attempt.quote_provider ? ' · ' + esc(d.sell_attempt.quote_provider) : '';
         const detail = Number.isFinite(net) && Number.isFinite(minimum)
-          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit">' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net</span>'
+          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit">' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net' + provider + '</span>'
           : '';
         html += '<div class="sell-attempt" role="status" aria-label="Sell attempted; quote is below minimum">' +
           '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
           '<span class="sell-attempt-copy"><strong>SELL CHECK ACTIVE</strong>Waiting for minimum quote</span>' + detail + '</div>';
+      }
+
+      if (d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed')) {
+        const attempt = d.sell_attempt;
+        const disagreement = attempt.status === 'quote_provider_disagreement';
+        html += '<div class="sell-attempt" role="alert" aria-label="Sell blocked while quote provider changes">' +
+          '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
+          '<span class="sell-attempt-copy"><strong>' + (disagreement ? 'QUOTE DISAGREEMENT — SELL BLOCKED' : 'QUOTE PROVIDER CHANGED — CONFIRMING') + '</strong>' +
+          esc(attempt.previous_quote_provider || '?') + ' → ' + esc(attempt.quote_provider || '?') +
+          ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
 
       d.buys = d.buys ?? 0;

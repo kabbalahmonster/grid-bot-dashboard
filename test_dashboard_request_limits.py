@@ -263,6 +263,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("quoted - projectedGas", body)
         self.assertIn("Projected net profit after sell gas / minimum profit", body)
         self.assertIn("ETH net", body)
+        self.assertIn("d.sell_attempt.quote_provider", body)
+        self.assertIn("QUOTE DISAGREEMENT — SELL BLOCKED", body)
+        self.assertIn("quote_divergence_percent", body)
 
     def test_more_info_shows_estimated_next_buy_and_gas_reserve(self):
         body = self.client.get("/").get_data(as_text=True)
