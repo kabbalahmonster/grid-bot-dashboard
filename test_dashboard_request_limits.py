@@ -264,6 +264,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Projected net profit after sell gas / minimum profit", body)
         self.assertIn("ETH net", body)
         self.assertIn("d.sell_attempt.quote_provider", body)
+        self.assertIn('class="sell-attempt-provider"', body)
         self.assertIn("QUOTE DISAGREEMENT — SELL BLOCKED", body)
         self.assertIn("quote_divergence_percent", body)
 

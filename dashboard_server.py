@@ -1026,7 +1026,8 @@ DASHBOARD_HTML = """\
   .sell-attempt-dot { width: 0.55rem; height: 0.55rem; flex: 0 0 auto; border-radius: 50%; background: #22d3ee; box-shadow: 0 0 0 0 rgba(34, 211, 238, 0.4); animation: sell-pulse 1.7s ease-out infinite; }
   .sell-attempt-copy { min-width: 0; flex: 1; }
   .sell-attempt-copy strong { display: block; color: #67e8f9; font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.1rem; }
-  .sell-attempt-detail { color: #94a3b8; font-size: 0.7rem; white-space: nowrap; }
+  .sell-attempt-detail { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; color: #94a3b8; font-size: 0.7rem; white-space: nowrap; }
+  .sell-attempt-provider { color: #64748b; font-size: 0.64rem; line-height: 1.2; text-transform: uppercase; }
   .buy-attempt { display: flex; align-items: center; gap: 0.65rem; background: linear-gradient(90deg, rgba(120, 53, 15, 0.32), rgba(15, 23, 42, 0.3)); border: 1px solid #d97706; color: #fef3c7; border-radius: 0.35rem; padding: 0.6rem 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; }
   .buy-attempt strong { color: #fbbf24; display: block; font-size: 0.7rem; letter-spacing: 0.08em; margin-bottom: 0.1rem; }
   @keyframes sell-pulse { 70%, 100% { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0); } }
@@ -2795,9 +2796,11 @@ DASHBOARD_HTML = """\
           ? reportedNet
           : (Number.isFinite(quoted) && Number.isFinite(projectedGas) ? quoted - projectedGas : quoted);
         const minimum = parseFloat(d.sell_attempt.minimum_profit_eth);
-        const provider = d.sell_attempt.quote_provider ? ' · ' + esc(d.sell_attempt.quote_provider) : '';
+        const provider = d.sell_attempt.quote_provider
+          ? '<span class="sell-attempt-provider">' + esc(d.sell_attempt.quote_provider) + '</span>'
+          : '';
         const detail = Number.isFinite(net) && Number.isFinite(minimum)
-          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit">' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net' + provider + '</span>'
+          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit"><span>' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net</span>' + provider + '</span>'
           : '';
         html += '<div class="sell-attempt" role="status" aria-label="Sell attempted; quote is below minimum">' +
           '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
