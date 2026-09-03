@@ -1213,7 +1213,7 @@ DASHBOARD_HTML = """\
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <button id="tax-filter" type="button" aria-pressed="false" title="Show only manually declared or auto-detected taxed tokens">Tax coins</button>
-    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="moonbag-value">Moonbag value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
       <div class="notification-menu" id="notification-menu" hidden>
@@ -1316,7 +1316,7 @@ DASHBOARD_HTML = """\
   let notificationsMasterEnabled = localStorage.getItem('dashboard-notifications-enabled') === 'true';
   try { notificationPreferences = Object.assign(notificationPreferences, JSON.parse(localStorage.getItem('dashboard-notification-preferences') || '{}')); } catch (_) {}
   const defaultSortDirections = {
-    name: 'asc', 'estimated-value': 'desc', 'next-buy-estimate': 'desc', 'needs-positions': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
+    name: 'asc', 'estimated-value': 'desc', 'moonbag-value': 'desc', 'next-buy-estimate': 'desc', 'needs-positions': 'desc', 'market-cap': 'desc', 'day-movement': 'desc', pnl: 'desc', 'top-position-pnl': 'desc', profit: 'desc', buys: 'desc', sells: 'desc', 'realized-profit': 'desc', 'treasury-sent': 'desc',
     'position-utilization': 'desc', 'eth-balance': 'desc', 'usdg-balance': 'desc', status: 'asc'
   };
   const storedSortMode = localStorage.getItem('dashboard-sort-mode');
@@ -2590,6 +2590,16 @@ DASHBOARD_HTML = """\
         if (aValue === null && bValue === null) return a.localeCompare(b);
         if (aValue === null) return 1;
         if (bValue === null) return -1;
+        result = aValue - bValue;
+      }
+      else if (mode === 'moonbag-value') {
+        const aRaw = av.estimated_moonbag_value_eth, bRaw = bv.estimated_moonbag_value_eth;
+        const aValue = Number(aRaw), bValue = Number(bRaw);
+        const aKnown = aRaw !== null && aRaw !== '' && Number.isFinite(aValue);
+        const bKnown = bRaw !== null && bRaw !== '' && Number.isFinite(bValue);
+        if (!aKnown && !bKnown) return a.localeCompare(b);
+        if (!aKnown) return 1;
+        if (!bKnown) return -1;
         result = aValue - bValue;
       }
       else if (mode === 'next-buy-estimate') {

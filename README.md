@@ -592,7 +592,7 @@ Dexscreener failures. Routine SSE updates do not reload an open chart.
 
 The fleet toolbar can search bot IDs, display names, token symbols, groups, and provider names;
 filter by chain and swap provider (including older bots with an unreported provider);
-and sort by name, AVG P&L, highest individual position P&L, session profit, session buy or sell count, realized profit, confirmed USDG treasury sent,
+and sort by name, estimated portfolio or moonbag value, AVG P&L, highest individual position P&L, session profit, session buy or sell count, realized profit, confirmed USDG treasury sent,
 position utilization (`filled_positions / max_positions`), ETH balance, USDG balance, or status.
 Default directions are name ascending, numeric metrics descending, and status
 running-to-offline. The direction button reverses the active sort.

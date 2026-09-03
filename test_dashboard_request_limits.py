@@ -67,6 +67,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('<option value="symbol">Symbol</option>', body)
         self.assertIn("mode === 'symbol'", body)
 
+    def test_dashboard_offers_moonbag_value_sort(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('<option value="moonbag-value">Moonbag value</option>', body)
+        self.assertIn("mode === 'moonbag-value'", body)
+        self.assertIn("av.estimated_moonbag_value_eth", body)
+        self.assertIn("'moonbag-value': 'desc'", body)
+
     def test_dashboard_offers_market_cap_sort(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('<option value="market-cap">Market Cap</option>', body)
