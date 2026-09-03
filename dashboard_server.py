@@ -1356,7 +1356,7 @@ DASHBOARD_HTML = """\
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
   const storedRealizedPeriod = localStorage.getItem('dashboard-realized-profit-period');
-  let realizedProfitPeriod = ['all', 'month', 'week', '24h', '6h', '1h'].includes(storedRealizedPeriod) ? storedRealizedPeriod : 'all';
+  let realizedProfitPeriod = ['all', 'month', 'week', '24h', '12h', '6h', '1h'].includes(storedRealizedPeriod) ? storedRealizedPeriod : 'all';
   let ethPrices = {};
   const chainMetadata = {
     1: { name: 'Ethereum', explorer: 'https://etherscan.io/address/' },
@@ -2098,14 +2098,14 @@ DASHBOARD_HTML = """\
     const trackingAgeText = trackingElapsedHours === null ? '' :
       (trackingAgeDays > 0 ? trackingAgeDays + 'd ' + trackingAgeHours + 'h ago' :
         (trackingAgeHours > 0 ? trackingAgeHours + 'h ago' : '<1h ago'));
-    const realizedPeriodHours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[realizedProfitPeriod];
+    const realizedPeriodHours = { month: 720, week: 168, '24h': 24, '12h': 12, '6h': 6, '1h': 1 }[realizedProfitPeriod];
     const realizedAverageHours = realizedProfitPeriod === 'all' ? trackingElapsedHours :
       (trackingElapsedHours === null ? realizedPeriodHours : Math.min(realizedPeriodHours, trackingElapsedHours));
     const realizedDailyAverage = realizedAverageHours > 0 ? realizedProfit / (realizedAverageHours / 24) : null;
     const realizedHourlyAverage = realizedAverageHours > 0 ? realizedProfit / realizedAverageHours : null;
     const realizedPeriodLabel = realizedProfitPeriod !== 'all' && trackingElapsedHours !== null && trackingElapsedHours < realizedPeriodHours
       ? 'Since ' + trackingAgeText
-      : { all: 'Since ' + trackingAgeText, month: 'Since 30d ago', week: 'Since 7d ago', '24h': 'Since 24h ago', '6h': 'Since 6h ago', '1h': 'Since 1h ago' }[realizedProfitPeriod];
+      : { all: 'Since ' + trackingAgeText, month: 'Since 30d ago', week: 'Since 7d ago', '24h': 'Since 24h ago', '12h': 'Since 12h ago', '6h': 'Since 6h ago', '1h': 'Since 1h ago' }[realizedProfitPeriod];
     const usdgBalance = states.reduce(function(total, d) { return total + (parseFloat(d.usdg_balance) || 0); }, 0);
     const treasurySentUsdg = states.reduce(function(total, d) { return total + (parseFloat(d.treasury_sent_usdg) || 0); }, 0);
     const filled = states.reduce(function(total, d) { return total + (parseInt(d.filled_positions, 10) || 0); }, 0);
@@ -2177,7 +2177,7 @@ DASHBOARD_HTML = """\
       ' <button class="currency-toggle" type="button" data-currency-toggle>' + fiatCode + '</button></span>' +
       '<span class="summary-item realized-summary"><span class="realized-first-line"><button class="realized-amount" type="button" data-realized-unit-toggle aria-label="Cycle realized profit units, currently ' + realizedUnitCode + '" title="Click to show ' + nextRealizedProfitUnit + '">Realized profit: ' + formatRealizedAmount(realizedProfit, true) + '</button>' +
       '<select class="realized-period" data-realized-period aria-label="Realized profit period">' +
-      [['all', 'All'], ['month', 'Month'], ['week', 'Week'], ['24h', '24 hr'], ['6h', '6 hr'], ['1h', '1 hr']].map(function(option) { return '<option value="' + option[0] + '"' + (realizedProfitPeriod === option[0] ? ' selected' : '') + '>' + option[1] + '</option>'; }).join('') + '</select></span>' +
+      [['all', 'All'], ['month', 'Month'], ['week', 'Week'], ['24h', '24 hr'], ['12h', '12 hr'], ['6h', '6 hr'], ['1h', '1 hr']].map(function(option) { return '<option value="' + option[0] + '"' + (realizedProfitPeriod === option[0] ? ' selected' : '') + '>' + option[1] + '</option>'; }).join('') + '</select></span>' +
       (realizedDailyAverage === null ? '' : '<span class="summary-detail" title="Fleet realized profit divided by the selected period">' + realizedPeriodLabel + ' · avg ' +
         formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +
         formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</span>' +
@@ -2284,7 +2284,7 @@ DASHBOARD_HTML = """\
 
   function realizedProfitForPeriod(d, period) {
     if (period === 'all') return parseFloat(d.realized_profit_eth) || 0;
-    const hours = { month: 720, week: 168, '24h': 24, '6h': 6, '1h': 1 }[period];
+    const hours = { month: 720, week: 168, '24h': 24, '12h': 12, '6h': 6, '1h': 1 }[period];
     const cutoff = Date.now() - hours * 3600000;
     const receivedAt = Date.parse(d.received_at || '');
     if (Number.isFinite(receivedAt) && receivedAt <= cutoff) return 0;
