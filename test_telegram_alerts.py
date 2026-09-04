@@ -39,6 +39,42 @@ class TestTelegramAlerts(unittest.TestCase):
             "https://base.blockscout.com/tx/0xabc",
         )
 
+    def test_overlapping_sell_achievements_are_bundled(self):
+        previous_trades = [
+            {"side": "sell", "tx_hash": f"0x{i}", "profit_eth": 0.001,
+             "timestamp": f"2026-09-04T14:{i:02d}:00+00:00"}
+            for i in range(9)
+        ]
+        current_trades = previous_trades + [
+            {"side": "sell", "tx_hash": "0x9", "profit_eth": 0.001,
+             "timestamp": "2026-09-04T15:00:00+00:00"}
+        ]
+        self.alerts._achievement_state["icoin"] = {"sells": 9, "wins": 9, "win_streak": 9}
+
+        messages = self.alerts._achievement_messages(
+            "icoin", {"trades_history": previous_trades}, {"trades_history": current_trades},
+        )
+
+        self.assertEqual(messages, ["PERFECT TEN · 10 confirmed sells, all profitable"])
+
+    def test_multiple_nonperfect_achievements_use_one_notification(self):
+        previous_trades = [
+            {"side": "sell", "tx_hash": f"0x{i}", "profit_eth": -0.001,
+             "timestamp": f"2026-09-04T14:{i:02d}:00+00:00"}
+            for i in range(9)
+        ]
+        current_trades = previous_trades + [
+            {"side": "sell", "tx_hash": "0x9", "profit_eth": 0.001,
+             "timestamp": "2026-09-04T15:00:00+00:00"}
+        ]
+        self.alerts._achievement_state["icoin"] = {"sells": 9, "wins": 9, "win_streak": 0}
+
+        messages = self.alerts._achievement_messages(
+            "icoin", {"trades_history": previous_trades}, {"trades_history": current_trades},
+        )
+
+        self.assertEqual(messages, ["10 confirmed sells · 10 profitable sells"])
+
     def test_stop_loss_uses_high_priority_category(self):
         current = {"trades_history": [{"side": "sell", "tx_hash": "0xloss", "profit_eth": -0.002}]}
         self.alerts.process_status("loser", {"trades_history": []}, current)

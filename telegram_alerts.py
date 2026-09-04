@@ -321,7 +321,16 @@ class TelegramAlerts:
         with self._lock:
             self._achievement_state[bot_id] = {"win_streak": streak, "sells": sells, "wins": wins}
             self._save_locked()
-        return messages
+        if len(messages) <= 1:
+            return messages
+
+        # One status update can cross several counters at once (for example the
+        # tenth sell can also be the tenth profitable sell and complete a
+        # ten-win streak). Celebrate the event once instead of sending a stack
+        # of nearly identical Telegram cards.
+        if messages == ["10 confirmed sells", "10 profitable sells", "10-sell profit streak"]:
+            return ["PERFECT TEN · 10 confirmed sells, all profitable"]
+        return [" · ".join(messages)]
 
     def _rivalry_message(self, event, winner, loser, winner_score, loser_score, key):
         templates = {
