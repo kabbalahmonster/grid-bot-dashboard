@@ -139,11 +139,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("button.summary-item:hover, button.summary-item:focus-visible", body)
         self.assertIn("dashboard-realized-profit-period", body)
         self.assertIn("data-realized-period", body)
-        for label in ("All", "Month", "Week", "24 hr", "12 hr", "6 hr", "1 hr"):
+        for label in ("All", "Month", "Week", "3 day", "24 hr", "12 hr", "6 hr", "4 hr", "2 hr", "1 hr"):
             self.assertIn("'" + label + "'", body)
         self.assertIn("document.activeElement.matches('[data-realized-period]')", body)
         self.assertIn("if (!periodSelectorOpen && summaryBar.innerHTML !== nextSummaryHtml)", body)
         self.assertIn("'1h': 'Since 1h ago'", body)
+        self.assertIn("'2h': 'Since 2h ago'", body)
+        self.assertIn("'4h': 'Since 4h ago'", body)
+        self.assertIn("'3d': 'Since 3d ago'", body)
         self.assertIn("'12h': 'Since 12h ago'", body)
         self.assertIn("selector.blur();", body)
         self.assertIn(".realized-period { appearance: none; -webkit-appearance: none;", body)
