@@ -200,7 +200,12 @@ commands. It reads the same in-memory snapshots used by the dashboard.
 
 The optional `fun` alert category adds deterministic trade drama, durable
 first-sell/trade-milestone/profit-streak achievements, and 24-hour crown-change
-rivalries. Trade and achievement alerts include buttons to open the bot's
+rivalries. Profit and loss reactions draw from expanded magnitude-aware copy
+pools, while crown alerts rotate deterministic copy and, using persisted standings
+only, recognize narrow or dominant leads, upsets, collapses, returning champions,
+profit-line coups, underwater pageants, and repeat-rivalry rematches. They include the contenders' exact 24-hour realized
+profit so the drama never invents a result. The existing once-per-pair-per-day
+deduplication and event cadence are unchanged. Trade and achievement alerts include buttons to open the bot's
 filtered DoomDash card with its chart expanded, mute that bot for six hours, or
 disable the alert category. These controls only affect monitoring; Telegram
 still has no trading, wallet, restart, or strategy-mutation authority.

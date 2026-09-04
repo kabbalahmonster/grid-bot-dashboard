@@ -69,6 +69,7 @@ class TelegramAlerts:
         self._muted_bots = {}
         self._achievement_state = {}
         self._leader = None
+        self._rivalry_state = {}
         self._load()
         self._thread = None
  
@@ -117,6 +118,7 @@ class TelegramAlerts:
             self._muted_bots = dict(state.get("muted_bots", {}))
             self._achievement_state = dict(state.get("achievement_state", {}))
             self._leader = state.get("leader")
+            self._rivalry_state = dict(state.get("rivalry_state", {}))
         except (FileNotFoundError, TypeError, ValueError, json.JSONDecodeError):
             pass
 
@@ -138,6 +140,7 @@ class TelegramAlerts:
                 "muted_bots": self._muted_bots,
                 "achievement_state": self._achievement_state,
                 "leader": self._leader,
+                "rivalry_state": self._rivalry_state,
             }, handle, indent=2)
         os.replace(temporary, self.state_file)
 
@@ -244,17 +247,43 @@ class TelegramAlerts:
             return ""
         magnitude = abs(profit)
         if profit >= 0.01:
-            choices = ("ABSOLUTE CINEMA.", "THE MACHINE DEMANDS APPLAUSE.", "CAPITAL HAS BEEN SUMMONED.")
+            choices = (
+                "ABSOLUTE CINEMA.", "THE MACHINE DEMANDS APPLAUSE.", "CAPITAL HAS BEEN SUMMONED.",
+                "A vulgar display of grid power.", "Somewhere, a bear has deleted the app.",
+                "Profit so loud it violated local ordinances.", "The machine ate first and left no crumbs.",
+                "The chart has been defeated in ritual combat.",
+            )
         elif profit >= 0.003:
-            choices = ("A juicy little extraction.", "Another victim of the grid.", "The fox approves.")
+            choices = (
+                "A juicy little extraction.", "Another victim of the grid.", "The fox approves.",
+                "A modest heist, tastefully executed.", "Booked, banked, and emotionally unavailable.",
+                "The grid found loose change in the market's couch.", "The candles have paid tribute.",
+                "Clean work from a deeply unserious machine.",
+            )
         elif profit <= -0.01:
-            choices = ("A financially educational event.", "We have angered the chart gods.", "That candle chose violence.")
+            choices = (
+                "A financially educational event.", "We have angered the chart gods.", "That candle chose violence.",
+                "The market has submitted an invoice.", "This episode was directed by volatility.",
+                "An expensive lesson in candle-based betrayal.", "The grid has entered its flop era.",
+                "Please respect the privacy of the recently liquid.",
+            )
         elif profit < 0:
-            choices = ("A small blood offering.", "Character development.", "The market collected rent.")
+            choices = (
+                "A small blood offering.", "Character development.", "The market collected rent.",
+                "A tiny tax paid to the chaos department.", "Barely a wound; dramatically a betrayal.",
+                "The chart took a snack, not the whole lunch.", "Minor loss, major theatrical response.",
+                "A paper cut in the ledger of destiny.",
+            )
         else:
             return ""
         digest = hashlib.sha256(f"{bot_id}:{profit:.12f}".encode()).digest()[0]
         return choices[digest % len(choices)] if magnitude else ""
+
+    @staticmethod
+    def _deterministic_choice(key, choices):
+        """Choose varied copy without making alerts or tests depend on randomness."""
+        digest = hashlib.sha256(str(key).encode()).digest()
+        return choices[int.from_bytes(digest[:4], "big") % len(choices)]
 
     def _achievement_messages(self, bot_id, previous, current):
         if not self._wanted("fun"):
@@ -294,24 +323,128 @@ class TelegramAlerts:
             self._save_locked()
         return messages
 
-    def _scan_rivalry(self):
+    def _rivalry_message(self, event, winner, loser, winner_score, loser_score, key):
+        templates = {
+            "rematch": (
+                "{winner} reclaimed the 24h crown from {loser}. Same feud, fresh paperwork.",
+                "{winner} took the crown back from {loser}. The rematch clause has been invoked.",
+                "{winner} answered {loser}'s coup and returned to first. This rivalry has lore now.",
+            ),
+            "return": (
+                "{winner} returned to the 24h throne, removing {loser} from the furniture.",
+                "Former champion {winner} is back on top. {loser}'s reign enters the archives.",
+                "{winner} completed the comeback and repossessed the crown from {loser}.",
+                "{winner} remembered being champion and made it {loser}'s problem.",
+            ),
+            "profitline_coup": (
+                "{winner} crossed into profit and took {loser}'s crown in the same motion.",
+                "{winner} escaped the red and immediately deposed {loser}. Ambition is a disease.",
+                "{winner} surfaced above zero holding {loser}'s crown. Efficient and deeply rude.",
+                "{winner} found green territory; {loser} found out through this notification.",
+            ),
+            "underwater_pageant": (
+                "{winner} passed {loser} to become the fleet's least underwater aristocrat.",
+                "{winner} now leads the red kingdom. {loser} has sunk to a less prestigious depth.",
+                "{winner} claimed first while everyone is underwater. A crown is a crown, darling.",
+                "{winner} is losing the least, which legally counts as royalty today. Sorry, {loser}.",
+            ),
+            "collapse": (
+                "{loser}'s lead collapsed and {winner} inherited the 24h crown. Brutal succession.",
+                "{loser} dropped the crown; {winner} caught it before it hit the floor.",
+                "The {loser} reign buckled. {winner} now controls the leaderboard.",
+            ),
+            "upset": (
+                "{winner} came from behind to depose {loser}. The models demand a recount.",
+                "Upset: {winner} erased the deficit and took {loser}'s crown.",
+                "{winner} flipped the table on {loser} and left wearing the crown.",
+            ),
+            "narrow": (
+                "{winner} edged past {loser} by a whisker. The crown is being held with tweezers.",
+                "Photo finish: {winner} slipped ahead of {loser} for the 24h crown.",
+                "{winner} leads {loser} by pocket lint. Technically, that still buys a crown.",
+                "{winner} won the crown on a margin thin enough to qualify as gossip.",
+            ),
+            "dominant": (
+                "{winner} seized the 24h crown from {loser} and opened daylight behind it.",
+                "{winner} didn't just pass {loser}; it installed a moat around first place.",
+                "{winner} took the throne from {loser} with an indecently large lead.",
+                "{winner} took first from {loser} with enough daylight to install solar panels.",
+            ),
+            "crown_change": (
+                "{winner} stole the 24h crown from {loser}. The leaderboard has become personal.",
+                "New ruler: {winner} passed {loser} and claimed the 24h throne.",
+                "{winner} has overthrown {loser}. Fleet politics remain deeply unserious.",
+                "{loser}'s reign is over; {winner} now wears the 24h crown.",
+                "{winner} overtook {loser}. Please update the tiny fleet history books.",
+                "{winner} passed {loser} and immediately changed the locks on first place.",
+                "{winner} staged a bloodless but extremely theatrical coup against {loser}.",
+                "{winner} took the lead from {loser}. Sportsmanship was considered and rejected.",
+            ),
+        }
+        body = self._deterministic_choice(key, templates[event]).format(winner=winner, loser=loser)
+        margin = max(0.0, winner_score - loser_score)
+        return (f"⚔️ Fleet rivalry · {event.replace('_', ' ')}\n{body}\n"
+                f"24h realized: {winner} {winner_score:+.8f} ETH · {loser} {loser_score:+.8f} ETH\n"
+                f"Lead: {margin:.8f} ETH")
+
+    def _scan_rivalry(self, now=None):
         if not self._wanted("fun"):
             return
+        now = now or datetime.now(timezone.utc)
         states = self.state_provider()
         if len(states) < 2:
             return
         ranked = sorted(states.items(), key=lambda item: self._realized_for_period(item[1], "24h"), reverse=True)
         leader_id, leader_state = ranked[0]
+        scores = {bot_id: self._realized_for_period(state, "24h") for bot_id, state in states.items()}
         old_leader = self._leader
+        prior_scores = dict(self._rivalry_state.get("scores", {}))
+        crown_counts = dict(self._rivalry_state.get("crown_counts", {}))
+        pair_counts = dict(self._rivalry_state.get("pair_counts", {}))
         with self._lock:
             self._leader = leader_id
+            self._rivalry_state["scores"] = scores
+            if not old_leader:
+                crown_counts.setdefault(leader_id, 1)
+                self._rivalry_state["crown_counts"] = crown_counts
             self._save_locked()
         if old_leader and old_leader != leader_id:
             old_state = states.get(old_leader, {})
-            message = (f"⚔️ Fleet rivalry\n{self._name(leader_id, leader_state)} stole the 24h crown from "
-                       f"{self._name(old_leader, old_state)}. The leaderboard has become personal.")
-            if self._remember(f"rivalry:{old_leader}:{leader_id}:{datetime.now(timezone.utc).date()}"):
+            pair_key = ":".join(sorted((old_leader, leader_id)))
+            winner_score, loser_score = scores[leader_id], scores.get(old_leader, 0.0)
+            scale = max(abs(winner_score), abs(loser_score), 0.00000001)
+            gap = winner_score - loser_score
+            if pair_counts.get(pair_key, 0) > 0:
+                event = "rematch"
+            elif crown_counts.get(leader_id, 0) > 0:
+                event = "return"
+            elif winner_score > 0 >= loser_score:
+                event = "profitline_coup"
+            elif winner_score <= 0:
+                event = "underwater_pageant"
+            elif old_leader in prior_scores and loser_score < float(prior_scores[old_leader]):
+                event = "collapse"
+            elif leader_id in prior_scores and float(prior_scores[leader_id]) < float(prior_scores.get(old_leader, 0)):
+                event = "upset"
+            elif gap <= scale * 0.1:
+                event = "narrow"
+            elif gap >= scale * 0.75:
+                event = "dominant"
+            else:
+                event = "crown_change"
+            identity = f"rivalry:{old_leader}:{leader_id}:{now.date()}"
+            message = self._rivalry_message(
+                event, self._name(leader_id, leader_state), self._name(old_leader, old_state),
+                winner_score, loser_score, identity,
+            )
+            if self._remember(identity):
                 self.send(message, reply_markup=self._fun_buttons(leader_id, "fun"), bot_id=leader_id)
+                with self._lock:
+                    crown_counts[leader_id] = int(crown_counts.get(leader_id, 0)) + 1
+                    pair_counts[pair_key] = int(pair_counts.get(pair_key, 0)) + 1
+                    self._rivalry_state["crown_counts"] = crown_counts
+                    self._rivalry_state["pair_counts"] = pair_counts
+                    self._save_locked()
 
     @staticmethod
     def _trade_id(trade):

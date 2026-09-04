@@ -225,6 +225,139 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertIn("1/1 · 100%", self.alerts._leaderboard_text("winrate"))
         self.assertIn("🥇 other · 10.00 USDG", self.alerts._leaderboard_text("treasury"))
 
+    def test_rivalry_copy_selection_is_deterministic_but_varied(self):
+        choices = ("one", "two", "three", "four")
+        self.assertEqual(
+            self.alerts._deterministic_choice("same-event", choices),
+            self.alerts._deterministic_choice("same-event", choices),
+        )
+        rendered = {self.alerts._deterministic_choice(f"event-{index}", choices) for index in range(50)}
+        self.assertGreater(len(rendered), 1)
+
+    def test_trade_drama_has_broad_deterministic_variety(self):
+        rendered = {self.alerts._drama(f"bot-{index}", 0.02) for index in range(100)}
+        self.assertGreaterEqual(len(rendered), 6)
+        self.assertEqual(self.alerts._drama("same", -0.02), self.alerts._drama("same", -0.02))
+
+    def test_crown_change_reports_exact_scores_and_deduplicates_same_pair_and_day(self):
+        day = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)
+        self.states.update({
+            "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": 0.02}},
+            "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": 0.01}},
+        })
+        self.alerts._leader = "cat"
+
+        self.alerts._scan_rivalry(day)
+        self.alerts._leader = "cat"  # Simulate another scan of the same transition.
+        self.alerts._scan_rivalry(day)
+
+        self.assertEqual(self.alerts.send.call_count, 1)
+        message = self.alerts.send.call_args.args[0]
+        self.assertIn("FOX +0.02000000 ETH", message)
+        self.assertIn("CAT +0.01000000 ETH", message)
+
+    def test_rivalry_recognizes_collapse_from_persisted_scores(self):
+        self.states.update({
+            "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": 0.011}},
+            "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": 0.003}},
+        })
+        self.alerts._leader = "cat"
+        self.alerts._rivalry_state = {"scores": {"fox": 0.005, "cat": 0.02}}
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 5, tzinfo=timezone.utc))
+
+        self.assertIn("Fleet rivalry · collapse", self.alerts.send.call_args.args[0])
+
+    def test_rivalry_calls_out_profitline_coup_and_exact_margin(self):
+        self.states.update({
+            "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": 0.002}},
+            "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": -0.001}},
+        })
+        self.alerts._leader = "cat"
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 8, tzinfo=timezone.utc))
+
+        message = self.alerts.send.call_args.args[0]
+        self.assertIn("Fleet rivalry · profitline coup", message)
+        self.assertIn("Lead: 0.00300000 ETH", message)
+
+    def test_rivalry_calls_out_underwater_leaderboard(self):
+        self.states.update({
+            "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": -0.002}},
+            "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": -0.004}},
+        })
+        self.alerts._leader = "cat"
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 9, tzinfo=timezone.utc))
+
+        self.assertIn("Fleet rivalry · underwater pageant", self.alerts.send.call_args.args[0])
+
+    def test_initial_leader_is_recorded_as_a_prior_champion_without_alerting(self):
+        self.states.update({
+            "fox": {"realized_profit_periods": {"24h": 0.02}},
+            "cat": {"realized_profit_periods": {"24h": 0.01}},
+        })
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 10, tzinfo=timezone.utc))
+
+        self.alerts.send.assert_not_called()
+        self.assertEqual(self.alerts._rivalry_state["crown_counts"]["fox"], 1)
+
+    def test_rivalry_classifies_upset_return_narrow_and_dominant_from_real_scores(self):
+        cases = (
+            ("upset", 0.011, 0.010, {"scores": {"fox": 0.001, "cat": 0.010}}),
+            ("return", 0.011, 0.010, {"scores": {}, "crown_counts": {"fox": 1}}),
+            ("narrow", 0.0105, 0.010, {"scores": {}}),
+            ("dominant", 0.020, 0.001, {"scores": {}}),
+        )
+        for offset, (event, winner_score, loser_score, rivalry_state) in enumerate(cases):
+            with self.subTest(event=event):
+                self.alerts.send.reset_mock()
+                self.alerts._leader = "cat"
+                self.alerts._rivalry_state = rivalry_state
+                self.states.clear()
+                self.states.update({
+                    "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": winner_score}},
+                    "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": loser_score}},
+                })
+                self.alerts._scan_rivalry(datetime(2026, 10, 1 + offset, tzinfo=timezone.utc))
+                self.assertIn(f"Fleet rivalry · {event}", self.alerts.send.call_args.args[0])
+
+    def test_rivalry_recognizes_repeat_pair_as_rematch_and_persists_history(self):
+        self.states.update({
+            "fox": {"display_name": "FOX", "realized_profit_periods": {"24h": 0.02}},
+            "cat": {"display_name": "CAT", "realized_profit_periods": {"24h": 0.01}},
+        })
+        self.alerts._leader = "cat"
+        self.alerts._rivalry_state = {
+            "scores": {"fox": 0.0, "cat": 0.01},
+            "pair_counts": {"cat:fox": 2},
+            "crown_counts": {"fox": 1},
+        }
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 6, tzinfo=timezone.utc))
+
+        self.assertIn("Fleet rivalry · rematch", self.alerts.send.call_args.args[0])
+        reloaded = TelegramAlerts("", "7045629589", self.alerts.state_file, lambda: self.states)
+        try:
+            self.assertEqual(reloaded._rivalry_state["pair_counts"]["cat:fox"], 3)
+            self.assertEqual(reloaded._rivalry_state["crown_counts"]["fox"], 2)
+        finally:
+            reloaded.close()
+
+    def test_fun_disabled_suppresses_rivalry_and_does_not_mutate_leader(self):
+        self.states.update({
+            "fox": {"realized_profit_periods": {"24h": 0.02}},
+            "cat": {"realized_profit_periods": {"24h": 0.01}},
+        })
+        self.alerts._leader = "cat"
+        self.alerts._preferences["fun"] = False
+
+        self.alerts._scan_rivalry(datetime(2026, 9, 7, tzinfo=timezone.utc))
+
+        self.alerts.send.assert_not_called()
+        self.assertEqual(self.alerts._leader, "cat")
+
     def test_bounded_profit_period_zeroes_report_older_than_entire_window(self):
         stale = {
             "received_at": "2020-01-01T00:00:00+00:00",
