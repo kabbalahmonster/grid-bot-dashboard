@@ -2800,7 +2800,7 @@ DASHBOARD_HTML = """\
           ? '<span class="sell-attempt-provider">' + esc(d.sell_attempt.quote_provider) + '</span>'
           : '';
         const detail = Number.isFinite(net) && Number.isFinite(minimum)
-          ? '<span class="sell-attempt-detail" title="Projected net profit after sell gas / minimum profit"><span>' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH net</span>' + provider + '</span>'
+          ? '<span class="sell-attempt-detail" title="Projected profit after sell gas / minimum profit"><span>' + esc(net.toFixed(6)) + ' / ' + esc(minimum.toFixed(6)) + ' ETH</span>' + provider + '</span>'
           : '';
         html += '<div class="sell-attempt" role="status" aria-label="Sell attempted; quote is below minimum">' +
           '<span class="sell-attempt-dot" aria-hidden="true"></span>' +
