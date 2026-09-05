@@ -26,12 +26,14 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.client = dashboard_server.app.test_client()
 
     @patch("dashboard_server.http_requests.get")
-    def test_prefers_weth_pair_and_true_market_cap(self, get):
+    def test_prefers_active_eth_pair_and_true_market_cap(self, get):
         get.return_value = response([
             {"pairAddress": "0x" + "3" * 40, "quoteToken": {"symbol": "USDC"},
-             "liquidity": {"usd": 999999}, "marketCap": 900},
-            {"pairAddress": PAIR, "quoteToken": {"symbol": "WETH"},
-             "liquidity": {"usd": 10}, "marketCap": 1234567, "fdv": 7654321,
+             "liquidity": {"usd": 999999}, "volume": {"h24": 999999}, "marketCap": 900},
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "ETH"},
+             "baseToken": {"address": TOKEN}, "priceUsd": "1",
+             "liquidity": {"usd": 10, "base": 5}, "volume": {"h24": 20},
+             "marketCap": 1234567, "fdv": 7654321,
              "priceChange": {"m5": -0.5, "h1": 1.25, "h6": -3, "h24": 8.43}},
         ])
         data = dashboard_server._dexscreener_pair_data(8453, TOKEN)
@@ -39,6 +41,24 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertEqual(data["label"], "Market Cap")
         self.assertEqual(data["value_usd"], 1234567.0)
         self.assertEqual(data["price_change"], {"m5": -0.5, "h1": 1.25, "h6": -3.0, "h24": 8.43})
+
+    @patch("dashboard_server.http_requests.get")
+    def test_rejects_bogus_high_liquidity_pair_with_incoherent_reserves(self, get):
+        real_pair = "0x" + "4" * 40
+        bogus_pair = "0x" + "5" * 40
+        get.return_value = response([
+            {"pairAddress": real_pair, "baseToken": {"address": TOKEN},
+             "quoteToken": {"symbol": "ETH"}, "priceUsd": "0.002",
+             "liquidity": {"usd": 120000, "base": 30000000},
+             "volume": {"h24": 600000}, "marketCap": 1200000},
+            {"pairAddress": bogus_pair, "baseToken": {"address": TOKEN},
+             "quoteToken": {"symbol": "ETH"}, "priceUsd": "2.47",
+             "liquidity": {"usd": 34000000, "base": 13765000},
+             "volume": {"h24": 7}, "marketCap": 1340000000},
+        ])
+        data = dashboard_server._dexscreener_pair_data(4663, TOKEN)
+        self.assertEqual(data["pair_address"], real_pair)
+        self.assertEqual(data["value_usd"], 1200000.0)
 
     @patch("dashboard_server.http_requests.get")
     def test_fdv_is_explicit_fallback(self, get):

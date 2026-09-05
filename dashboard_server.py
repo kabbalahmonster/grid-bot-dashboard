@@ -800,9 +800,31 @@ def _dexscreener_pair_data(chain_id, token_address):
         def pair_rank(pair):
             quote_symbol = str(pair.get("quoteToken", {}).get("symbol", "")).upper()
             base_symbol = str(pair.get("baseToken", {}).get("symbol", "")).upper()
-            is_weth = quote_symbol == "WETH" or base_symbol == "WETH"
+            is_eth = quote_symbol in {"ETH", "WETH"} or base_symbol in {"ETH", "WETH"}
             liquidity = float(pair.get("liquidity", {}).get("usd") or 0)
-            return (is_weth, liquidity)
+            volume = float(pair.get("volume", {}).get("h24") or 0)
+
+            # Dexscreener occasionally exposes manipulated/broken pools whose
+            # reported USD liquidity is derived almost entirely from the
+            # pool's own bogus token price.  In a balanced AMM pool the target
+            # token reserve should account for roughly half of total USD
+            # liquidity.  Reject extreme reserve/value mismatches before they
+            # can poison the card and embedded chart.
+            coherent = True
+            base_address = str(pair.get("baseToken", {}).get("address", "")).lower()
+            if base_address == token_address.lower() and liquidity > 0:
+                try:
+                    base_reserve = float(pair.get("liquidity", {}).get("base") or 0)
+                    price_usd = float(pair.get("priceUsd") or 0)
+                    target_share = base_reserve * price_usd / liquidity
+                    coherent = 0.2 <= target_share <= 0.8
+                except (TypeError, ValueError, ZeroDivisionError):
+                    coherent = False
+
+            # Activity is harder to spoof accidentally than the API's raw
+            # liquidity field. Prefer an active coherent ETH route, then use
+            # liquidity as a tie-breaker.
+            return (coherent, is_eth, volume, liquidity)
 
         selected = max(pairs, key=pair_rank)
         pair_address = str(selected.get("pairAddress", ""))
