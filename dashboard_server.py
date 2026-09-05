@@ -2221,7 +2221,7 @@ DASHBOARD_HTML = """\
     });
     const activeSellChecks = Object.keys(bots).filter(function(id) {
       const state = bots[id];
-      return Boolean(state.sell_attempt) && reportAge(state.received_at).status === 'running';
+      return Boolean(state.sell_attempt && state.sell_attempt.status) && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];

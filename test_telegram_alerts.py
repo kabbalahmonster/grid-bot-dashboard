@@ -190,6 +190,16 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertIn("Errors/RPC: 1 · DRAMA", text)
         self.assertIn("Low funds: 1 · DRAMA", text)
 
+    def test_attention_ignores_shadow_only_sell_observation(self):
+        self.states["bot-1"] = {
+            "display_name": "SHADOW", "received_at": datetime.now(timezone.utc).isoformat(),
+            "sell_attempt": {"route_comparison": {"mode": "shadow"}},
+        }
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/attention"})
+        text = self.alerts.send.call_args.args[0]
+        self.assertNotIn("Sell checks", text)
+        self.assertIn("Nothing needs attention", text)
+
     def test_profit_and_trade_commands_use_requested_period(self):
         now = datetime.now(timezone.utc).isoformat()
         self.states["winner"] = {

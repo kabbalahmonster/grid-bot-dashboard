@@ -929,7 +929,7 @@ class TelegramAlerts:
                 sections["stale"].append(name)
             if state.get("capacity_warning"):
                 sections["positions"].append(name)
-            if state.get("sell_attempt"):
+            if (state.get("sell_attempt") or {}).get("status"):
                 sections["sells"].append(name)
             if (state.get("sell_attempt") or {}).get("status") == "position_balance_mismatch":
                 sections["safety"].append(name)
