@@ -113,6 +113,13 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertIn('data-market-window="h6"', body)
         self.assertIn("openMarketMovements", body)
 
+    def test_open_chart_refreshes_when_preferred_pair_changes(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("const expectedPair", body)
+        self.assertIn("frame.dataset.pairAddress", body)
+        self.assertIn("loadedPair === expectedPair", body)
+        self.assertIn("frame.src = data.chart_url", body)
+
     def test_more_info_shows_estimated_moonbag_value(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("['Est. Moonbag Value', 'estimated_moonbag_value_eth']", body)

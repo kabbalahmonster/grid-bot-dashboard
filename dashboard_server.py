@@ -2352,6 +2352,30 @@ DASHBOARD_HTML = """\
       setMovementValue(panel.querySelector('[data-market-window="h1"]'), changes.h1);
       setMovementValue(panel.querySelector('[data-market-window="h6"]'), changes.h6);
     });
+    // Open chart panels are intentionally preserved during routine card
+    // morphs. If pair selection changes while one is open, replace the old
+    // embedded URL instead of preserving a poisoned/stale pool forever.
+    container.querySelectorAll('details.chart-panel[data-chart-key]').forEach(function(panel) {
+      if (!panel.open) return;
+      const botId = decodeURIComponent(panel.dataset.chartKey || '');
+      const expectedPair = String((marketData[botId] || {}).pair_address || '').toLowerCase();
+      const frame = panel.querySelector('iframe.dex-chart');
+      if (!frame || !expectedPair || frame.dataset.loading === 'true') return;
+      const loadedPair = String(frame.dataset.pairAddress || '').toLowerCase();
+      if (!loadedPair || loadedPair === expectedPair) return;
+      frame.dataset.loading = 'true';
+      fetch(frame.dataset.resolver)
+        .then(function(response) {
+          if (!response.ok) throw new Error('Chart lookup failed: ' + response.status);
+          return response.json();
+        })
+        .then(function(data) {
+          frame.src = data.chart_url;
+          frame.dataset.pairAddress = String(data.pair_address || '').toLowerCase();
+        })
+        .catch(function() {})
+        .finally(function() { frame.dataset.loading = 'false'; });
+    });
   }
 
   function fetchMarketData() {
@@ -3057,6 +3081,7 @@ DASHBOARD_HTML = """\
           .then(function(data) {
             frame.dataset.loading = 'false';
             frame.src = data.chart_url;
+            frame.dataset.pairAddress = String(data.pair_address || '').toLowerCase();
           })
           .catch(function(error) {
             const resolver = frame.dataset.resolver;
