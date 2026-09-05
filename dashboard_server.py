@@ -25,6 +25,7 @@ import atexit
 import gzip
 import json
 import logging
+import math
 import os
 import queue
 import re
@@ -35,6 +36,7 @@ import zlib
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from decimal import Decimal
 from functools import wraps
 from urllib.parse import urlencode
 
@@ -431,6 +433,97 @@ def _allowlisted_mapping(value, allowed_fields):
     return {key: value[key] for key in allowed_fields if key in value}
 
 
+_ROUTE_ENUMS = {
+    "provider": {"uniswap", "sushiswap"},
+    "settlement": {"native", "weth"},
+    "validation_level": {"quote_only", "rejected"},
+    "gas_basis": {"conservative_budget_not_simulated"},
+    "approval_assumption": {"none", "reset_and_exact_approval_budget"},
+    "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei"},
+    "observation_timing": {"after_execution_attempt_with_pre_operation_budget"},
+}
+_ROUTE_REJECTIONS = frozenset({
+    "provider_quote_failed", "invalid_quote_amounts", "invalid_economic_assumptions",
+    "total_gas_above_cap", "native_reserve", "input_balance",
+    "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed",
+})
+
+
+def _route_enum(key, value):
+    return isinstance(value, str) and value in _ROUTE_ENUMS[key]
+
+
+def _route_number(value, *, raw=False, nonnegative=False):
+    # Keep integer precision through JSON and the browser. Never coerce objects,
+    # booleans, hex, NaN/Infinity, or free text into public numerical fields.
+    if raw:
+        return (isinstance(value, str) and len(value) <= 78
+                and re.fullmatch(r"(?:0|[1-9][0-9]*)", value) is not None
+                and int(value) < 2**256)
+    if not isinstance(value, str) or len(value) > 128:
+        return False
+    if not re.fullmatch(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]{1,3})?", value):
+        return False
+    number = Decimal(value)
+    return abs(number) <= Decimal("1e96") and (not nonnegative or number >= 0)
+
+
+def _allowlisted_route_comparison(value, direction):
+    """Explicit, fixed-depth shadow schema; no generic recursive copying."""
+    if not isinstance(value, dict):
+        return None
+    status = value.get("status")
+    if (value.get("mode") != "shadow" or value.get("direction") != direction
+            or not isinstance(status, str)
+            or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed"}
+            or not isinstance(value.get("candidates"), list)):
+        return None
+    result = {"mode": "shadow", "direction": direction, "status": status, "candidates": []}
+    for row in value["candidates"][:4]:
+        if (not isinstance(row, dict) or row.get("execution_eligible") is not False
+                or not all(_route_enum(key, row.get(key)) for key in
+                           ("provider", "settlement", "validation_level"))):
+            continue
+        clean = {key: row[key] for key in ("provider", "settlement", "validation_level")}
+        clean["execution_eligible"] = False
+        for key in ("gas_basis", "approval_assumption", "score_unit"):
+            if _route_enum(key, row.get(key)):
+                clean[key] = row[key]
+        for key in ("quoted_output_raw", "output_floor_raw", "projected_total_gas_wei", "projected_net_score"):
+            if key in row and (row[key] is None or _route_number(row[key], raw=key != "projected_net_score")):
+                clean[key] = row[key]
+        for key in ("slippage_fraction", "tax_fraction"):
+            number = row.get(key)
+            if type(number) in (int, float) and 0 <= number < 1:
+                clean[key] = number
+        gas = row.get("gas_components_wei")
+        clean["gas_components_wei"] = {
+            key: gas[key] for key in ("swap", "approval", "wrap", "unwrap")
+            if key in gas and _route_number(gas[key], raw=True)
+        } if isinstance(gas, dict) else {}
+        codes = row.get("rejections")
+        clean["rejections"] = [code for code in codes[:8]
+                               if isinstance(code, str) and code in _ROUTE_REJECTIONS] if isinstance(codes, list) else []
+        if not isinstance(codes, list) or codes or clean["validation_level"] == "rejected":
+            clean["validation_level"] = "rejected"
+        result["candidates"].append(clean)
+    winner = value.get("selected_hypothetical_winner")
+    result["selected_hypothetical_winner"] = None
+    if status == "hypothetical_only" and isinstance(winner, dict):
+        if any(row["validation_level"] == "quote_only" and not row["rejections"]
+               and all(row[key] == winner.get(key) for key in ("provider", "settlement"))
+               for row in result["candidates"]):
+            result["selected_hypothetical_winner"] = {key: winner[key] for key in ("provider", "settlement")}
+    delta = value.get("runner_up_delta")
+    result["runner_up_delta"] = delta if _route_number(delta, nonnegative=True) and result["selected_hypothetical_winner"] else None
+    elapsed = value.get("elapsed_ms")
+    if type(elapsed) in (int, float) and 0 <= elapsed <= 3600000 and math.isfinite(elapsed):
+        result["elapsed_ms"] = elapsed
+    if _route_enum("observation_timing", value.get("observation_timing")):
+        result["observation_timing"] = value["observation_timing"]
+    return result
+
+
 def _allowlisted_status_payload(data):
     """Drop unrecognized top-level and nested fields before persistence/publication."""
     filtered = {key: data[key] for key in _STATUS_FIELDS if key in data}
@@ -458,6 +551,13 @@ def _allowlisted_status_payload(data):
     ):
         if field in filtered and filtered[field] is not None:
             filtered[field] = _allowlisted_mapping(filtered[field], allowed)
+
+    for direction in ("buy", "sell"):
+        field = direction + "_attempt"
+        if isinstance(filtered.get(field), dict):
+            comparison = _allowlisted_route_comparison(data[field].get("route_comparison"), direction)
+            if comparison is not None:
+                filtered[field]["route_comparison"] = comparison
 
     return filtered
 
@@ -1215,6 +1315,10 @@ DASHBOARD_HTML = """\
   .scout-links a:hover { text-decoration: underline; }
   .scout-stale { color: #f87171; font-weight: 700; }
   @media (max-width: 640px) { .scout-heading > span { display: none; } .scout-summary { overflow: hidden; text-overflow: ellipsis; } }
+  .shadow-routes { border: 1px dashed #64748b; border-radius: 0.35rem; padding: 0.7rem; margin-bottom: 0.75rem; font-size: 0.78rem; overflow-wrap: anywhere; min-width: 0; }
+  .shadow-routes p { margin: 0.4rem 0; }
+  .shadow-routes ul { list-style: none; padding: 0; margin: 0; }
+  .shadow-routes li { border-top: 1px solid #334155; padding: 0.5rem 0; }
 </style>
 </head>
 <body>
@@ -1670,6 +1774,26 @@ DASHBOARD_HTML = """\
     fetchEthPrices();
     fetchMarketData();
   });
+
+  function renderRouteComparison(comparison) {
+    if (!comparison || comparison.mode !== 'shadow') return '';
+    const value = v => esc(v ?? '—');
+    const winner = comparison.selected_hypothetical_winner;
+    const outcome = comparison.status === 'observation_failed' ? 'Observation failed' :
+      comparison.status === 'no_eligible_candidate' ? 'No eligible candidate' :
+      winner ? 'Hypothetical winner: ' + value(winner.provider) + ' / ' + value(winner.settlement) : 'Hypothetical winner unavailable';
+    let html = '<section class="shadow-routes" aria-label="Shadow route comparison"><strong>SHADOW ROUTE COMPARISON · ' + value(comparison.direction) + '</strong>' +
+      '<p>Observation only. Shadow did not choose or affect the live trade.</p><p>' + outcome + '</p><ul>';
+    for (const row of (comparison.candidates || []).slice(0, 4)) {
+      const gas = row.gas_components_wei || {};
+      html += '<li><strong>' + value(row.provider) + ' / ' + value(row.settlement) + '</strong> · ' + value(row.validation_level) +
+        ' · execution ineligible' + (row.rejections.length ? ' · ' + row.rejections.map(value).join(', ') : '') +
+        '<div>Quoted output / floor (raw): ' + value(row.quoted_output_raw) + ' / ' + value(row.output_floor_raw) + '</div>' +
+        '<div>Projected gas (wei): swap ' + value(gas.swap) + ' · approval ' + value(gas.approval) + ' · wrap ' + value(gas.wrap) + ' · unwrap ' + value(gas.unwrap) + ' · total ' + value(row.projected_total_gas_wei) + '</div>' +
+        '<div>Normalized score: ' + value(row.projected_net_score) + ' · ' + value(row.score_unit) + '</div></li>';
+    }
+    return html + '</ul><p>Runner-up delta (score units): ' + value(comparison.runner_up_delta) + ' · Elapsed: ' + value(comparison.elapsed_ms) + ' ms</p></section>';
+  }
 
   function esc(str) {
     const div = document.createElement('div');
@@ -2862,6 +2986,9 @@ DASHBOARD_HTML = """\
           esc(attempt.previous_quote_provider || '?') + ' → ' + esc(attempt.quote_provider || '?') +
           ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
+
+      html += renderRouteComparison(d.buy_attempt?.route_comparison);
+      html += renderRouteComparison(d.sell_attempt?.route_comparison);
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;

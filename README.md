@@ -457,6 +457,68 @@ operational state rather than a persistent Event; because buys run after status
 reporting, it appears on the following report and clears when the next buy check
 does not reproduce the block.
 
+Both attempt objects may also contain `route_comparison`, even without an
+attempt `status`. The card renders **SHADOW ROUTE COMPARISON** for each direction:
+the hypothetical winner, candidate validation/rejections, raw quoted output and
+floor, projected gas components/total in wei, normalized score with its unit,
+runner-up delta in score units, and elapsed milliseconds. Shadow observations
+did not choose or affect the live trade. No eligible candidate and observation
+failure have explicit labels; missing metrics display an em dash. This uses a
+wrapping list suitable for narrow cards, not a table.
+
+The accepted nested schema is deliberately fixed:
+
+```text
+route_comparison: {
+  mode: "shadow", direction: "buy" | "sell" (must match enclosing attempt),
+  status: "hypothetical_only" | "no_eligible_candidate" | "observation_failed",
+  candidates: [at most 4 {
+    provider: "uniswap" | "sushiswap", settlement: "native" | "weth",
+    validation_level: "quote_only" | "rejected", execution_eligible: false,
+    quoted_output_raw, output_floor_raw, projected_total_gas_wei,
+    gas_components_wei: {swap, approval, wrap, unwrap},
+    gas_basis: "conservative_budget_not_simulated",
+    slippage_fraction, tax_fraction,
+    approval_assumption: "none" | "reset_and_exact_approval_budget",
+    projected_net_score,
+    score_unit: "output_raw_per_eth_total_cost" | "net_return_wei",
+    rejections: [at most 8 fixed codes]
+  }],
+  selected_hypothetical_winner: {provider, settlement} | null,
+  runner_up_delta: decimal string | null, elapsed_ms: number,
+  observation_timing: "after_execution_attempt_with_pre_operation_budget"
+}
+```
+
+Raw amounts and gas values are unsigned decimal strings below `2**256` (78
+characters maximum); quote/floor/total and score may be null. Scores and deltas
+are decimal strings, allowing scientific notation, limited to 128 characters
+and absolute value `1e96`; delta must be nonnegative. Fractions must be numeric
+in `[0, 1)`, elapsed time in `[0, 3600000]`. Booleans are not numbers here.
+Rejection codes are `provider_quote_failed`, `invalid_quote_amounts`,
+`invalid_economic_assumptions`, `total_gas_above_cap`, `native_reserve`,
+`input_balance`, `missing_sell_cost_basis`, `sell_profit_floor`, `candidate_failed`.
+Unknown fields/codes and invalid optional values are stripped. Invalid envelope
+identity drops the comparison; invalid candidate identity or anything other
+than literal `execution_eligible: false` drops that candidate. Nonempty or
+malformed rejections keep a candidate rejected even when codes are stripped.
+A winner must match a retained, unrejected quote-only candidate and is always
+null for failure/no-eligible status. All displayed values are HTML-escaped.
+
+There is no recursive arbitrary-key acceptance, address, calldata, provider
+error, raw response, or credential field in this schema. Existing ingest API-key,
+rate, body-size and private-key checks remain unchanged, including scanning the
+original payload before stripping unknown fields. The local bot additionally
+emits `preparation_dependent` on candidates and `failures` on observation failure;
+these are intentionally outside this contract and stripped. Failure payloads
+may omit timing metrics. New provider names or enum values require an explicit
+dashboard schema update.
+
+Comparisons persist only inside their attempt in existing latest-state and
+bounded status-history snapshots; they do not create Events or separate durable
+records. A subsequent report omitting/nulling the attempt or comparison clears
+the live section normally; older snapshots age out under existing retention.
+
 Each card independently displays Dexscreener **Market Cap** immediately above
 AVG P&L. When Dexscreener does not provide circulating market cap but does
 provide fully diluted valuation, the card says **FDV** instead; the two values
