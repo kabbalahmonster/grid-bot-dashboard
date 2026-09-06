@@ -128,6 +128,149 @@ class TestRouteComparison(unittest.TestCase):
             payload["buy_attempt"]["route_comparison"]["secret"] = "x" * server.MAX_STATUS_REQUEST_BYTES
             self.assertEqual(client.post("/api/status", json=payload, headers=headers).status_code, 413)
 
+    # ------------------------------------------------------------------
+    # Allowlist extension: provider gas, fresh gas price, human-readable
+    # totals, and the new approval_assumption taxonomy.
+    # ------------------------------------------------------------------
+
+    def test_provider_gas_estimate_allowlist(self):
+        """provider_gas_estimate is a non-negative int passed through verbatim."""
+        for raw, expected in [(180000, 180000), (0, 0), (500000, 500000)]:
+            with self.subTest(raw=raw):
+                value = comparison()
+                value["candidates"][0]["provider_gas_estimate"] = raw
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("provider_gas_estimate"), expected)
+        for invalid in (-1, True, "abc", [], None, "9" * 1000, 2 ** 256):
+            with self.subTest(invalid=invalid):
+                value = comparison()
+                value["candidates"][0]["provider_gas_estimate"] = invalid
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertNotIn("provider_gas_estimate", row)
+
+    def test_effective_gas_price_wei_allowlist(self):
+        """effective_gas_price_wei is a non-negative int (raw wei, bounded)."""
+        for raw, expected in [(1_000_000, 1_000_000), (5_000_000_000, 5_000_000_000), (0, 0)]:
+            with self.subTest(raw=raw):
+                value = comparison()
+                value["candidates"][0]["effective_gas_price_wei"] = raw
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("effective_gas_price_wei"), expected)
+        for invalid in (-1, True, "<script>", "1e999", [], None, 2 ** 256):
+            with self.subTest(invalid=invalid):
+                value = comparison()
+                value["candidates"][0]["effective_gas_price_wei"] = invalid
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertNotIn("effective_gas_price_wei", row)
+
+    def test_gas_total_eth_allowlist(self):
+        """gas_total_eth is a non-negative float in reasonable range."""
+        for raw, expected in [(0.0001, 0.0001), (0.0, 0.0), (0.5, 0.5)]:
+            with self.subTest(raw=raw):
+                value = comparison()
+                value["candidates"][0]["gas_total_eth"] = raw
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("gas_total_eth"), expected)
+        for invalid in (-0.1, float("nan"), float("inf"), True, "<x>", []):
+            with self.subTest(invalid=invalid):
+                value = comparison()
+                value["candidates"][0]["gas_total_eth"] = invalid
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertNotIn("gas_total_eth", row)
+
+    def test_output_floor_human_allowlist(self):
+        """output_floor_human is a non-negative float (human-readable token units)."""
+        for raw, expected in [(12.5, 12.5), (0.0, 0.0), (3.14, 3.14)]:
+            with self.subTest(raw=raw):
+                value = comparison()
+                value["candidates"][0]["output_floor_human"] = raw
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("output_floor_human"), expected)
+        for invalid in (-1, float("nan"), float("inf"), True, "<x>", []):
+            with self.subTest(invalid=invalid):
+                value = comparison()
+                value["candidates"][0]["output_floor_human"] = invalid
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertNotIn("output_floor_human", row)
+
+    def test_quoted_output_human_allowlist(self):
+        """quoted_output_human is a non-negative float."""
+        value = comparison()
+        value["candidates"][0]["quoted_output_human"] = 21.0
+        row = self.clean(value)["route_comparison"]["candidates"][0]
+        self.assertEqual(row.get("quoted_output_human"), 21.0)
+        # Invalid types are dropped.
+        value["candidates"][0]["quoted_output_human"] = -1
+        row = self.clean(value)["route_comparison"]["candidates"][0]
+        self.assertNotIn("quoted_output_human", row)
+
+    def test_extended_gas_basis_enum(self):
+        """gas_basis accepts the new 'provider_estimate' label too."""
+        for label in ("provider_estimate", "conservative_direction_fallback", "conservative_budget_not_simulated", "skipped"):
+            with self.subTest(label=label):
+                value = comparison()
+                value["candidates"][0]["gas_basis"] = label
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("gas_basis"), label)
+        # Unknown labels are dropped.
+        value = comparison()
+        value["candidates"][0]["gas_basis"] = "<script>alert(1)</script>"
+        row = self.clean(value)["route_comparison"]["candidates"][0]
+        self.assertNotIn("gas_basis", row)
+
+    def test_extended_approval_assumption_enum(self):
+        """approval_assumption accepts the new 'existing_allowance_covers' label too."""
+        for label in ("existing_allowance_covers", "reset_and_exact_approval_budget", "none"):
+            with self.subTest(label=label):
+                value = comparison()
+                value["candidates"][0]["approval_assumption"] = label
+                row = self.clean(value)["route_comparison"]["candidates"][0]
+                self.assertEqual(row.get("approval_assumption"), label)
+        value = comparison()
+        value["candidates"][0]["approval_assumption"] = "opaque-secret"
+        row = self.clean(value)["route_comparison"]["candidates"][0]
+        self.assertNotIn("approval_assumption", row)
+
+    def test_legacy_payload_unchanged(self):
+        """Bots running the old payload shape still render without new fields."""
+        value = comparison()  # legacy fixture: no new fields present
+        result = self.clean(value)["route_comparison"]
+        # The new fields simply aren't there; nothing else breaks.
+        row = result["candidates"][0]
+        for new_field in ("provider_gas_estimate", "effective_gas_price_wei",
+                          "gas_total_eth", "output_floor_human", "quoted_output_human"):
+            self.assertNotIn(new_field, row)
+        # Legacy fields still present.
+        self.assertIn("quoted_output_raw", row)
+        self.assertIn("projected_total_gas_wei", row)
+        self.assertEqual(result["selected_hypothetical_winner"],
+                         {"provider": "uniswap", "settlement": "native"})
+
+    def test_renderer_shows_provider_gas_and_total_eth(self):
+        """The JS renderer emits the new gas/price/cost fields when present."""
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = html[start:end]
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+        })};
+""" + script
+        enriched = comparison()
+        enriched["candidates"][0].update(
+            provider_gas_estimate=180000,
+            effective_gas_price_wei=2000000,
+            gas_total_eth=0.00042,
+            output_floor_human=12.5,
+            quoted_output_human=21.0,
+        )
+        out = subprocess.run(["node", "-e", script + "\nconsole.log(JSON.stringify(renderRouteComparison(" + json.dumps(enriched) + ")));"],
+                             capture_output=True, text=True, check=True)
+        rendered = json.loads(out.stdout)
+        for needle in ("180000", "2000000", "0.000420", "12.5", "21"):
+            with self.subTest(needle=needle):
+                self.assertIn(needle, rendered, f"renderer missing {needle!r}: {rendered!r}")
+
 
 if __name__ == "__main__":
     unittest.main()

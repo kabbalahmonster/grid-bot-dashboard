@@ -437,8 +437,10 @@ _ROUTE_ENUMS = {
     "provider": {"uniswap", "sushiswap"},
     "settlement": {"native", "weth"},
     "validation_level": {"quote_only", "rejected"},
-    "gas_basis": {"conservative_budget_not_simulated"},
-    "approval_assumption": {"none", "reset_and_exact_approval_budget"},
+    "gas_basis": {"conservative_budget_not_simulated",
+                  "provider_estimate", "conservative_direction_fallback", "skipped"},
+    "approval_assumption": {"none", "reset_and_exact_approval_budget",
+                            "existing_allowance_covers"},
     "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei"},
     "observation_timing": {"after_execution_attempt_with_pre_operation_budget"},
 }
@@ -451,6 +453,20 @@ _ROUTE_REJECTIONS = frozenset({
 
 def _route_enum(key, value):
     return isinstance(value, str) and value in _ROUTE_ENUMS[key]
+
+
+def _route_float(value):
+    """Sanitize a non-negative finite float for public payload fields.
+
+    The bot sends floats as JSON numbers; the server must reject NaN/Inf,
+    negative values, non-numeric types, and any string-shaped value that
+    could carry script payloads.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    if value != value or value in (float("inf"), float("-inf")):
+        return False
+    return value >= 0 and value < 1e96
 
 
 def _route_number(value, *, raw=False, nonnegative=False):
@@ -492,6 +508,17 @@ def _allowlisted_route_comparison(value, direction):
         for key in ("quoted_output_raw", "output_floor_raw", "projected_total_gas_wei", "projected_net_score"):
             if key in row and (row[key] is None or _route_number(row[key], raw=key != "projected_net_score")):
                 clean[key] = row[key]
+        # New: provider gas estimate, fresh gas price, and human-readable
+        # totals. These give the dashboard per-candidate visibility into
+        # which provider's quote was cheapest and which won the economics.
+        for key in ("provider_gas_estimate", "effective_gas_price_wei"):
+            extra = row.get(key)
+            if isinstance(extra, int) and not isinstance(extra, bool) and 0 <= extra < 2**256:
+                clean[key] = extra
+        for key in ("gas_total_eth", "output_floor_human", "quoted_output_human"):
+            extra = row.get(key)
+            if _route_float(extra):
+                clean[key] = extra
         for key in ("slippage_fraction", "tax_fraction"):
             number = row.get(key)
             if type(number) in (int, float) and 0 <= number < 1:
@@ -1786,10 +1813,25 @@ DASHBOARD_HTML = """\
       '<p>Observation only. Shadow did not choose or affect the live trade.</p><p>' + outcome + '</p><ul>';
     for (const row of (comparison.candidates || []).slice(0, 4)) {
       const gas = row.gas_components_wei || {};
-      html += '<li><strong>' + value(row.provider) + ' / ' + value(row.settlement) + '</strong> · ' + value(row.validation_level) +
+      const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
+      const winnerClass = isWinner ? ' shadow-winner' : '';
+      const basis = row.gas_basis ? ' · basis: ' + value(row.gas_basis) : '';
+      const approval = row.approval_assumption ? ' · approval: ' + value(row.approval_assumption) : '';
+      const providerGas = (row.provider_gas_estimate !== undefined)
+        ? ' · provider gas: ' + value(row.provider_gas_estimate) : '';
+      const gasPrice = (row.effective_gas_price_wei !== undefined)
+        ? ' · gas price (wei): ' + value(row.effective_gas_price_wei) : '';
+      const totalEth = (row.gas_total_eth !== undefined)
+        ? ' · total cost (ETH): ' + (Number(row.gas_total_eth)).toFixed(6) : '';
+      const floorHuman = (row.output_floor_human !== undefined)
+        ? ' · floor (human): ' + (Number(row.output_floor_human)).toString() : '';
+      const outputHuman = (row.quoted_output_human !== undefined)
+        ? ' · output (human): ' + (Number(row.quoted_output_human)).toString() : '';
+      html += '<li class="shadow-row' + winnerClass + '"><strong>' + value(row.provider) + ' / ' + value(row.settlement) + '</strong> · ' + value(row.validation_level) +
         ' · execution ineligible' + (row.rejections.length ? ' · ' + row.rejections.map(value).join(', ') : '') +
-        '<div>Quoted output / floor (raw): ' + value(row.quoted_output_raw) + ' / ' + value(row.output_floor_raw) + '</div>' +
-        '<div>Projected gas (wei): swap ' + value(gas.swap) + ' · approval ' + value(gas.approval) + ' · wrap ' + value(gas.wrap) + ' · unwrap ' + value(gas.unwrap) + ' · total ' + value(row.projected_total_gas_wei) + '</div>' +
+        basis + approval +
+        '<div>Quoted output / floor (raw): ' + value(row.quoted_output_raw) + ' / ' + value(row.output_floor_raw) + outputHuman + floorHuman + '</div>' +
+        '<div>Projected gas (wei): swap ' + value(gas.swap) + ' · approval ' + value(gas.approval) + ' · wrap ' + value(gas.wrap) + ' · unwrap ' + value(gas.unwrap) + ' · total ' + value(row.projected_total_gas_wei) + providerGas + gasPrice + totalEth + '</div>' +
         '<div>Normalized score: ' + value(row.projected_net_score) + ' · ' + value(row.score_unit) + '</div></li>';
     }
     return html + '</ul><p>Runner-up delta (score units): ' + value(comparison.runner_up_delta) + ' · Elapsed: ' + value(comparison.elapsed_ms) + ' ms</p></section>';
