@@ -442,10 +442,13 @@ _ROUTE_ENUMS = {
     "approval_assumption": {"none", "reset_and_exact_approval_budget",
                             "existing_allowance_covers"},
     "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei"},
+    "quote_failure_kind": {"no_route_or_liquidity", "provider_quote_failed", "invalid_quote"},
+    "gas_price_currentness": {"fresh", "stale", "unknown"},
     "observation_timing": {"after_execution_attempt_with_pre_operation_budget"},
 }
 _ROUTE_REJECTIONS = frozenset({
     "provider_quote_failed", "invalid_quote_amounts", "invalid_economic_assumptions",
+    "no_route", "insufficient_liquidity", "no_route_or_liquidity",
     "total_gas_above_cap", "native_reserve", "input_balance",
     "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed", "observation_deadline",
 })
@@ -505,6 +508,9 @@ def _allowlisted_route_comparison(value, direction):
         for key in ("gas_basis", "approval_assumption", "score_unit"):
             if _route_enum(key, row.get(key)):
                 clean[key] = row[key]
+        for key in ("quote_failure_kind", "gas_price_currentness"):
+            if _route_enum(key, row.get(key)):
+                clean[key] = row[key]
         for key in ("quoted_output_raw", "output_floor_raw", "projected_total_gas_wei", "projected_net_score"):
             if key in row and (row[key] is None or _route_number(row[key], raw=key != "projected_net_score")):
                 clean[key] = row[key]
@@ -519,6 +525,9 @@ def _allowlisted_route_comparison(value, direction):
             extra = row.get(key)
             if _route_float(extra):
                 clean[key] = extra
+        age = row.get("gas_price_age_seconds")
+        if type(age) in (int, float) and math.isfinite(age) and 0 <= age <= 604800:
+            clean["gas_price_age_seconds"] = age
         for key in ("slippage_fraction", "tax_fraction"):
             number = row.get(key)
             if type(number) in (int, float) and 0 <= number < 1:
@@ -1805,32 +1814,34 @@ DASHBOARD_HTML = """\
   function renderRouteComparison(comparison) {
     if (!comparison || comparison.mode !== 'shadow') return '';
     const value = v => esc(v ?? '—');
+    const rows = Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 4) : [];
     const winner = comparison.selected_hypothetical_winner;
-    const outcome = comparison.status === 'observation_failed' ? 'Observation failed' :
+    const status = comparison.status === 'observation_failed' ? 'Observation failed' :
       comparison.status === 'no_eligible_candidate' ? 'No eligible candidate' :
       winner ? 'Hypothetical winner: ' + value(winner.provider) + ' / ' + value(winner.settlement) : 'Hypothetical winner unavailable';
+    const count = rows.length + ' candidate' + (rows.length === 1 ? '' : 's');
     let html = '<section class="shadow-routes" aria-label="Shadow route comparison"><strong>SHADOW ROUTE COMPARISON · ' + value(comparison.direction) + '</strong>' +
-      '<p>Observation only. Shadow did not choose or affect the live trade.</p><p>' + outcome + '</p><ul>';
-    for (const row of (comparison.candidates || []).slice(0, 4)) {
+      '<p>Observation only. Shadow did not choose or affect the live trade.</p><p><strong>Status:</strong> ' + status + ' · ' + count + '</p><ul>';
+    if (!rows.length) html += '<li>No provider quotes available for this comparison.</li>';
+    for (const row of rows) {
       const gas = row.gas_components_wei || {};
       const rejections = Array.isArray(row.rejections) ? row.rejections : [];
       const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
       const winnerClass = isWinner ? ' shadow-winner' : '';
+      const failureKind = row.quote_failure_kind || (rejections.some(code => ['no_route', 'insufficient_liquidity', 'no_route_or_liquidity'].includes(code)) ? 'no_route_or_liquidity' : rejections.includes('provider_quote_failed') ? 'provider_quote_failed' : '');
+      const failure = failureKind === 'no_route_or_liquidity' ? 'No provider quote available (No route or sufficient liquidity)' : failureKind === 'provider_quote_failed' ? 'No provider quote available (Provider quote failed)' : '';
+      const quoteNote = failure || (row.quoted_output_raw == null ? 'No provider quote available' : '');
       const basis = row.gas_basis ? ' · basis: ' + value(row.gas_basis) : '';
+      const currentness = row.gas_price_currentness ? ' · gas price: ' + value(row.gas_price_currentness) + (row.gas_price_age_seconds !== undefined ? ' (' + value(row.gas_price_age_seconds) + 's old)' : '') : '';
       const approval = row.approval_assumption ? ' · approval: ' + value(row.approval_assumption) : '';
-      const providerGas = (row.provider_gas_estimate !== undefined)
-        ? ' · provider gas: ' + value(row.provider_gas_estimate) : '';
-      const gasPrice = (row.effective_gas_price_wei !== undefined)
-        ? ' · gas price (wei): ' + value(row.effective_gas_price_wei) : '';
-      const totalEth = (row.gas_total_eth !== undefined)
-        ? ' · total cost (ETH): ' + (Number(row.gas_total_eth)).toFixed(6) : '';
-      const floorHuman = (row.output_floor_human !== undefined)
-        ? ' · floor (human): ' + (Number(row.output_floor_human)).toString() : '';
-      const outputHuman = (row.quoted_output_human !== undefined)
-        ? ' · output (human): ' + (Number(row.quoted_output_human)).toString() : '';
+      const providerGas = (row.provider_gas_estimate !== undefined) ? ' · provider gas: ' + value(row.provider_gas_estimate) : '';
+      const gasPrice = (row.effective_gas_price_wei !== undefined) ? ' · gas price (wei): ' + value(row.effective_gas_price_wei) : '';
+      const totalEth = (row.gas_total_eth !== undefined) ? ' · total cost (ETH): ' + (Number(row.gas_total_eth)).toFixed(6) : '';
+      const floorHuman = (row.output_floor_human !== undefined) ? ' · floor (human): ' + (Number(row.output_floor_human)).toString() : '';
+      const outputHuman = (row.quoted_output_human !== undefined) ? ' · output (human): ' + (Number(row.quoted_output_human)).toString() : '';
       html += '<li class="shadow-row' + winnerClass + '"><strong>' + value(row.provider) + ' / ' + value(row.settlement) + '</strong> · ' + value(row.validation_level) +
-        ' · execution ineligible' + (rejections.length ? ' · ' + rejections.map(value).join(', ') : '') +
-        basis + approval +
+        ' · execution ineligible' + (quoteNote ? ' · <strong>' + value(quoteNote) + '</strong>' : '') + (rejections.length ? ' · ' + rejections.map(value).join(', ') : '') +
+        basis + currentness + approval +
         '<div>Quoted output / floor (raw): ' + value(row.quoted_output_raw) + ' / ' + value(row.output_floor_raw) + outputHuman + floorHuman + '</div>' +
         '<div>Projected gas (wei): swap ' + value(gas.swap) + ' · approval ' + value(gas.approval) + ' · wrap ' + value(gas.wrap) + ' · unwrap ' + value(gas.unwrap) + ' · total ' + value(row.projected_total_gas_wei) + providerGas + gasPrice + totalEth + '</div>' +
         '<div>Normalized score: ' + value(row.projected_net_score) + ' · ' + value(row.score_unit) + '</div></li>';

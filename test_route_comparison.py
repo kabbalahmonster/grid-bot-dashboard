@@ -284,6 +284,42 @@ class TestRouteComparison(unittest.TestCase):
             with self.subTest(needle=needle):
                 self.assertIn(needle, rendered, f"renderer missing {needle!r}: {rendered!r}")
 
+    def test_failure_context_and_gas_currentness_are_allowlisted(self):
+        value = comparison()
+        row = value["candidates"][0]
+        row.update(rejections=["provider_quote_failed"], quote_failure_kind="provider_quote_failed",
+                   gas_price_currentness="fresh", gas_price_age_seconds=4.5)
+        clean = self.clean(value)["route_comparison"]["candidates"][0]
+        self.assertEqual(clean["quote_failure_kind"], "provider_quote_failed")
+        self.assertEqual(clean["gas_price_currentness"], "fresh")
+        self.assertEqual(clean["gas_price_age_seconds"], 4.5)
+        for key, invalid in (("quote_failure_kind", "<script>"),
+                             ("gas_price_currentness", "secret"),
+                             ("gas_price_age_seconds", -1)):
+            value = comparison()
+            value["candidates"][0][key] = invalid
+            self.assertNotIn(key, self.clean(value)["route_comparison"]["candidates"][0])
+
+    def test_renderer_explains_missing_quotes_and_summarizes_status(self):
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+        })};\n""" + html[start:end]
+        value = comparison()
+        value["candidates"][0].update(quoted_output_raw=None, output_floor_raw=None,
+            projected_net_score=None, rejections=["provider_quote_failed"],
+            quote_failure_kind="provider_quote_failed", gas_price_currentness="fresh",
+            gas_price_age_seconds=4.5)
+        output = subprocess.run(["node", "-e", script + "\nconsole.log(renderRouteComparison(" + json.dumps(value) + "));"],
+                                capture_output=True, text=True, check=True).stdout
+        self.assertIn("No provider quote available", output)
+        self.assertIn("Provider quote failed", output)
+        self.assertIn("fresh", output)
+        self.assertIn("4.5s old", output)
+        self.assertIn("1 candidate", output)
+
 
 if __name__ == "__main__":
     unittest.main()
