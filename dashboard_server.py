@@ -444,6 +444,7 @@ _ROUTE_ENUMS = {
     "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei"},
     "quote_failure_kind": {"no_route_or_liquidity", "provider_quote_failed", "invalid_quote",
                            "observation_timeout"},
+    "candidate_outcome": {"not_sampled"},
     "gas_price_currentness": {"fresh", "stale", "unknown"},
     "observation_timing": {"after_execution_attempt_with_pre_operation_budget"},
 }
@@ -510,7 +511,7 @@ def _allowlisted_route_comparison(value, direction):
         for key in ("gas_basis", "approval_assumption", "score_unit"):
             if _route_enum(key, row.get(key)):
                 clean[key] = row[key]
-        for key in ("quote_failure_kind", "gas_price_currentness"):
+        for key in ("quote_failure_kind", "gas_price_currentness", "candidate_outcome"):
             if _route_enum(key, row.get(key)):
                 clean[key] = row[key]
         for key in ("quoted_output_raw", "output_floor_raw", "projected_total_gas_wei", "projected_net_score"):
@@ -1831,7 +1832,7 @@ DASHBOARD_HTML = """\
       const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
       const winnerClass = isWinner ? ' shadow-winner' : '';
       const failureKind = row.quote_failure_kind || (rejections.includes('observation_timeout') ? 'observation_timeout' : rejections.some(code => ['no_route', 'insufficient_liquidity', 'no_route_or_liquidity'].includes(code)) ? 'no_route_or_liquidity' : rejections.includes('provider_quote_failed') ? 'provider_quote_failed' : '');
-      const failure = failureKind === 'observation_timeout' ? 'Not sampled before observation deadline' : failureKind === 'no_route_or_liquidity' ? 'No provider quote available (No route or sufficient liquidity)' : failureKind === 'provider_quote_failed' ? 'No provider quote available (Provider quote failed)' : '';
+      const failure = row.candidate_outcome === 'not_sampled' ? 'Not sampled before observation deadline' : failureKind === 'observation_timeout' ? 'Quote timed out within observation deadline' : failureKind === 'no_route_or_liquidity' ? 'No provider quote available (No route or sufficient liquidity)' : failureKind === 'provider_quote_failed' ? 'No provider quote available (Provider quote failed)' : '';
       const quoteNote = failure || (row.quoted_output_raw == null ? 'No provider quote available' : '');
       const basis = row.gas_basis ? ' · basis: ' + value(row.gas_basis) : '';
       const currentness = row.gas_price_currentness ? ' · gas price: ' + value(row.gas_price_currentness) + (row.gas_price_age_seconds !== undefined ? ' (' + value(row.gas_price_age_seconds) + 's old)' : '') : '';
