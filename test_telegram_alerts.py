@@ -200,6 +200,16 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertNotIn("Sell checks", text)
         self.assertIn("Nothing needs attention", text)
 
+    def test_attention_ignores_malformed_sell_attempt(self):
+        self.states["weird"] = {
+            "display_name": "WEIRD", "received_at": datetime.now(timezone.utc).isoformat(),
+            "sell_attempt": "not-a-mapping",
+        }
+        self.alerts._handle_command({"chat": {"id": 7045629589}, "text": "/attention"})
+        text = self.alerts.send.call_args.args[0]
+        self.assertNotIn("Sell checks", text)
+        self.assertIn("Nothing needs attention", text)
+
     def test_profit_and_trade_commands_use_requested_period(self):
         now = datetime.now(timezone.utc).isoformat()
         self.states["winner"] = {

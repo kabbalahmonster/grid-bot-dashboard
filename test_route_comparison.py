@@ -113,6 +113,19 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("&lt;script&gt;", rendered[4])
         self.assertIn("renderRouteComparison(d.sell_attempt?.route_comparison)", html)
 
+    def test_renderer_tolerates_restored_malformed_rejections(self):
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent; }
+        })};\n""" + html[start:end]
+        value = comparison()
+        value["candidates"][0]["rejections"] = "corrupt legacy state"
+        result = subprocess.run(["node", "-e", script + "\nrenderRouteComparison(" + json.dumps(value) + ");"],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_ingest_security_and_transient_lifecycle(self):
         client = server.app.test_client()
         headers = {"X-API-Key": "route-test-key"}
@@ -206,7 +219,7 @@ class TestRouteComparison(unittest.TestCase):
 
     def test_extended_gas_basis_enum(self):
         """gas_basis accepts the new 'provider_estimate' label too."""
-        for label in ("provider_estimate", "conservative_direction_fallback", "conservative_budget_not_simulated", "skipped"):
+        for label in ("local_estimate", "provider_estimate", "conservative_direction_fallback", "conservative_budget_not_simulated", "skipped"):
             with self.subTest(label=label):
                 value = comparison()
                 value["candidates"][0]["gas_basis"] = label

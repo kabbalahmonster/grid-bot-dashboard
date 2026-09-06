@@ -39,6 +39,11 @@ CHAIN_EXPLORERS = {
 
 
 class TelegramAlerts:
+    @staticmethod
+    def _attempt(value):
+        """Return only valid attempt mappings from live or restored state."""
+        return value if isinstance(value, dict) else {}
+
     def __init__(self, token, chat_id, state_file, state_provider, offline_seconds=300, request_timeout=10,
                  dashboard_url="https://doomdash.ca", low_funds_buffer_eth=0.0005,
                  unbanked_usdg_threshold=10.0, daily_digest_time="13:00", scout=None):
@@ -484,7 +489,7 @@ class TelegramAlerts:
             return
         name = self._name(bot_id, current)
         if not previous:
-            attempt = current.get("sell_attempt") or {}
+            attempt = self._attempt(current.get("sell_attempt"))
             if self._wanted("safety") and attempt.get("status") == "position_balance_mismatch":
                 identity = f"balance-mismatch:{bot_id}:{attempt.get('position_id')}:{attempt.get('deficit_raw')}"
                 if self._remember(identity):
@@ -540,8 +545,8 @@ class TelegramAlerts:
                 self.send(f"⚑ Needs new positions · {name}\nAll {maximum} position slots are filled",
                           reply_markup=self._alert_buttons())
 
-        previous_attempt = previous.get("sell_attempt") or {}
-        current_attempt = current.get("sell_attempt") or {}
+        previous_attempt = self._attempt(previous.get("sell_attempt"))
+        current_attempt = self._attempt(current.get("sell_attempt"))
         previous_mismatch = previous_attempt.get("status") == "position_balance_mismatch"
         current_mismatch = current_attempt.get("status") == "position_balance_mismatch"
         if self._wanted("safety") and current_mismatch and not previous_mismatch:
@@ -929,9 +934,10 @@ class TelegramAlerts:
                 sections["stale"].append(name)
             if state.get("capacity_warning"):
                 sections["positions"].append(name)
-            if (state.get("sell_attempt") or {}).get("status"):
+            attempt = self._attempt(state.get("sell_attempt"))
+            if attempt.get("status"):
                 sections["sells"].append(name)
-            if (state.get("sell_attempt") or {}).get("status") == "position_balance_mismatch":
+            if attempt.get("status") == "position_balance_mismatch":
                 sections["safety"].append(name)
             if self._funds_issue(state):
                 sections["funds"].append(name)

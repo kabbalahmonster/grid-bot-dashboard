@@ -437,7 +437,7 @@ _ROUTE_ENUMS = {
     "provider": {"uniswap", "sushiswap"},
     "settlement": {"native", "weth"},
     "validation_level": {"quote_only", "rejected"},
-    "gas_basis": {"conservative_budget_not_simulated",
+    "gas_basis": {"conservative_budget_not_simulated", "local_estimate",
                   "provider_estimate", "conservative_direction_fallback", "skipped"},
     "approval_assumption": {"none", "reset_and_exact_approval_budget",
                             "existing_allowance_covers"},
@@ -447,7 +447,7 @@ _ROUTE_ENUMS = {
 _ROUTE_REJECTIONS = frozenset({
     "provider_quote_failed", "invalid_quote_amounts", "invalid_economic_assumptions",
     "total_gas_above_cap", "native_reserve", "input_balance",
-    "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed",
+    "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed", "observation_deadline",
 })
 
 
@@ -1813,6 +1813,7 @@ DASHBOARD_HTML = """\
       '<p>Observation only. Shadow did not choose or affect the live trade.</p><p>' + outcome + '</p><ul>';
     for (const row of (comparison.candidates || []).slice(0, 4)) {
       const gas = row.gas_components_wei || {};
+      const rejections = Array.isArray(row.rejections) ? row.rejections : [];
       const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
       const winnerClass = isWinner ? ' shadow-winner' : '';
       const basis = row.gas_basis ? ' · basis: ' + value(row.gas_basis) : '';
@@ -1828,7 +1829,7 @@ DASHBOARD_HTML = """\
       const outputHuman = (row.quoted_output_human !== undefined)
         ? ' · output (human): ' + (Number(row.quoted_output_human)).toString() : '';
       html += '<li class="shadow-row' + winnerClass + '"><strong>' + value(row.provider) + ' / ' + value(row.settlement) + '</strong> · ' + value(row.validation_level) +
-        ' · execution ineligible' + (row.rejections.length ? ' · ' + row.rejections.map(value).join(', ') : '') +
+        ' · execution ineligible' + (rejections.length ? ' · ' + rejections.map(value).join(', ') : '') +
         basis + approval +
         '<div>Quoted output / floor (raw): ' + value(row.quoted_output_raw) + ' / ' + value(row.output_floor_raw) + outputHuman + floorHuman + '</div>' +
         '<div>Projected gas (wei): swap ' + value(gas.swap) + ' · approval ' + value(gas.approval) + ' · wrap ' + value(gas.wrap) + ' · unwrap ' + value(gas.unwrap) + ' · total ' + value(row.projected_total_gas_wei) + providerGas + gasPrice + totalEth + '</div>' +
