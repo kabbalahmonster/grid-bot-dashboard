@@ -85,6 +85,30 @@ class TestRouteComparison(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["validation_level"], "rejected")
         self.assertIsNone(result["selected_hypothetical_winner"])
 
+    def test_observation_timeout_is_preserved_and_rendered_as_not_sampled(self):
+        value = comparison("sell")
+        row = value["candidates"][0]
+        row.update(validation_level="rejected", quoted_output_raw=None,
+                   projected_net_score=None, rejections=["observation_timeout"],
+                   quote_failure_kind="observation_timeout",
+                   gas_price_currentness="unknown")
+        value.update(status="no_eligible_candidate", selected_hypothetical_winner=None,
+                     runner_up_delta=None)
+
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["candidates"][0]["rejections"], ["observation_timeout"])
+        self.assertEqual(clean["candidates"][0]["quote_failure_kind"], "observation_timeout")
+
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+        })};\n""" + html[start:end]
+        output = subprocess.run(["node", "-e", script + '\nconsole.log(renderRouteComparison(' + json.dumps(clean) + '));'],
+                                capture_output=True, text=True, check=True)
+        self.assertIn("Not sampled before observation deadline", output.stdout)
+
     def test_actual_javascript_rendering(self):
         html = server.DASHBOARD_HTML
         start = html.index("  function renderRouteComparison(")
