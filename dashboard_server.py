@@ -438,22 +438,29 @@ _ROUTE_ENUMS = {
     "settlement": {"native", "weth"},
     "validation_level": {"quote_only", "rejected"},
     "gas_basis": {"conservative_budget_not_simulated", "local_estimate",
-                  "provider_estimate", "conservative_direction_fallback", "skipped"},
+                  "provider_estimate", "conservative_direction_fallback", "skipped",
+                  "provider_estimate_pending_post_setup_local_simulation",
+                  "local_simulation_required", "dynamic_setup_required",
+                  "staged_setup_requires_provider_swap_estimate"},
     "approval_assumption": {"none", "reset_and_exact_approval_budget",
                             "existing_allowance_covers"},
-    "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei"},
+    "score_unit": {"output_raw_per_eth_total_cost", "net_return_wei",
+                   "net_return_after_all_projected_gas_wei"},
     "quote_failure_kind": {"no_route_or_liquidity", "provider_quote_failed", "invalid_quote",
                            "observation_timeout"},
     "candidate_outcome": {"not_sampled"},
     "gas_price_currentness": {"fresh", "stale", "unknown"},
-    "observation_timing": {"after_execution_attempt_with_pre_operation_budget"},
+    "observation_timing": {"after_execution_attempt_with_pre_operation_budget",
+                           "parallel_pre_execution"},
 }
 _ROUTE_REJECTIONS = frozenset({
     "provider_quote_failed", "invalid_quote_amounts", "invalid_economic_assumptions",
     "no_route", "insufficient_liquidity", "no_route_or_liquidity",
     "total_gas_above_cap", "native_reserve", "input_balance",
     "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed", "observation_deadline",
-    "observation_timeout",
+    "observation_timeout", "provider_swap_gas_estimate_missing",
+    "local_gas_simulation_failed", "approval_required_before_local_simulation",
+    "local_conversion_gas_simulation_failed",
 })
 
 
@@ -495,12 +502,16 @@ def _allowlisted_route_comparison(value, direction):
     if not isinstance(value, dict):
         return None
     status = value.get("status")
-    if (value.get("mode") != "shadow" or value.get("direction") != direction
+    mode = value.get("mode")
+    if (mode not in {"shadow", "execution_preflight"} or value.get("direction") != direction
             or not isinstance(status, str)
-            or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed"}
+            or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed",
+                              "preflight_no_authorized_candidate", "preflight_candidate_selected",
+                              "preflight_failed", "required_provider_unavailable",
+                              "required_local_gas_estimator_unavailable", "completed"}
             or not isinstance(value.get("candidates"), list)):
         return None
-    result = {"mode": "shadow", "direction": direction, "status": status, "candidates": []}
+    result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
     for row in value["candidates"][:4]:
         if (not isinstance(row, dict) or row.get("execution_eligible") is not False
                 or not all(_route_enum(key, row.get(key)) for key in
@@ -528,6 +539,19 @@ def _allowlisted_route_comparison(value, direction):
             extra = row.get(key)
             if _route_float(extra):
                 clean[key] = extra
+        for key in ("projected_profit_eth", "projected_profit_percent",
+                    "minimum_return_eth", "minimum_profit_percent"):
+            extra = row.get(key)
+            if type(extra) in (int, float) and math.isfinite(extra) and abs(extra) < 1e96:
+                clean[key] = extra
+        for key in ("sold_cost_wei", "minimum_return_wei"):
+            if key in row and _route_number(row[key], raw=True):
+                clean[key] = row[key]
+        if "projected_profit_wei" in row and _route_number(row["projected_profit_wei"]):
+            clean["projected_profit_wei"] = row["projected_profit_wei"]
+        protocol = row.get("protocol")
+        if protocol in {"V2", "V3", "V4"}:
+            clean["protocol"] = protocol
         age = row.get("gas_price_age_seconds")
         if type(age) in (int, float) and math.isfinite(age) and 0 <= age <= 604800:
             clean["gas_price_age_seconds"] = age
@@ -548,7 +572,7 @@ def _allowlisted_route_comparison(value, direction):
         result["candidates"].append(clean)
     winner = value.get("selected_hypothetical_winner")
     result["selected_hypothetical_winner"] = None
-    if status == "hypothetical_only" and isinstance(winner, dict):
+    if status in {"hypothetical_only", "preflight_candidate_selected", "completed"} and isinstance(winner, dict):
         if any(row["validation_level"] == "quote_only" and not row["rejections"]
                and all(row[key] == winner.get(key) for key in ("provider", "settlement"))
                for row in result["candidates"]):
@@ -560,6 +584,16 @@ def _allowlisted_route_comparison(value, direction):
         result["elapsed_ms"] = elapsed
     if _route_enum("observation_timing", value.get("observation_timing")):
         result["observation_timing"] = value["observation_timing"]
+    final = value.get("final")
+    if status == "completed" and isinstance(final, dict):
+        tx_hash = final.get("tx_hash")
+        if isinstance(tx_hash, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash):
+            clean_final = {"tx_hash": tx_hash}
+            for key in ("received_eth", "gas_fee_eth", "profit_eth", "profit_percent"):
+                number = final.get(key)
+                if type(number) in (int, float) and math.isfinite(number) and abs(number) < 1e96:
+                    clean_final[key] = number
+            result["final"] = clean_final
     return result
 
 
@@ -1358,6 +1392,19 @@ DASHBOARD_HTML = """\
   .shadow-routes p { margin: 0.4rem 0; }
   .shadow-routes ul { list-style: none; padding: 0; margin: 0; }
   .shadow-routes li { border-top: 1px solid #334155; padding: 0.5rem 0; }
+  .tournament-card { border: 1px solid #7c3aed; background: linear-gradient(145deg, rgba(76,29,149,.28), rgba(15,23,42,.8)); border-radius: .65rem; padding: .8rem; margin-bottom: .8rem; }
+  .tournament-card h4 { margin: 0 0 .25rem; color: #ddd6fe; letter-spacing: .04em; }
+  .tournament-card .arena-status { color: #c4b5fd; margin-bottom: .55rem; }
+  .tournament-scoreboard { display: grid; gap: .4rem; }
+  .tournament-contestant { border: 1px solid #334155; background: rgba(15,23,42,.72); border-radius: .45rem; overflow: hidden; }
+  .tournament-contestant.winner { border-color: #facc15; box-shadow: 0 0 0 1px rgba(250,204,21,.22); }
+  .tournament-contestant summary { cursor: pointer; display: grid; grid-template-columns: 2rem minmax(7rem,1fr) auto auto; gap: .55rem; align-items: center; padding: .6rem; list-style: none; }
+  .tournament-contestant summary::-webkit-details-marker { display: none; }
+  .tournament-rank { color: #94a3b8; font-weight: 800; }
+  .tournament-profit.positive { color: #4ade80; } .tournament-profit.negative { color: #f87171; }
+  .tournament-detail { border-top: 1px solid #334155; padding: .6rem; color: #cbd5e1; line-height: 1.55; }
+  .tournament-final { margin-top: .65rem; border-top: 1px solid #7c3aed; padding-top: .65rem; color: #f5d0fe; }
+  .summary-item.tournaments-active { background:#4c1d95; border-color:#a78bfa; color:#f5f3ff; font-weight:700; animation:capacity-pulse 1.5s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -1487,6 +1534,7 @@ DASHBOARD_HTML = """\
   const closedSigils = new Set();
   const openTrades = new Set();
   const openEvents = new Set();
+  const openTournamentContestants = new Set();
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false, safety: true };
@@ -1814,11 +1862,46 @@ DASHBOARD_HTML = """\
     fetchMarketData();
   });
 
-  function renderRouteComparison(comparison) {
-    if (!comparison || comparison.mode !== 'shadow') return '';
+  function renderRouteComparison(comparison, botKey) {
+    if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return '';
     const value = v => esc(v ?? '—');
-    const rows = Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 4) : [];
+    const rows = (Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 4) : []).sort(function(a, b) {
+      const av = Number(a.projected_net_score); const bv = Number(b.projected_net_score);
+      if (!Number.isFinite(av)) return 1; if (!Number.isFinite(bv)) return -1; return bv - av;
+    });
     const winner = comparison.selected_hypothetical_winner;
+    if (comparison.mode === 'execution_preflight') {
+      const completed = comparison.status === 'completed';
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : '⚔️ ROUTE TOURNAMENT';
+      const status = completed ? 'Final result confirmed on-chain' : winner ? 'Battle complete · winner selected' : 'No contestant cleared every guard';
+      let html = '<section class="tournament-card" data-tournament-card><h4>' + title + ' · ' + value(comparison.direction).toUpperCase() + '</h4><div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms</div><div class="tournament-scoreboard">';
+      if (!rows.length) html += '<div>No contestants reported this round.</div>';
+      rows.forEach(function(row, index) {
+        const rejected = row.validation_level === 'rejected';
+        const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
+        const pct = Number(row.projected_profit_percent);
+        const profitEth = Number(row.projected_profit_eth);
+        const minimumEth = Number(row.minimum_return_eth);
+        const gasEth = Number(row.gas_total_eth);
+        const rejections = Array.isArray(row.rejections) ? row.rejections : [];
+        const contestantKey = String(botKey || '') + ':' + row.provider + ':' + row.settlement;
+        html += '<details class="tournament-contestant' + (isWinner ? ' winner' : '') + '" data-tournament-key="' + value(contestantKey) + '"' + (openTournamentContestants.has(contestantKey) ? ' open' : '') + '><summary>' +
+          '<span class="tournament-rank">#' + (index + 1) + '</span><strong>' + (isWinner ? '👑 ' : '') + value(row.provider) + ' · ' + value(row.settlement).toUpperCase() + '</strong>' +
+          '<span class="tournament-profit ' + (pct >= 0 ? 'positive' : 'negative') + '">' + (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—') + '</span>' +
+          '<span>' + (rejected ? '🛡️ rejected' : '⚔️ eligible') + '</span></summary>' +
+          '<div class="tournament-detail">Projected profit: <strong>' + (Number.isFinite(profitEth) ? (profitEth >= 0 ? '+' : '') + profitEth.toFixed(8) + ' ETH' : '—') + '</strong><br>' +
+          'Estimated return / minimum: ' + (Number.isFinite(Number(row.projected_net_score)) ? (Number(row.projected_net_score) / 1e18).toFixed(8) : '—') + ' / ' + (Number.isFinite(minimumEth) ? minimumEth.toFixed(8) : '—') + ' ETH<br>' +
+          'Estimated gas: ' + (Number.isFinite(gasEth) ? gasEth.toFixed(8) : '—') + ' ETH · protocol: ' + value(row.protocol || 'auto') + '<br>' +
+          'Quoted / conservative floor: ' + value(row.quoted_output_human) + ' / ' + value(row.output_floor_human) +
+          (rejections.length ? '<br>Guard: ' + rejections.map(value).join(', ') : '') + '</div></details>';
+      });
+      if (completed && comparison.final) {
+        const f = comparison.final;
+        const tx = value(f.tx_hash);
+        html += '</div><div class="tournament-final">🏆 Confirmed · profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong> · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">View transaction ↗</a></div></section>';
+      } else html += '</div></section>';
+      return html;
+    }
     const status = comparison.status === 'observation_failed' ? 'Observation failed' :
       comparison.status === 'no_eligible_candidate' ? 'No eligible candidate' :
       winner ? 'Hypothetical winner: ' + value(winner.provider) + ' / ' + value(winner.settlement) : 'Hypothetical winner unavailable';
@@ -2278,7 +2361,12 @@ DASHBOARD_HTML = """\
     });
     const activeSellChecks = Object.keys(bots).filter(function(id) {
       const state = bots[id];
-      return Boolean(state.sell_attempt && state.sell_attempt.status) && reportAge(state.received_at).status === 'running';
+      return Boolean(state.sell_attempt && state.sell_attempt.status && state.sell_attempt.route_comparison?.mode !== 'execution_preflight') && reportAge(state.received_at).status === 'running';
+    });
+    const activeTournaments = Object.keys(bots).filter(function(id) {
+      const state = bots[id];
+      const tournament = state.sell_attempt?.route_comparison;
+      return Boolean(tournament && tournament.mode === 'execution_preflight' && tournament.status !== 'completed') && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -2338,7 +2426,13 @@ DASHBOARD_HTML = """\
       return (value >= 0 ? '+' : '') + formatted + (includeUnit ? ' ' + realizedUnitCode : '');
     };
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
-      const nextSummaryHtml = (buyGasBlocked.length
+      const nextSummaryHtml = (activeTournaments.length
+        ? '<span class="summary-item tournaments-active" aria-live="polite">⚔️ Active tournaments: ' + activeTournaments.length +
+          ' <span class="bot-names">(' + activeTournaments.map(function(id) {
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          }).join(', ') + ')</span></span>'
+        : '') +
+      (buyGasBlocked.length
         ? '<span class="summary-item buy-gas-blocked" aria-live="polite">● Buy gas blocked: ' + buyGasBlocked.length +
           ' <span class="bot-names">(' + buyGasBlocked.map(function(id) {
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
@@ -2805,6 +2899,10 @@ DASHBOARD_HTML = """\
       if (el.open) openEvents.add(el.dataset.eventsKey);
       else openEvents.delete(el.dataset.eventsKey);
     });
+    container.querySelectorAll('details.tournament-contestant[data-tournament-key]').forEach(function(el) {
+      if (el.open) openTournamentContestants.add(el.dataset.tournamentKey);
+      else openTournamentContestants.delete(el.dataset.tournamentKey);
+    });
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
     const wantedProvider = providerFilter.value;
@@ -3044,8 +3142,8 @@ DASHBOARD_HTML = """\
           ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
 
-      html += renderRouteComparison(d.buy_attempt?.route_comparison);
-      html += renderRouteComparison(d.sell_attempt?.route_comparison);
+      html += renderRouteComparison(d.buy_attempt?.route_comparison, botKey);
+      html += renderRouteComparison(d.sell_attempt?.route_comparison, botKey);
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;

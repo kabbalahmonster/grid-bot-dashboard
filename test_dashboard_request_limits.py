@@ -250,7 +250,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_sell_checks_summary_lists_and_focuses_running_bots(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("const activeSellChecks = Object.keys(bots).filter", body)
-        self.assertIn("Boolean(state.sell_attempt && state.sell_attempt.status)", body)
+        self.assertIn("state.sell_attempt.route_comparison?.mode !== 'execution_preflight'", body)
+        self.assertIn("const activeTournaments = Object.keys(bots).filter", body)
         self.assertIn("Sell checks active: ' + activeSellChecks.length", body)
         self.assertIn("bots[id].token_symbol || bots[id].display_name || id", body)
         self.assertIn("data-focus-bot=", body)

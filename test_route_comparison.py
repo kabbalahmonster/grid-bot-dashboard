@@ -158,7 +158,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("Observation failed", rendered[3])
         self.assertNotIn("<script>", rendered[4])
         self.assertIn("&lt;script&gt;", rendered[4])
-        self.assertIn("renderRouteComparison(d.sell_attempt?.route_comparison)", html)
+        self.assertIn("renderRouteComparison(d.sell_attempt?.route_comparison, botKey)", html)
 
     def test_renderer_tolerates_restored_malformed_rejections(self):
         html = server.DASHBOARD_HTML
@@ -366,6 +366,33 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("fresh", output)
         self.assertIn("4.5s old", output)
         self.assertIn("1 candidate", output)
+
+    def test_live_tournament_profit_fields_and_final_are_allowlisted(self):
+        value = comparison("sell")
+        value.update(mode="execution_preflight", status="completed",
+                     observation_timing="parallel_pre_execution",
+                     final={"tx_hash": "0x" + "a" * 64, "received_eth": 0.0023,
+                            "gas_fee_eth": 0.00005, "profit_eth": 0.0002,
+                            "profit_percent": 9.52})
+        value["candidates"][0].update(
+            score_unit="net_return_after_all_projected_gas_wei", protocol="V4",
+            projected_profit_wei="200000000000000", projected_profit_eth=0.0002,
+            projected_profit_percent=9.52, sold_cost_wei="2100000000000000",
+            minimum_return_wei="2205000000000000", minimum_return_eth=0.002205,
+            minimum_profit_percent=5.0,
+        )
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["mode"], "execution_preflight")
+        self.assertEqual(clean["candidates"][0]["projected_profit_percent"], 9.52)
+        self.assertEqual(clean["candidates"][0]["minimum_profit_percent"], 5.0)
+        self.assertEqual(clean["final"]["tx_hash"], "0x" + "a" * 64)
+
+    def test_live_tournament_renderer_has_rank_crown_expansion_and_blockscout(self):
+        html = server.DASHBOARD_HTML
+        for needle in ("tournament-scoreboard", "tournament-contestant", "👑",
+                       "Estimated return / minimum", "robinhoodchain.blockscout.com/tx/",
+                       "Active tournaments"):
+            self.assertIn(needle, html)
 
 
 if __name__ == "__main__":
