@@ -3238,7 +3238,7 @@ DASHBOARD_HTML = """\
           '<span class="sell-attempt-copy"><strong>SELL CHECK ACTIVE</strong>Waiting for minimum quote</span>' + detail + '</div>';
       }
 
-      if (d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed')) {
+      if (!tournamentOwnsSellStatus && d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed')) {
         const attempt = d.sell_attempt;
         const disagreement = attempt.status === 'quote_provider_disagreement';
         html += '<div class="sell-attempt" role="alert" aria-label="Sell blocked while quote provider changes">' +

@@ -409,6 +409,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("const sellRouteComparison = d.sell_attempt?.route_comparison;", html)
         self.assertIn("const tournamentOwnsSellStatus = Boolean(", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum')", html)
+        self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed'))", html)
         self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
 
 
