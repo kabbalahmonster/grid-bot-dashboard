@@ -406,11 +406,37 @@ class TestRouteComparison(unittest.TestCase):
 
     def test_sell_tournament_suppresses_redundant_active_sell_check(self):
         html = server.DASHBOARD_HTML
-        self.assertIn("const sellRouteComparison = d.sell_attempt?.route_comparison;", html)
+        self.assertIn("const sellRouteComparison = tournamentForDisplay(d.sell_attempt?.route_comparison, botKey);", html)
         self.assertIn("const tournamentOwnsSellStatus = Boolean(", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum')", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed'))", html)
         self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
+
+    def test_completed_tournament_lingers_once_then_expires_and_active_replaces_it(self):
+        html = server.DASHBOARD_HTML
+        start = html.index("  function tournamentForDisplay(")
+        end = html.index("\n  function renderRouteComparison(", start)
+        helper = html[start:end]
+        script = """
+let now = 0;
+Date.now = () => now;
+const completedTournamentDisplays = new Map();
+const completedTournamentLingerMs = 60000;
+""" + helper + """
+const done = {mode: 'execution_preflight', direction: 'sell', status: 'completed', final: {tx_hash: '0xabc'}};
+const active = {mode: 'execution_preflight', direction: 'sell', status: 'preflight_candidate_selected'};
+const results = [];
+results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+now = 59000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+now = 60000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+results.push(tournamentForDisplay(active, 'BOT') === active);
+results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+console.log(JSON.stringify(results));
+"""
+        output = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(json.loads(output), [True, True, False, True, True])
+        self.assertIn("setInterval(function() {", html)
+        self.assertIn("expiredBotIds.add(display.botId)", html)
 
 
 if __name__ == "__main__":

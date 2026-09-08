@@ -1569,6 +1569,11 @@ DASHBOARD_HTML = """\
   const openTrades = new Set();
   const openEvents = new Set();
   const openTournamentContestants = new Set();
+  // Completed tournament payloads can be repeated by subsequent bot reports.
+  // Remember the transaction locally so routine SSE/incremental updates do not
+  // restart its display lifetime on every poll.
+  const completedTournamentDisplays = new Map();
+  const completedTournamentLingerMs = 60000;
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false, safety: true };
@@ -1939,6 +1944,33 @@ DASHBOARD_HTML = """\
     fetchEthPrices();
     fetchMarketData();
   });
+
+  function tournamentForDisplay(comparison, botKey) {
+    if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return null;
+    const displayKey = String(botKey || '') + ':' + String(comparison.direction || '');
+    if (comparison.status !== 'completed') {
+      // A new live tournament always supersedes an earlier completed one.
+      completedTournamentDisplays.delete(displayKey);
+      return comparison;
+    }
+    const txHash = comparison.final && comparison.final.tx_hash;
+    const identity = String(txHash || 'completed-without-transaction');
+    const previous = completedTournamentDisplays.get(displayKey);
+    if (!previous || previous.identity !== identity) {
+      completedTournamentDisplays.set(displayKey, {
+        identity: identity,
+        firstSeenAt: Date.now(),
+        expired: false,
+        botId: decodeURIComponent(String(botKey || ''))
+      });
+      return comparison;
+    }
+    if (previous.expired || Date.now() - previous.firstSeenAt >= completedTournamentLingerMs) {
+      previous.expired = true;
+      return null;
+    }
+    return comparison;
+  }
 
   function renderRouteComparison(comparison, botKey) {
     if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return '';
@@ -3214,7 +3246,8 @@ DASHBOARD_HTML = """\
           ' · deficit ' + esc(mismatch.deficit_raw || '?') + '. Reconcile position accounting before restarting sales.</div>';
       }
 
-      const sellRouteComparison = d.sell_attempt?.route_comparison;
+      const buyRouteComparison = tournamentForDisplay(d.buy_attempt?.route_comparison, botKey);
+      const sellRouteComparison = tournamentForDisplay(d.sell_attempt?.route_comparison, botKey);
       const tournamentOwnsSellStatus = Boolean(
         sellRouteComparison && ['shadow', 'execution_preflight'].includes(sellRouteComparison.mode)
       );
@@ -3248,7 +3281,7 @@ DASHBOARD_HTML = """\
           ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
 
-      html += renderRouteComparison(d.buy_attempt?.route_comparison, botKey);
+      html += renderRouteComparison(buyRouteComparison, botKey);
       html += renderRouteComparison(sellRouteComparison, botKey);
 
       d.buys = d.buys ?? 0;
@@ -3541,6 +3574,18 @@ DASHBOARD_HTML = """\
   // delivering individual events. A small incremental pull closes that gap
   // without repeatedly downloading or rebuilding the full fleet snapshot.
   setInterval(reconcileCardsFromApi, 5000);
+  // Expire completed tournament cards even when no new bot report arrives.
+  setInterval(function() {
+    const expiredBotIds = new Set();
+    const now = Date.now();
+    completedTournamentDisplays.forEach(function(display) {
+      if (!display.expired && now - display.firstSeenAt >= completedTournamentLingerMs) {
+        display.expired = true;
+        expiredBotIds.add(display.botId);
+      }
+    });
+    if (expiredBotIds.size) render(false, expiredBotIds);
+  }, 1000);
   window.addEventListener('scroll', markViewportBusy, { passive: true });
   window.addEventListener('touchmove', markViewportBusy, { passive: true });
   window.addEventListener('touchstart', function() {
