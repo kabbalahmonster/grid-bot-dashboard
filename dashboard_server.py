@@ -1410,6 +1410,7 @@ DASHBOARD_HTML = """\
   .tournament-profit.positive { color: #4ade80; } .tournament-profit.negative { color: #f87171; }
   .tournament-detail { border-top: 1px solid #334155; padding: .6rem; color: #cbd5e1; line-height: 1.55; }
   .tournament-final { margin-top: .65rem; border-top: 1px solid #7c3aed; padding-top: .65rem; color: #f5d0fe; }
+  .tournament-final a { color: inherit; }
   .summary-item.tournaments-active { background:#4c1d95; border-color:#a78bfa; color:#f5f3ff; font-weight:700; animation:capacity-pulse 1.5s ease-in-out infinite; }
 </style>
 </head>
@@ -1928,7 +1929,7 @@ DASHBOARD_HTML = """\
       if (completed && comparison.final) {
         const f = comparison.final;
         const tx = value(f.tx_hash);
-        html += '</div><div class="tournament-final">🏆 Confirmed · profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong> · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">View transaction ↗</a></div></section>';
+        html += '</div><div class="tournament-final">🏆 Confirmed · profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong> · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div></section>';
       } else html += '</div></section>';
       return html;
     }

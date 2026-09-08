@@ -391,8 +391,10 @@ class TestRouteComparison(unittest.TestCase):
         html = server.DASHBOARD_HTML
         for needle in ("tournament-scoreboard", "tournament-contestant", "👑",
                        "Estimated return / minimum", "robinhoodchain.blockscout.com/tx/",
-                       "Active tournaments"):
+                       "Active tournaments", ">Tx ↗</a>",
+                       ".tournament-final a { color: inherit; }"):
             self.assertIn(needle, html)
+        self.assertNotIn(">View transaction ↗</a>", html)
 
     def test_live_tournament_renderer_has_buy_copy_and_sell_target(self):
         html = server.DASHBOARD_HTML
