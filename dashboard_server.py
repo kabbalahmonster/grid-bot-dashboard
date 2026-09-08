@@ -1332,10 +1332,10 @@ DASHBOARD_HTML = """\
   .history-summary-button { cursor: pointer; color: #e2e8f0; }
   .history-summary-button:hover, .history-summary-button:focus-visible { border-color: #64748b; color: #fff; outline: none; }
   @media (max-width: 560px) { .history-row { grid-template-columns: 1fr auto; } .history-detail { grid-column: 1 / -1; grid-row: 2; } .history-when { grid-column: 2; grid-row: 1; } }
-  .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
-  .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
-  .sigil-stage.animation-enabled .sigil-rings { animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
-  .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-stroke-current { stroke-dasharray: 0.14 0.08; will-change: opacity; animation: sigil-current var(--sigil-draw-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite, sigil-glimmer var(--sigil-glimmer-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; will-change: transform; backface-visibility: hidden; animation: sigil-turn var(--sigil-spin-duration) linear calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite; }
+  .sigil-stage.animation-enabled .sigil-rings { transform-origin: 128px 128px; transform-box: view-box; will-change: transform, opacity; backface-visibility: hidden; animation: sigil-breathe var(--sigil-breathe-duration) ease-in-out calc(var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
+  .sigil-stage.animation-enabled .sigil-node { transform-box: fill-box; transform-origin: center; will-change: transform, opacity; backface-visibility: hidden; animation: sigil-node-pulse var(--sigil-pulse-duration) ease-in-out calc(var(--sigil-node-index) * 0.16s + var(--sigil-clock-phase) + var(--sigil-seed-phase)) infinite alternate; }
   .sigil-stage.animation-enabled:not(.is-visible) *,
   .sigil-motion-paused .sigil-stage.animation-enabled * { animation-play-state: paused !important; }
   @keyframes sigil-current { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -0.22; } }
@@ -2893,43 +2893,55 @@ DASHBOARD_HTML = """\
     renderPendingForViewport = false;
     renderPendingForce = false;
 
-    // Preserve expansion state before live updates rebuild the cards.
-    container.querySelectorAll('details.more-info[data-bot-key]').forEach(function(el) {
+    // Preserve state only inside cards participating in a routine update. The
+    // sets already retain state for untouched cards, so walking the full fleet
+    // here adds main-thread work without adding information.
+    const stateCaptureRoots = (!force && changedBotIds && changedBotIds.size)
+      ? Array.from(changedBotIds).map(function(botId) {
+          return container.querySelector('.card[data-bot-id="' + CSS.escape(botId) + '"]');
+        }).filter(Boolean)
+      : [container];
+    const stateCaptureNodes = function(selector) {
+      return stateCaptureRoots.reduce(function(nodes, root) {
+        return nodes.concat(Array.from(root.querySelectorAll(selector)));
+      }, []);
+    };
+    stateCaptureNodes('details.more-info[data-bot-key]').forEach(function(el) {
       if (el.open) openMoreInfo.add(el.dataset.botKey);
       else openMoreInfo.delete(el.dataset.botKey);
     });
-    container.querySelectorAll('details.market-movement[data-market-movement-key]').forEach(function(el) {
+    stateCaptureNodes('details.market-movement[data-market-movement-key]').forEach(function(el) {
       if (el.open) openMarketMovements.add(el.dataset.marketMovementKey);
       else openMarketMovements.delete(el.dataset.marketMovementKey);
     });
-    container.querySelectorAll('button[data-pos-key]').forEach(function(el) {
+    stateCaptureNodes('button[data-pos-key]').forEach(function(el) {
       if (el.dataset.expanded === 'true') openPositions.add(el.dataset.posKey);
       else openPositions.delete(el.dataset.posKey);
     });
-    container.querySelectorAll('button[data-raw-key]').forEach(function(el) {
+    stateCaptureNodes('button[data-raw-key]').forEach(function(el) {
       if (el.dataset.expanded === 'true') openRawJson.add(el.dataset.rawKey);
       else openRawJson.delete(el.dataset.rawKey);
     });
-    container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
+    stateCaptureNodes('pre[data-raw-scroll-key]').forEach(function(el) {
       rawJsonScroll.set(el.dataset.rawScrollKey, el.scrollTop);
     });
-    container.querySelectorAll('details.chart-panel[data-chart-key]').forEach(function(el) {
+    stateCaptureNodes('details.chart-panel[data-chart-key]').forEach(function(el) {
       if (el.open) openCharts.add(el.dataset.chartKey);
       else openCharts.delete(el.dataset.chartKey);
     });
-    container.querySelectorAll('details.sigil-panel[data-sigil-key]').forEach(function(el) {
+    stateCaptureNodes('details.sigil-panel[data-sigil-key]').forEach(function(el) {
       if (el.open) closedSigils.delete(el.dataset.sigilKey);
       else closedSigils.add(el.dataset.sigilKey);
     });
-    container.querySelectorAll('details.trades[data-trades-key]').forEach(function(el) {
+    stateCaptureNodes('details.trades[data-trades-key]').forEach(function(el) {
       if (el.open) openTrades.add(el.dataset.tradesKey);
       else openTrades.delete(el.dataset.tradesKey);
     });
-    container.querySelectorAll('details.events[data-events-key]').forEach(function(el) {
+    stateCaptureNodes('details.events[data-events-key]').forEach(function(el) {
       if (el.open) openEvents.add(el.dataset.eventsKey);
       else openEvents.delete(el.dataset.eventsKey);
     });
-    container.querySelectorAll('details.tournament-contestant[data-tournament-key]').forEach(function(el) {
+    stateCaptureNodes('details.tournament-contestant[data-tournament-key]').forEach(function(el) {
       if (el.open) openTournamentContestants.add(el.dataset.tournamentKey);
       else openTournamentContestants.delete(el.dataset.tournamentKey);
     });

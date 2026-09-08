@@ -351,9 +351,16 @@ class TestDashboardRequestLimits(unittest.TestCase):
 
     def test_routine_updates_only_rewire_changed_cards(self):
         body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("const stateCaptureRoots = (!force && changedBotIds && changedBotIds.size)", body)
+        self.assertIn("stateCaptureNodes('details.tournament-contestant[data-tournament-key]')", body)
         self.assertIn("const postRenderRoots = (!force && changedBotIds && changedBotIds.size)", body)
         self.assertIn("postRenderNodes('details.sigil-panel')", body)
         self.assertIn("postRenderNodes('details.chart-panel')", body)
+
+    def test_sigil_animation_has_compositor_hints(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn(".sigil-glyph { transform-origin: 128px 128px; transform-box: view-box; will-change: transform;", body)
+        self.assertIn(".sigil-node { transform-box: fill-box; transform-origin: center; will-change: transform, opacity;", body)
 
     def test_scout_renderer_uses_dashboard_chain_metadata(self):
         response = self.client.get("/")
