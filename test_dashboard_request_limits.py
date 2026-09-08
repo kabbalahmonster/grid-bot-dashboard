@@ -338,7 +338,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("reconnectCardsButton.textContent = 'Refreshing…'", body)
         self.assertIn("reconnectNow();", body)
 
-        self.assertIn("fetch('/api/bots', { cache: 'no-store' })", body)
+        self.assertIn("const url = useIncremental ? '/api/bots?since='", body)
+        self.assertIn("return fetch(url, { cache: 'no-store' })", body)
         self.assertIn("if (entry && entry.state) nextBots[botId] = entry.state", body)
         self.assertIn("refreshCardsFromApi()", body)
 
@@ -348,6 +349,25 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("now - lastLiveMessageAt < 45000", body)
         self.assertIn("setInterval(recoverStaleStream, 15000);", body)
         self.assertIn("reconnectNow();\n    refreshCardsFromApi()", body)
+
+    def test_dashboard_incrementally_reconciles_missed_sse_updates(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("'/api/bots?since=' + encodeURIComponent(reconciliationWatermark)", body)
+        self.assertIn("setInterval(reconcileCardsFromApi, 5000);", body)
+        self.assertIn("else if (changedBotIds.size) render(false, changedBotIds);", body)
+
+        original_api_key = dashboard_server.API_KEY
+        dashboard_server.API_KEY = "test-key"
+        try:
+            initial = self.client.post(
+                "/api/status", json={"bot_id": "ONE"}, headers={"X-API-Key": "test-key"}
+            ).get_json()
+        finally:
+            dashboard_server.API_KEY = original_api_key
+        unchanged = self.client.get("/api/bots", query_string={"since": initial["received_at"]}).get_json()
+        self.assertTrue(unchanged["incremental"])
+        self.assertEqual(unchanged["bots"], {})
+        self.assertEqual(self.client.get("/api/bots", query_string={"since": "garbage"}).status_code, 400)
 
     def test_routine_updates_only_rewire_changed_cards(self):
         body = self.client.get("/").get_data(as_text=True)

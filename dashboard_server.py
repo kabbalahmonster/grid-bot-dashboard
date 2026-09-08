@@ -753,14 +753,41 @@ def receive_status():
 @app.route("/api/bots", methods=["GET"])
 def list_bots():
     """Return all current bot states."""
+    since_raw = (request.args.get("since") or "").strip()
+    since = None
+    if since_raw:
+        try:
+            since = datetime.fromisoformat(since_raw.replace("Z", "+00:00"))
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
+            since = since.astimezone(timezone.utc)
+        except ValueError:
+            return jsonify({"error": "Invalid since timestamp"}), 400
     with _lock:
         result = {}
         for bot_id, state in bot_states.items():
+            if since is not None:
+                received_raw = str(state.get("received_at") or "")
+                try:
+                    received = datetime.fromisoformat(received_raw.replace("Z", "+00:00"))
+                    if received.tzinfo is None:
+                        received = received.replace(tzinfo=timezone.utc)
+                    if received.astimezone(timezone.utc) <= since:
+                        continue
+                except ValueError:
+                    # Include malformed legacy entries so a client can repair
+                    # its local copy instead of silently preserving it.
+                    pass
             result[bot_id] = {
                 "state": state,
                 "history_count": len(bot_history.get(bot_id, [])),
             }
-    return jsonify({"bots": result, "count": len(result)}), 200
+    return jsonify({
+        "bots": result,
+        "count": len(result),
+        "incremental": since is not None,
+        "server_time": datetime.now(timezone.utc).isoformat(),
+    }), 200
 
 
 @app.route("/api/bots/<bot_id>", methods=["GET"])
@@ -1591,6 +1618,8 @@ DASHBOARD_HTML = """\
   let reconnectCount = 0;
   let lastLiveMessageAt = null;
   let lastSnapshotAt = null;
+  let reconciliationWatermark = null;
+  let reconciliationInFlight = false;
   let lastStreamRecoveryAt = 0;
   let streamRecoveryInFlight = false;
   const maxReconnectDelay = 30000;
@@ -1783,6 +1812,7 @@ DASHBOARD_HTML = """\
         Object.keys(data.bots).forEach(function(botId) {
           bots[botId] = data.bots[botId];
         });
+        reconciliationWatermark = newestReceivedAt(bots) || reconciliationWatermark;
         render();
         scheduleMarketDataFetch();
       }
@@ -1797,6 +1827,7 @@ DASHBOARD_HTML = """\
       const historyChanged = sellHistoryIdentity(previousState) !== sellHistoryIdentity(nextState);
       processBotNotifications(entry.bot_id, previousState, nextState);
       bots[entry.bot_id] = nextState;
+      reconciliationWatermark = newestReceivedAt(bots) || reconciliationWatermark;
       if (historyChanged && !historyModal.hidden && historyModalMode === 'history' && summaryBotIds.includes(entry.bot_id)) {
         openFleetHistory(null, true);
       }
@@ -1836,25 +1867,52 @@ DASHBOARD_HTML = """\
     connectionDiagnostics.style.whiteSpace = 'pre-line';
   }
 
-  function refreshCardsFromApi() {
-    return fetch('/api/bots', { cache: 'no-store' })
+  function newestReceivedAt(states) {
+    let newest = null;
+    Object.keys(states || {}).forEach(function(botId) {
+      const raw = states[botId] && states[botId].received_at;
+      const timestamp = Date.parse(raw || '');
+      if (Number.isFinite(timestamp) && (!newest || timestamp > Date.parse(newest))) newest = raw;
+    });
+    return newest;
+  }
+
+  function refreshCardsFromApi(incremental) {
+    const useIncremental = Boolean(incremental && reconciliationWatermark);
+    const url = useIncremental ? '/api/bots?since=' + encodeURIComponent(reconciliationWatermark) : '/api/bots';
+    return fetch(url, { cache: 'no-store' })
       .then(function(response) {
         if (!response.ok) throw new Error('Card refresh failed: ' + response.status);
         return response.json();
       })
       .then(function(data) {
-        lastLiveMessageAt = Date.now();
-        lastSnapshotAt = lastLiveMessageAt;
+        lastSnapshotAt = Date.now();
+        if (!useIncremental) lastLiveMessageAt = lastSnapshotAt;
         const nextBots = {};
         Object.keys(data.bots || {}).forEach(function(botId) {
           const entry = data.bots[botId];
           if (entry && entry.state) nextBots[botId] = entry.state;
         });
-        Object.keys(bots).forEach(function(botId) { delete bots[botId]; });
-        Object.keys(nextBots).forEach(function(botId) { bots[botId] = nextBots[botId]; });
-        render(true);
+        const changedBotIds = new Set(Object.keys(nextBots));
+        if (!useIncremental) Object.keys(bots).forEach(function(botId) { delete bots[botId]; });
+        Object.keys(nextBots).forEach(function(botId) {
+          const previousState = bots[botId];
+          processBotNotifications(botId, previousState, nextBots[botId]);
+          bots[botId] = nextBots[botId];
+        });
+        reconciliationWatermark = newestReceivedAt(bots) || reconciliationWatermark;
+        if (!useIncremental) render(true);
+        else if (changedBotIds.size) render(false, changedBotIds);
         scheduleMarketDataFetch();
       });
+  }
+
+  function reconcileCardsFromApi() {
+    if (reconciliationInFlight || document.visibilityState !== 'visible') return;
+    reconciliationInFlight = true;
+    refreshCardsFromApi(true)
+      .catch(function() {})
+      .finally(function() { reconciliationInFlight = false; });
   }
 
   function recoverStaleStream() {
@@ -3479,6 +3537,10 @@ DASHBOARD_HTML = """\
 
   connect();
   setInterval(recoverStaleStream, 15000);
+  // EventSource can remain nominally open while mobile networks/proxies stop
+  // delivering individual events. A small incremental pull closes that gap
+  // without repeatedly downloading or rebuilding the full fleet snapshot.
+  setInterval(reconcileCardsFromApi, 5000);
   window.addEventListener('scroll', markViewportBusy, { passive: true });
   window.addEventListener('touchmove', markViewportBusy, { passive: true });
   window.addEventListener('touchstart', function() {
