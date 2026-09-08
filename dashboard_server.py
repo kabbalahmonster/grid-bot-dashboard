@@ -1890,10 +1890,14 @@ DASHBOARD_HTML = """\
     });
     const winner = comparison.selected_hypothetical_winner;
     if (comparison.mode === 'execution_preflight') {
+      const isBuy = comparison.direction === 'buy';
       const completed = comparison.status === 'completed';
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : '⚔️ ROUTE TOURNAMENT';
-      const status = completed ? 'Final result confirmed on-chain' : winner ? 'Battle complete · winner selected' : 'No contestant cleared every guard';
-      let html = '<section class="tournament-card" data-tournament-card><h4>' + title + ' · ' + value(comparison.direction).toUpperCase() + '</h4><div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms</div><div class="tournament-scoreboard">';
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
+      const status = completed ? 'Final result confirmed on-chain' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
+      const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
+      const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
+      let html = '<section class="tournament-card" data-tournament-card><h4>' + title + '</h4><div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms' + targetText + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
@@ -1902,14 +1906,20 @@ DASHBOARD_HTML = """\
         const profitEth = Number(row.projected_profit_eth);
         const minimumEth = Number(row.minimum_return_eth);
         const gasEth = Number(row.gas_total_eth);
+        const quotedTokens = Number(row.quoted_output_human);
+        const quotedRaw = Number(row.quoted_output_raw);
+        const floorRaw = Number(row.output_floor_raw);
+        const conservativeTokens = Number.isFinite(quotedTokens) && Number.isFinite(quotedRaw) && quotedRaw > 0 && Number.isFinite(floorRaw)
+          ? quotedTokens * floorRaw / quotedRaw : Number(row.output_floor_human);
         const rejections = Array.isArray(row.rejections) ? row.rejections : [];
         const contestantKey = String(botKey || '') + ':' + row.provider + ':' + row.settlement;
         html += '<details class="tournament-contestant' + (isWinner ? ' winner' : '') + '" data-tournament-key="' + value(contestantKey) + '"' + (openTournamentContestants.has(contestantKey) ? ' open' : '') + '><summary>' +
           '<span class="tournament-rank">#' + (index + 1) + '</span><strong>' + (isWinner ? '👑 ' : '') + value(row.provider) + ' · ' + value(row.settlement).toUpperCase() + '</strong>' +
-          '<span class="tournament-profit ' + (pct >= 0 ? 'positive' : 'negative') + '">' + (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—') + '</span>' +
+          '<span class="tournament-profit ' + (isBuy || pct >= 0 ? 'positive' : 'negative') + '">' + (isBuy ? (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) + ' tokens' : '—') : (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—')) + '</span>' +
           '<span>' + (rejected ? '🛡️ rejected' : '⚔️ eligible') + '</span></summary>' +
-          '<div class="tournament-detail">Projected profit: <strong>' + (Number.isFinite(profitEth) ? (profitEth >= 0 ? '+' : '') + profitEth.toFixed(8) + ' ETH' : '—') + '</strong><br>' +
-          'Estimated return / minimum: ' + (Number.isFinite(Number(row.projected_net_score)) ? (Number(row.projected_net_score) / 1e18).toFixed(8) : '—') + ' / ' + (Number.isFinite(minimumEth) ? minimumEth.toFixed(8) : '—') + ' ETH<br>' +
+          '<div class="tournament-detail">' + (isBuy
+            ? 'Quoted tokens: <strong>' + (Number.isFinite(quotedTokens) ? formatTokenAmount(quotedTokens) : '—') + '</strong><br>Conservative receive floor: ' + (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) : '—') + ' tokens<br>'
+            : 'Projected profit: <strong>' + (Number.isFinite(profitEth) ? (profitEth >= 0 ? '+' : '') + profitEth.toFixed(8) + ' ETH' : '—') + '</strong><br>Estimated return / minimum: ' + (Number.isFinite(Number(row.projected_net_score)) ? (Number(row.projected_net_score) / 1e18).toFixed(8) : '—') + ' / ' + (Number.isFinite(minimumEth) ? minimumEth.toFixed(8) : '—') + ' ETH<br>') +
           'Estimated gas: ' + (Number.isFinite(gasEth) ? gasEth.toFixed(8) : '—') + ' ETH · protocol: ' + value(row.protocol || 'auto') + '<br>' +
           'Quoted / conservative floor: ' + value(row.quoted_output_human) + ' / ' + value(row.output_floor_human) +
           (rejections.length ? '<br>Guard: ' + rejections.map(value).join(', ') : '') + '</div></details>';

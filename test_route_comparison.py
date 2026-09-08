@@ -394,6 +394,13 @@ class TestRouteComparison(unittest.TestCase):
                        "Active tournaments"):
             self.assertIn(needle, html)
 
+    def test_live_tournament_renderer_has_buy_copy_and_sell_target(self):
+        html = server.DASHBOARD_HTML
+        for needle in ("BUY ROUTE BATTLE", "SELL ROUTE TOURNAMENT",
+                       "Best acquisition route selected", "Quoted tokens:",
+                       "Conservative receive floor:", "target +"):
+            self.assertIn(needle, html)
+
 
 if __name__ == "__main__":
     unittest.main()
