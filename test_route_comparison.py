@@ -400,6 +400,7 @@ class TestRouteComparison(unittest.TestCase):
                        "Best acquisition route selected", "Quoted tokens:",
                        "Conservative receive floor:", "target +"):
             self.assertIn(needle, html)
+        self.assertIn("timedOut ? 'timed out'", html)
 
 
 if __name__ == "__main__":

@@ -1912,10 +1912,11 @@ DASHBOARD_HTML = """\
         const conservativeTokens = Number.isFinite(quotedTokens) && Number.isFinite(quotedRaw) && quotedRaw > 0 && Number.isFinite(floorRaw)
           ? quotedTokens * floorRaw / quotedRaw : Number(row.output_floor_human);
         const rejections = Array.isArray(row.rejections) ? row.rejections : [];
+        const timedOut = rejections.includes('observation_timeout') || rejections.includes('observation_deadline');
         const contestantKey = String(botKey || '') + ':' + row.provider + ':' + row.settlement;
         html += '<details class="tournament-contestant' + (isWinner ? ' winner' : '') + '" data-tournament-key="' + value(contestantKey) + '"' + (openTournamentContestants.has(contestantKey) ? ' open' : '') + '><summary>' +
           '<span class="tournament-rank">#' + (index + 1) + '</span><strong>' + (isWinner ? '👑 ' : '') + value(row.provider) + ' · ' + value(row.settlement).toUpperCase() + '</strong>' +
-          '<span class="tournament-profit ' + (isBuy || pct >= 0 ? 'positive' : 'negative') + '">' + (isBuy ? (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) + ' tokens' : '—') : (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—')) + '</span>' +
+          '<span class="tournament-profit ' + (isBuy || pct >= 0 ? 'positive' : 'negative') + '">' + (timedOut ? 'timed out' : isBuy ? (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) + ' tokens' : '—') : (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—')) + '</span>' +
           '<span>' + (rejected ? '🛡️ rejected' : '⚔️ eligible') + '</span></summary>' +
           '<div class="tournament-detail">' + (isBuy
             ? 'Quoted tokens: <strong>' + (Number.isFinite(quotedTokens) ? formatTokenAmount(quotedTokens) : '—') + '</strong><br>Conservative receive floor: ' + (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) : '—') + ' tokens<br>'
