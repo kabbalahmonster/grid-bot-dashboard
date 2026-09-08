@@ -3156,7 +3156,12 @@ DASHBOARD_HTML = """\
           ' · deficit ' + esc(mismatch.deficit_raw || '?') + '. Reconcile position accounting before restarting sales.</div>';
       }
 
-      if (d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum') {
+      const sellRouteComparison = d.sell_attempt?.route_comparison;
+      const tournamentOwnsSellStatus = Boolean(
+        sellRouteComparison && ['shadow', 'execution_preflight'].includes(sellRouteComparison.mode)
+      );
+
+      if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum') {
         const reportedNet = parseFloat(d.sell_attempt.projected_net_profit_eth);
         const quoted = parseFloat(d.sell_attempt.quoted_profit_eth);
         const projectedGas = parseFloat(d.sell_attempt.projected_gas_eth);
@@ -3186,7 +3191,7 @@ DASHBOARD_HTML = """\
       }
 
       html += renderRouteComparison(d.buy_attempt?.route_comparison, botKey);
-      html += renderRouteComparison(d.sell_attempt?.route_comparison, botKey);
+      html += renderRouteComparison(sellRouteComparison, botKey);
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;

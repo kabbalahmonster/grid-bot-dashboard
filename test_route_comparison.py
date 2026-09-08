@@ -158,7 +158,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("Observation failed", rendered[3])
         self.assertNotIn("<script>", rendered[4])
         self.assertIn("&lt;script&gt;", rendered[4])
-        self.assertIn("renderRouteComparison(d.sell_attempt?.route_comparison, botKey)", html)
+        self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
 
     def test_renderer_tolerates_restored_malformed_rejections(self):
         html = server.DASHBOARD_HTML
@@ -403,6 +403,13 @@ class TestRouteComparison(unittest.TestCase):
                        "Conservative receive floor:", "target +"):
             self.assertIn(needle, html)
         self.assertIn("timedOut ? 'timed out'", html)
+
+    def test_sell_tournament_suppresses_redundant_active_sell_check(self):
+        html = server.DASHBOARD_HTML
+        self.assertIn("const sellRouteComparison = d.sell_attempt?.route_comparison;", html)
+        self.assertIn("const tournamentOwnsSellStatus = Boolean(", html)
+        self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum')", html)
+        self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
 
 
 if __name__ == "__main__":
