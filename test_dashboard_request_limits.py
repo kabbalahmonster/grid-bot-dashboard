@@ -342,6 +342,13 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("if (entry && entry.state) nextBots[botId] = entry.state", body)
         self.assertIn("refreshCardsFromApi()", body)
 
+    def test_dashboard_recovers_when_sse_silently_goes_stale(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("function recoverStaleStream()", body)
+        self.assertIn("now - lastLiveMessageAt < 45000", body)
+        self.assertIn("setInterval(recoverStaleStream, 15000);", body)
+        self.assertIn("reconnectNow();\n    refreshCardsFromApi()", body)
+
     def test_scout_renderer_uses_dashboard_chain_metadata(self):
         response = self.client.get("/")
         body = response.get_data(as_text=True)

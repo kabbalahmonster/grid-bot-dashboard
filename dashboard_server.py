@@ -191,10 +191,16 @@ def _gzip_stream(chunks):
             encoded = compressor.compress(raw) + compressor.flush(zlib.Z_SYNC_FLUSH)
             if encoded:
                 yield encoded
-    finally:
-        tail = compressor.flush(zlib.Z_FINISH)
-        if tail:
-            yield tail
+    except GeneratorExit:
+        # EventSource disconnects are routine, especially on mobile. Do not
+        # yield a gzip trailer after WSGI has told this generator to stop.
+        close = getattr(chunks, "close", None)
+        if callable(close):
+            close()
+        return
+    tail = compressor.flush(zlib.Z_FINISH)
+    if tail:
+        yield tail
 
 # ---------------------------------------------------------------------------
 # Flask app
@@ -1584,6 +1590,8 @@ DASHBOARD_HTML = """\
   let reconnectCount = 0;
   let lastLiveMessageAt = null;
   let lastSnapshotAt = null;
+  let lastStreamRecoveryAt = 0;
+  let streamRecoveryInFlight = false;
   const maxReconnectDelay = 30000;
   let viewportBusy = false;
   let viewportMotionAt = 0;
@@ -1846,6 +1854,17 @@ DASHBOARD_HTML = """\
         render(true);
         scheduleMarketDataFetch();
       });
+  }
+
+  function recoverStaleStream() {
+    const now = Date.now();
+    if (streamRecoveryInFlight || !lastLiveMessageAt || now - lastLiveMessageAt < 45000 || now - lastStreamRecoveryAt < 30000) return;
+    streamRecoveryInFlight = true;
+    lastStreamRecoveryAt = now;
+    reconnectNow();
+    refreshCardsFromApi()
+      .catch(function() {})
+      .finally(function() { streamRecoveryInFlight = false; });
   }
 
   reconnectCardsButton.addEventListener('click', function() {
@@ -3416,6 +3435,7 @@ DASHBOARD_HTML = """\
   }
 
   connect();
+  setInterval(recoverStaleStream, 15000);
   window.addEventListener('scroll', markViewportBusy, { passive: true });
   window.addEventListener('touchmove', markViewportBusy, { passive: true });
   window.addEventListener('touchstart', function() {
