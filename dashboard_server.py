@@ -3376,10 +3376,24 @@ DASHBOARD_HTML = """\
         placeholder.replaceWith(preservedStage);
       });
     }
-    container.querySelectorAll('pre[data-raw-scroll-key]').forEach(function(el) {
+    // Routine SSE batches usually touch only a handful of cards. Limit all
+    // post-render wiring to those cards; rescanning and re-observing every
+    // sigil in the fleet on each batch steals main-thread time from CSS
+    // animation even though the live sigil nodes themselves are preserved.
+    const postRenderRoots = (!force && changedBotIds && changedBotIds.size)
+      ? Array.from(changedBotIds).map(function(botId) {
+          return container.querySelector('.card[data-bot-id="' + CSS.escape(botId) + '"]');
+        }).filter(Boolean)
+      : [container];
+    const postRenderNodes = function(selector) {
+      return postRenderRoots.reduce(function(nodes, root) {
+        return nodes.concat(Array.from(root.querySelectorAll(selector)));
+      }, []);
+    };
+    postRenderNodes('pre[data-raw-scroll-key]').forEach(function(el) {
       el.scrollTop = rawJsonScroll.get(el.dataset.rawScrollKey) || 0;
     });
-    container.querySelectorAll('details.chart-panel').forEach(function(panel) {
+    postRenderNodes('details.chart-panel').forEach(function(panel) {
       const loadChart = function() {
         if (!panel.open) return;
         const frame = panel.querySelector('iframe.dex-chart');
@@ -3424,7 +3438,7 @@ DASHBOARD_HTML = """\
       }
       loadChart();
     });
-    container.querySelectorAll('details.sigil-panel').forEach(function(panel) {
+    postRenderNodes('details.sigil-panel').forEach(function(panel) {
       const drawSigil = function() {
         if (!panel.open) return;
         const stage = panel.querySelector('.sigil-stage');

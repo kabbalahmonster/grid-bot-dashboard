@@ -349,6 +349,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("setInterval(recoverStaleStream, 15000);", body)
         self.assertIn("reconnectNow();\n    refreshCardsFromApi()", body)
 
+    def test_routine_updates_only_rewire_changed_cards(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("const postRenderRoots = (!force && changedBotIds && changedBotIds.size)", body)
+        self.assertIn("postRenderNodes('details.sigil-panel')", body)
+        self.assertIn("postRenderNodes('details.chart-panel')", body)
+
     def test_scout_renderer_uses_dashboard_chain_metadata(self):
         response = self.client.get("/")
         body = response.get_data(as_text=True)
