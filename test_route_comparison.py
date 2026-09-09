@@ -407,6 +407,25 @@ class TestRouteComparison(unittest.TestCase):
         self.assertEqual(clean["candidates"][0]["minimum_profit_percent"], 5.0)
         self.assertEqual(clean["final"]["tx_hash"], "0x" + "a" * 64)
 
+    def test_aborted_buy_tournament_preserves_terminal_guard_details(self):
+        value = comparison("buy")
+        value.update(mode="execution_preflight", status="execution_aborted",
+                     execution_abort={"reason": "buy_trigger_recovered",
+                                      "quoted_pnl_percent": -3.5,
+                                      "block_threshold_percent": -9.6,
+                                      "trigger_threshold_percent": -10.0,
+                                      "secret": "discard-me"})
+        clean = self.clean(value, "buy")["route_comparison"]
+        self.assertEqual(clean["status"], "execution_aborted")
+        self.assertEqual(clean["selected_hypothetical_winner"],
+                         {"provider": "uniswap", "settlement": "native"})
+        self.assertEqual(clean["execution_abort"], {
+            "reason": "buy_trigger_recovered",
+            "quoted_pnl_percent": -3.5,
+            "block_threshold_percent": -9.6,
+            "trigger_threshold_percent": -10.0,
+        })
+
     def test_live_tournament_renderer_has_rank_crown_expansion_and_blockscout(self):
         html = server.DASHBOARD_HTML
         for needle in ("tournament-scoreboard", "tournament-contestant", "👑",
@@ -420,7 +439,9 @@ class TestRouteComparison(unittest.TestCase):
         html = server.DASHBOARD_HTML
         for needle in ("BUY ROUTE BATTLE", "SELL ROUTE TOURNAMENT",
                        "Best acquisition route selected", "Quoted tokens:",
-                       "Conservative receive floor:", "target +"):
+                       "Conservative receive floor:", "target +",
+                       "BUY TOURNAMENT ABORTED", "No transaction sent",
+                       "execution_aborted"):
             self.assertIn(needle, html)
         self.assertIn("timedOut ? 'timed out'", html)
 

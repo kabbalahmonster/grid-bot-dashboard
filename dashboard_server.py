@@ -514,7 +514,8 @@ def _allowlisted_route_comparison(value, direction):
             or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed",
                               "preflight_no_authorized_candidate", "preflight_candidate_selected",
                               "preflight_failed", "required_provider_unavailable",
-                              "required_local_gas_estimator_unavailable", "completed"}
+                              "required_local_gas_estimator_unavailable", "execution_aborted",
+                              "completed"}
             or not isinstance(value.get("candidates"), list)):
         return None
     result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
@@ -579,7 +580,7 @@ def _allowlisted_route_comparison(value, direction):
         result["candidates"].append(clean)
     winner = value.get("selected_hypothetical_winner")
     result["selected_hypothetical_winner"] = None
-    if status in {"hypothetical_only", "preflight_candidate_selected", "completed"} and isinstance(winner, dict):
+    if status in {"hypothetical_only", "preflight_candidate_selected", "execution_aborted", "completed"} and isinstance(winner, dict):
         if any(row["validation_level"] == "quote_only" and not row["rejections"]
                and all(row[key] == winner.get(key) for key in ("provider", "settlement"))
                for row in result["candidates"]):
@@ -591,6 +592,14 @@ def _allowlisted_route_comparison(value, direction):
         result["elapsed_ms"] = elapsed
     if _route_enum("observation_timing", value.get("observation_timing")):
         result["observation_timing"] = value["observation_timing"]
+    abort = value.get("execution_abort")
+    if status == "execution_aborted" and isinstance(abort, dict) and abort.get("reason") == "buy_trigger_recovered":
+        clean_abort = {"reason": "buy_trigger_recovered"}
+        for key in ("quoted_pnl_percent", "block_threshold_percent", "trigger_threshold_percent"):
+            number = abort.get(key)
+            if type(number) in (int, float) and math.isfinite(number) and abs(number) < 1e6:
+                clean_abort[key] = number
+        result["execution_abort"] = clean_abort
     final = value.get("final")
     if status == "completed" and isinstance(final, dict):
         tx_hash = final.get("tx_hash")
@@ -1984,8 +1993,15 @@ DASHBOARD_HTML = """\
     if (comparison.mode === 'execution_preflight') {
       const isBuy = comparison.direction === 'buy';
       const completed = comparison.status === 'completed';
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
-      const status = completed ? 'Final result confirmed on-chain' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const aborted = comparison.status === 'execution_aborted';
+      const abort = comparison.execution_abort || {};
+      const quotedPnl = Number(abort.quoted_pnl_percent);
+      const blockThreshold = Number(abort.block_threshold_percent);
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
+      const abortStatus = abort.reason === 'buy_trigger_recovered'
+        ? 'No transaction sent · executable P&L ' + (Number.isFinite(quotedPnl) ? quotedPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
+        : 'No transaction sent · execution guard blocked the selected route';
+      const status = completed ? 'Final result confirmed on-chain' : aborted ? abortStatus : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
@@ -2488,7 +2504,7 @@ DASHBOARD_HTML = """\
     const activeTournaments = Object.keys(bots).filter(function(id) {
       const state = bots[id];
       const tournament = state.sell_attempt?.route_comparison;
-      return Boolean(tournament && tournament.mode === 'execution_preflight' && tournament.status !== 'completed') && reportAge(state.received_at).status === 'running';
+      return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted'].includes(tournament.status)) && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
