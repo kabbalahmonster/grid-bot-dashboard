@@ -595,7 +595,7 @@ def _allowlisted_route_comparison(value, direction):
     abort = value.get("execution_abort")
     if status == "execution_aborted" and isinstance(abort, dict) and abort.get("reason") == "buy_trigger_recovered":
         clean_abort = {"reason": "buy_trigger_recovered"}
-        for key in ("quoted_pnl_percent", "block_threshold_percent", "trigger_threshold_percent"):
+        for key in ("market_pnl_percent", "block_threshold_percent", "trigger_threshold_percent"):
             number = abort.get(key)
             if type(number) in (int, float) and math.isfinite(number) and abs(number) < 1e6:
                 clean_abort[key] = number
@@ -1995,11 +1995,11 @@ DASHBOARD_HTML = """\
       const completed = comparison.status === 'completed';
       const aborted = comparison.status === 'execution_aborted';
       const abort = comparison.execution_abort || {};
-      const quotedPnl = Number(abort.quoted_pnl_percent);
+      const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
       const title = completed ? '🏁 TOURNAMENT COMPLETE' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
-        ? 'No transaction sent · executable P&L ' + (Number.isFinite(quotedPnl) ? quotedPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
+        ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
       const status = completed ? 'Final result confirmed on-chain' : aborted ? abortStatus : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
@@ -3298,8 +3298,8 @@ DASHBOARD_HTML = """\
           ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
 
-      html += renderRouteComparison(buyRouteComparison, botKey);
       html += renderRouteComparison(sellRouteComparison, botKey);
+      html += renderRouteComparison(buyRouteComparison, botKey);
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;

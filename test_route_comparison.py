@@ -411,7 +411,7 @@ class TestRouteComparison(unittest.TestCase):
         value = comparison("buy")
         value.update(mode="execution_preflight", status="execution_aborted",
                      execution_abort={"reason": "buy_trigger_recovered",
-                                      "quoted_pnl_percent": -3.5,
+                                      "market_pnl_percent": -3.5,
                                       "block_threshold_percent": -9.6,
                                       "trigger_threshold_percent": -10.0,
                                       "secret": "discard-me"})
@@ -421,7 +421,7 @@ class TestRouteComparison(unittest.TestCase):
                          {"provider": "uniswap", "settlement": "native"})
         self.assertEqual(clean["execution_abort"], {
             "reason": "buy_trigger_recovered",
-            "quoted_pnl_percent": -3.5,
+            "market_pnl_percent": -3.5,
             "block_threshold_percent": -9.6,
             "trigger_threshold_percent": -10.0,
         })
@@ -452,6 +452,8 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum')", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed'))", html)
         self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
+        self.assertLess(html.index("renderRouteComparison(sellRouteComparison, botKey)"),
+                        html.index("renderRouteComparison(buyRouteComparison, botKey)"))
 
     def test_completed_tournament_lingers_once_then_expires_and_active_replaces_it(self):
         html = server.DASHBOARD_HTML
