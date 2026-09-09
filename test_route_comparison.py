@@ -455,7 +455,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertLess(html.index("renderRouteComparison(sellRouteComparison, botKey)"),
                         html.index("renderRouteComparison(buyRouteComparison, botKey)"))
 
-    def test_completed_tournament_lingers_once_then_expires_and_active_replaces_it(self):
+    def test_completed_tournament_lingers_two_minutes_and_active_replaces_it(self):
         html = server.DASHBOARD_HTML
         start = html.index("  function tournamentForDisplay(")
         end = html.index("\n  function renderRouteComparison(", start)
@@ -464,14 +464,14 @@ class TestRouteComparison(unittest.TestCase):
 let now = 0;
 Date.now = () => now;
 const completedTournamentDisplays = new Map();
-const completedTournamentLingerMs = 60000;
+const completedTournamentLingerMs = 120000;
 """ + helper + """
 const done = {mode: 'execution_preflight', direction: 'sell', status: 'completed', final: {tx_hash: '0xabc'}};
 const active = {mode: 'execution_preflight', direction: 'sell', status: 'preflight_candidate_selected'};
 const results = [];
 results.push(Boolean(tournamentForDisplay(done, 'BOT')));
-now = 59000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
-now = 60000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+now = 119000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
+now = 120000; results.push(Boolean(tournamentForDisplay(done, 'BOT')));
 results.push(tournamentForDisplay(active, 'BOT') === active);
 results.push(Boolean(tournamentForDisplay(done, 'BOT')));
 console.log(JSON.stringify(results));

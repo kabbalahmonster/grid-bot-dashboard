@@ -1583,7 +1583,7 @@ DASHBOARD_HTML = """\
   // Remember the transaction locally so routine SSE/incremental updates do not
   // restart its display lifetime on every poll.
   const completedTournamentDisplays = new Map();
-  const completedTournamentLingerMs = 60000;
+  const completedTournamentLingerMs = 120000;
   const rawJsonScroll = new Map();
   const notifiedOffline = new Set();
   const notificationDefaults = { sells: true, positions: false, offline: false, recovered: false, buys: false, stoploss: false, treasury: false, errors: false, safety: true };
