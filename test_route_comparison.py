@@ -39,11 +39,31 @@ class TestRouteComparison(unittest.TestCase):
         row["rejections"] = ["native_reserve"] * 30
         value["candidates"] *= 10
         result = self.clean(value)["route_comparison"]
-        self.assertEqual(len(result["candidates"]), 4)
+        self.assertEqual(len(result["candidates"]), 8)
         self.assertEqual(len(result["candidates"][0]["rejections"]), 8)
         self.assertNotIn("opaque", json.dumps(result))
         self.assertNotIn("0x", json.dumps(result))
         self.assertIsNone(result["selected_hypothetical_winner"])
+
+    def test_all_supported_providers_survive_sanitization(self):
+        value = comparison("sell")
+        value["candidates"] = []
+        for provider in ("uniswap", "sushiswap", "umbra", "lifi"):
+            for settlement in ("native", "weth"):
+                row = copy.deepcopy(comparison("sell")["candidates"][0])
+                row.update(provider=provider, settlement=settlement)
+                value["candidates"].append(row)
+        value["selected_hypothetical_winner"] = {"provider": "lifi", "settlement": "native"}
+
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(len(clean["candidates"]), 8)
+        self.assertEqual(
+            {(row["provider"], row["settlement"]) for row in clean["candidates"]},
+            {(provider, settlement) for provider in ("uniswap", "sushiswap", "umbra", "lifi")
+             for settlement in ("native", "weth")},
+        )
+        self.assertEqual(clean["selected_hypothetical_winner"],
+                         {"provider": "lifi", "settlement": "native"})
 
     def test_invalid_values_never_survive(self):
         for field, invalids in {

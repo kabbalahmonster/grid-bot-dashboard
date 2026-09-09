@@ -440,7 +440,7 @@ def _allowlisted_mapping(value, allowed_fields):
 
 
 _ROUTE_ENUMS = {
-    "provider": {"uniswap", "sushiswap"},
+    "provider": {"uniswap", "sushiswap", "umbra", "lifi"},
     "settlement": {"native", "weth"},
     "validation_level": {"quote_only", "rejected"},
     "gas_basis": {"conservative_budget_not_simulated", "local_estimate",
@@ -518,7 +518,8 @@ def _allowlisted_route_comparison(value, direction):
             or not isinstance(value.get("candidates"), list)):
         return None
     result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
-    for row in value["candidates"][:4]:
+    # Four providers can each report native and WETH settlement candidates.
+    for row in value["candidates"][:8]:
         if (not isinstance(row, dict) or row.get("execution_eligible") is not False
                 or not all(_route_enum(key, row.get(key)) for key in
                            ("provider", "settlement", "validation_level"))):
@@ -1975,7 +1976,7 @@ DASHBOARD_HTML = """\
   function renderRouteComparison(comparison, botKey) {
     if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return '';
     const value = v => esc(v ?? '—');
-    const rows = (Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 4) : []).sort(function(a, b) {
+    const rows = (Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : []).sort(function(a, b) {
       const av = Number(a.projected_net_score); const bv = Number(b.projected_net_score);
       if (!Number.isFinite(av)) return 1; if (!Number.isFinite(bv)) return -1; return bv - av;
     });
