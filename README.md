@@ -229,10 +229,12 @@ Run a one-off check or add a durable watch:
 ```
 
 Verdicts are intentionally asymmetric: recovery below 85%, inadequate
-liquidity, planned capital too large for the pool, or no sell route is a hard
-reject. A healthy route on only one configured provider is `CAUTION`, never a
-clean pass. Contract security remains `unknown` on unsupported chains; that is
-displayed explicitly instead of inventing a safety claim. Authenticated
+liquidity, planned capital too large for the pool, no sell route, or no
+provider redundancy is a hard reject. Candidate addresses must contain
+deployed bytecode; wallets/EOAs are rejected before provider calls. This check
+proves only that the address is a contract, not that its token logic is safe.
+Contract security remains `unknown` where external analysis is unavailable;
+that is displayed explicitly instead of inventing a safety claim. Authenticated
 `POST /api/scout/assess` and `POST/DELETE /api/scout/watch` endpoints drive
 operations, while `GET /api/scout` and per-address history are public and
 read-only for the dashboard.
@@ -240,7 +242,7 @@ read-only for the dashboard.
 The DoomDash Scout panel is collapsed by default so fleet operations remain
 the primary view. Its summary shows pass/caution/reject and watched counts;
 expanding it shows market liquidity/volume/age, planned budget and position
-count, assessment freshness, provider-by-provider executable recovery or error,
+count, assessment freshness, provider-by-provider quoted recovery or error,
 warnings, and direct chart/contract links. Watched candidates are marked with
 an eye and rescanned at `DOOM_SCOUT_INTERVAL_SECONDS` (15 minutes by default).
 The panel also reports whether Sushi and the optional Uniswap quote provider
@@ -256,6 +258,11 @@ edge has intermittently rejected byte-identical requests carrying the default
 `python-requests/*` User-Agent with a misleading packet-buffer 409 before a
 normal request ID is assigned. Provider errors retain the returned gateway
 detail and request ID, when present.
+
+Uniswap route checks mirror the bot's protocol capability discovery: after a
+default no-route response Scout probes `V4`, `V3`, then `V2` individually and
+records the successful protocol for each buy/sell leg. Recovery remains quote
+math rather than proof of a mined round trip; the UI labels it accordingly.
 
 `TELEGRAM_LOW_FUNDS_BUFFER_ETH` is added to each bot's reported gas reserve;
 an ETH balance at or below that sum triggers one `funds` alert. It re-arms

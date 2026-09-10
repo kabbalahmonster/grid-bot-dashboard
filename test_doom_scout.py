@@ -43,7 +43,7 @@ class TestDoomScout(unittest.TestCase):
              "uniswap": {"sell_success": False, "recovery_percent": None}},
             0.003,
         )
-        self.assertEqual(result["verdict"], "caution")
+        self.assertEqual(result["verdict"], "reject")
         self.assertIn("NO_PROVIDER_REDUNDANCY", result["reasons"])
         self.assertIn("NO_PROVIDER_REDUNDANCY", result["reasons"])
 
@@ -60,6 +60,7 @@ class TestDoomScout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = directory + "/scout.json"
             scout = DoomScout(path)
+            scout._require_token_contract = Mock(return_value={"status": "contract", "bytecode_present": True})
             scout.watch(TOKEN, "LEMON", budget_eth=0.004, positions=4)
             restored = DoomScout(path)
             self.assertEqual(restored.snapshot()["watchlist"][0]["label"], "LEMON")
@@ -68,6 +69,7 @@ class TestDoomScout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             state_file = os.path.join(directory, "scout.json")
             scout = DoomScout(state_file=state_file)
+            scout._require_token_contract = Mock(return_value={"status": "contract", "bytecode_present": True})
             scout.watch(TOKEN, "LEMON")
             scout._reports[TOKEN.lower()] = {"address": TOKEN}
             scout._history[TOKEN.lower()] = [{"score": 85}]
@@ -95,6 +97,7 @@ class TestDoomScout(unittest.TestCase):
 
     def test_assessment_round_trips_each_provider(self):
         scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")
+        scout._require_token_contract = Mock(return_value={"status": "contract", "bytecode_present": True})
         scout._market = Mock(return_value={"symbol": "OK", "liquidity_usd": 100_000,
                                           "volume_h24": 10_000, "age_hours": 100})
         scout._eth_usd = Mock(return_value=4_000)
@@ -112,6 +115,26 @@ class TestDoomScout(unittest.TestCase):
         headers = scout.http.post.call_args.kwargs["headers"]
         self.assertEqual(headers["User-Agent"], "curl/8.0")
         self.assertEqual(headers["Accept"], "application/json")
+
+    def test_wallet_address_is_rejected_before_provider_calls(self):
+        scout = DoomScout(state_file="/dev/null")
+        response = Mock()
+        response.json.return_value = {"jsonrpc": "2.0", "id": 1, "result": "0x"}
+        scout.http.post = Mock(return_value=response)
+        with self.assertRaisesRegex(ValueError, "wallet/EOA"):
+            scout.assess(TOKEN, persist=False)
+
+    def test_uniswap_probes_specific_protocols_after_default_no_route(self):
+        scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")
+        no_route = Mock(status_code=404, headers={})
+        no_route.json.return_value = {"error": "NoRoute"}
+        v4 = Mock(status_code=200, headers={})
+        v4.json.return_value = {"quote": {"output": {"amount": "456"}}}
+        scout.http.post = Mock(side_effect=[no_route, v4])
+        self.assertEqual(scout._uniswap_quote(TOKEN, "0x" + "34" * 20, 100, 4663), 456)
+        self.assertNotIn("protocols", scout.http.post.call_args_list[0].kwargs["json"])
+        self.assertEqual(scout.http.post.call_args_list[1].kwargs["json"]["protocols"], ["V4"])
+        self.assertEqual(scout._last_uniswap_protocol, "V4")
 
     def test_uniswap_quote_surfaces_gateway_error_and_request_id(self):
         scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")

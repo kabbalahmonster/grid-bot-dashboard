@@ -1485,7 +1485,7 @@ DASHBOARD_HTML = """\
   <details class="scout-panel" id="scout-panel">
     <summary class="scout-header" aria-controls="scout-body">
       <span class="scout-icon" aria-hidden="true">🧭</span>
-      <span class="scout-heading"><span class="scout-title" id="scout-title">DoomScout</span><span>read-only executable exit safety</span></span>
+      <span class="scout-heading"><span class="scout-title" id="scout-title">DoomScout</span><span>read-only route and contract screening</span></span>
       <span class="scout-summary" id="scout-summary">Loading candidates…</span>
     </summary>
     <div class="scout-body" id="scout-body">
@@ -3890,7 +3890,7 @@ DASHBOARD_HTML = """\
       const warnings = Array.isArray(report.warnings) ? report.warnings : [];
       const providers = report.providers || {};
       const watchedItem = watched.get(String(report.address || '').toLowerCase());
-      const recovery = report.best_recovery_percent == null ? 'no exit' : Number(report.best_recovery_percent).toFixed(1) + '% recovery';
+      const recovery = report.best_recovery_percent == null ? 'no exit quote' : Number(report.best_recovery_percent).toFixed(1) + '% quoted recovery';
       const assessed = report.assessed_at ? new Date(report.assessed_at).toLocaleString() : 'never';
       const ageMs = report.assessed_at ? Date.now() - new Date(report.assessed_at).getTime() : Infinity;
       const stale = ageMs > Math.max(1800000, Number(snapshot && snapshot.interval_seconds || 900) * 2000);
@@ -3899,7 +3899,8 @@ DASHBOARD_HTML = """\
       const routeHtml = ['sushiswap', 'uniswap'].map(function(name) {
         const route = providers[name] || {};
         const ok = Boolean(route.sell_success);
-        const detail = ok ? Number(route.recovery_percent || 0).toFixed(1) + '% recovery' : esc(route.error || (route.buy_success ? 'no sell route' : 'no buy route'));
+        const protocols = [route.buy_protocol, route.sell_protocol].filter(Boolean).join('/');
+        const detail = ok ? Number(route.recovery_percent || 0).toFixed(1) + '% quoted recovery' + (protocols ? ' · ' + esc(protocols) : '') : esc(route.error || (route.buy_success ? 'no sell route' : 'no buy route'));
         return '<div class="' + (ok ? 'scout-route-ok' : 'scout-route-bad') + '">' + (ok ? '✓ ' : '× ') + esc(name === 'sushiswap' ? 'Sushi' : 'Uniswap') + ': ' + detail + '</div>';
       }).join('');
       const chartUrl = market.url && String(market.url).startsWith('https://') ? market.url : '';

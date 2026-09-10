@@ -1264,7 +1264,9 @@ class TelegramAlerts:
         routes = []
         for name, route in providers.items():
             recovery = route.get("recovery_percent")
-            routes.append(f"{name.title()}: {recovery:.2f}% recovery" if recovery is not None else f"{name.title()}: no round trip")
+            protocols = "/".join(filter(None, (route.get("buy_protocol"), route.get("sell_protocol"))))
+            protocol_text = f" ({protocols})" if protocols else ""
+            routes.append(f"{name.title()}{protocol_text}: {recovery:.2f}% quoted recovery" if recovery is not None else f"{name.title()}{protocol_text}: no round trip")
         reasons = report.get("reasons") or []
         reason_text = ", ".join(str(x).replace("_", " ").lower() for x in reasons) or "none"
         return (

@@ -16,6 +16,12 @@ ADDRESS_RE = re.compile(r"^0x[0-9a-fA-F]{40}$")
 NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
 ZERO = "0x0000000000000000000000000000000000000000"
 CHAIN_SLUGS = {4663: "robinhood", 8453: "base", 1: "ethereum"}
+CHAIN_RPC_URLS = {
+    4663: "https://rpc.mainnet.chain.robinhood.com",
+    8453: "https://mainnet.base.org",
+    1: "https://ethereum-rpc.publicnode.com",
+}
+UNISWAP_PROTOCOLS = ("V4", "V3", "V2")
 
 
 def _number(value, default=0.0):
@@ -48,7 +54,7 @@ def score_assessment(market, providers, budget_eth):
         score -= 12
         warnings.append("round-trip recovery below 92%")
     if len(successful) < 2:
-        score -= 15
+        score -= 30
         reasons.append("NO_PROVIDER_REDUNDANCY")
     if liquidity <= 0:
         score -= 25
@@ -79,6 +85,7 @@ def score_assessment(market, providers, budget_eth):
     hard_fail = any(reason in reasons for reason in (
         "NO_EXECUTABLE_SELL_ROUTE", "ROUND_TRIP_RECOVERY_BELOW_85_PERCENT",
         "LIQUIDITY_BELOW_5000_USD", "PLANNED_CAPITAL_TOO_LARGE_FOR_LIQUIDITY",
+        "NO_PROVIDER_REDUNDANCY",
     ))
     # A clean PASS is deliberately strict: even non-fatal deficiencies must be
     # visible as CAUTION rather than disappearing behind a high numeric score.
@@ -105,6 +112,7 @@ class DoomScout:
         self._watchlist = {}
         self._reports = {}
         self._history = {}
+        self._uniswap_protocol_cache = {}
         self._load()
 
     def _load(self):
@@ -138,7 +146,9 @@ class DoomScout:
 
     def watch(self, address, label="", chain_id=4663, budget_eth=0.003, positions=4):
         address = self.validate_address(address)
-        item = {"address": address, "label": str(label or "").strip()[:32], "chain_id": int(chain_id),
+        chain_id = int(chain_id)
+        self._require_token_contract(address, chain_id)
+        item = {"address": address, "label": str(label or "").strip()[:32], "chain_id": chain_id,
                 "budget_eth": max(0.0001, float(budget_eth)), "positions": max(1, min(100, int(positions))),
                 "added_at": datetime.now(timezone.utc).isoformat()}
         with self._lock:
@@ -171,6 +181,23 @@ class DoomScout:
         if not ADDRESS_RE.fullmatch(address):
             raise ValueError("token address must be 0x followed by 40 hex characters")
         return address
+
+    def _require_token_contract(self, address, chain_id):
+        rpc_url = CHAIN_RPC_URLS.get(int(chain_id))
+        if not rpc_url:
+            raise ValueError(f"unsupported chain {chain_id}")
+        response = self.http.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "eth_getCode",
+            "params": [address, "latest"],
+        }, timeout=self.timeout)
+        response.raise_for_status()
+        payload = response.json()
+        code = str(payload.get("result") or "").lower()
+        if code in {"", "0x", "0x0"}:
+            raise ValueError("address is a wallet/EOA, not a token contract")
+        if not code.startswith("0x"):
+            raise LookupError(str((payload.get("error") or {}).get("message") or "RPC contract check failed"))
+        return {"status": "contract", "bytecode_present": True}
 
     def snapshot(self):
         with self._lock:
@@ -304,23 +331,47 @@ class DoomScout:
     def _uniswap_quote(self, token_in, token_out, amount, chain_id):
         if not self.uniswap_api_key:
             raise LookupError("API key not configured")
-        response = self.http.post("https://trade-api.gateway.uniswap.org/v1/quote", headers={
+        headers = {
             "x-api-key": self.uniswap_api_key, "Content-Type": "application/json", "x-permit2-disabled": "true",
             "x-universal-router-version": "2.1.1", "x-erc20eth-enabled": "true",
             "User-Agent": "curl/8.0", "Accept": "application/json",
-        }, json={"tokenInChainId": chain_id, "tokenOutChainId": chain_id, "tokenIn": token_in,
-                 "tokenOut": token_out, "swapper": "0x0000000000000000000000000000000000000001",
-                 "amount": str(int(amount)), "type": "EXACT_INPUT", "slippageTolerance": 2.0}, timeout=self.timeout)
-        try:
-            data = response.json()
-        except (ValueError, TypeError):
-            data = {}
-        if response.status_code != 200:
+        }
+        base_payload = {
+            "tokenInChainId": chain_id, "tokenOutChainId": chain_id, "tokenIn": token_in,
+            "tokenOut": token_out, "swapper": "0x0000000000000000000000000000000000000001",
+            "amount": str(int(amount)), "type": "EXACT_INPUT", "slippageTolerance": 2.0,
+        }
+        cache_key = (int(chain_id), token_in.lower(), token_out.lower())
+        cached = self._uniswap_protocol_cache.get(cache_key)
+        attempts = ([cached] if cached else [None]) + [p for p in UNISWAP_PROTOCOLS if p != cached]
+        last_error = "no route"
+        for protocol in attempts:
+            payload = dict(base_payload)
+            if protocol:
+                payload["protocols"] = [protocol]
+            response = self.http.post(
+                "https://trade-api.gateway.uniswap.org/v1/quote", headers=headers,
+                json=payload, timeout=self.timeout,
+            )
+            try:
+                data = response.json()
+            except (ValueError, TypeError):
+                data = {}
+            if response.status_code == 200:
+                amount_out = int((((data.get("quote") or {}).get("output") or {}).get("amount")) or 0)
+                if amount_out > 0:
+                    resolved = protocol or "DEFAULT"
+                    self._uniswap_protocol_cache[cache_key] = resolved if resolved in UNISWAP_PROTOCOLS else None
+                    self._last_uniswap_protocol = resolved
+                    return amount_out
             detail = data.get("error") or data.get("detail") or data.get("message")
             request_id = response.headers.get("x-request-id", "")
             suffix = f"; request_id={request_id}" if request_id else ""
-            raise LookupError(str(detail or f"HTTP {response.status_code}") + suffix)
-        return int((((data.get("quote") or {}).get("output") or {}).get("amount")) or 0)
+            last_error = str(detail or f"HTTP {response.status_code}") + suffix
+            no_route = response.status_code in {404, 409} or "route" in last_error.lower() or "notfound" in last_error.lower()
+            if not no_route:
+                break
+        raise LookupError(last_error)
 
     def _provider_roundtrip(self, provider, address, chain_id, budget_wei):
         quote = self._sushi_quote if provider == "sushiswap" else self._uniswap_quote
@@ -329,11 +380,15 @@ class DoomScout:
         try:
             tokens = quote(native, address, budget_wei, chain_id)
             result.update({"buy_success": tokens > 0, "token_amount_raw": str(tokens)})
+            if provider == "uniswap":
+                result["buy_protocol"] = getattr(self, "_last_uniswap_protocol", None)
             if tokens <= 0:
                 raise LookupError("zero token output")
             returned = quote(address, native, tokens, chain_id)
             result.update({"sell_success": returned > 0, "returned_wei": str(returned),
                            "recovery_percent": round(returned / budget_wei * 100, 2) if returned else 0.0})
+            if provider == "uniswap":
+                result["sell_protocol"] = getattr(self, "_last_uniswap_protocol", None)
         except Exception as exc:
             result["error"] = str(exc)[:240]
         return result
@@ -341,6 +396,7 @@ class DoomScout:
     def assess(self, address, chain_id=4663, budget_eth=0.003, positions=4, persist=True):
         address = self.validate_address(address)
         chain_id, budget_eth, positions = int(chain_id), float(budget_eth), int(positions)
+        contract_check = self._require_token_contract(address, chain_id)
         market_error = None
         try:
             market = self._market(address, chain_id)
@@ -356,7 +412,7 @@ class DoomScout:
             "position_budget_eth": round(budget_eth / max(1, positions), 12),
             "assessed_at": datetime.now(timezone.utc).isoformat(), "market": market,
             "market_error": market_error, "providers": providers, **scored,
-            "security": {"status": "unknown", "note": "external contract-risk coverage unavailable for this chain"},
+            "security": {**contract_check, "note": "bytecode verified; external contract-risk coverage unavailable for this chain"},
         }
         if persist:
             key = address.lower()
