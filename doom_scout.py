@@ -78,8 +78,14 @@ def score_assessment(market, providers, budget_eth, security=None):
     elif best_recovery < 92:
         score -= 12
         warnings.append("round-trip recovery below 92%")
+    elif best_recovery < 95:
+        score -= 6
+        warnings.append("quoted recovery below 95%")
+    elif best_recovery < 98:
+        score -= 3
+        warnings.append("quoted recovery below 98%")
     if len(successful) < 2:
-        score -= 30
+        score -= 15
         reasons.append("NO_PROVIDER_REDUNDANCY")
     if liquidity <= 0:
         score -= 25
@@ -110,7 +116,6 @@ def score_assessment(market, providers, budget_eth, security=None):
     hard_fail = any(reason in reasons for reason in (
         "NO_EXECUTABLE_SELL_ROUTE", "ROUND_TRIP_RECOVERY_BELOW_85_PERCENT",
         "LIQUIDITY_BELOW_5000_USD", "PLANNED_CAPITAL_TOO_LARGE_FOR_LIQUIDITY",
-        "NO_PROVIDER_REDUNDANCY",
         "TX_ORIGIN_DEPENDENT_TOKEN_LOGIC", "ACTIVE_OWNER_CONTROLS_TAX_TOKEN",
         "DELEGATECALL_OR_UPGRADEABLE_LOGIC", "SELFDESTRUCT_OPCODE_PRESENT",
     ))

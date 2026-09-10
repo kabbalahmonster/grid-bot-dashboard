@@ -229,8 +229,11 @@ Run a one-off check or add a durable watch:
 ```
 
 Verdicts are intentionally asymmetric: recovery below 85%, inadequate
-liquidity, planned capital too large for the pool, no sell route, or no
-provider redundancy is a hard reject. Candidate addresses must contain
+liquidity, planned capital too large for the pool, or no sell route is a hard
+reject. A clean contract with one quoted exit provider is capped at CAUTION
+and penalized rather than rejected; recovery below 95% adds a graduated
+penalty. Dangerous contract flags remain hard failures regardless of attractive
+quotes. Candidate addresses must contain
 deployed bytecode; wallets/EOAs are rejected before provider calls. Scout also
 fingerprints runtime selectors and opcodes, reads a standard `owner()` when
 available, and hard-rejects tx.origin-dependent token logic, active-owner tax

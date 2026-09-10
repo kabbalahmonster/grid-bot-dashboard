@@ -40,16 +40,31 @@ class TestDoomScout(unittest.TestCase):
         self.assertEqual(result["verdict"], "reject")
         self.assertIn("ROUND_TRIP_RECOVERY_BELOW_85_PERCENT", result["reasons"])
 
-    def test_good_single_provider_is_caution_not_pass(self):
+    def test_good_single_provider_is_caution_not_reject(self):
         result = score_assessment(
             {"liquidity_usd": 150_000, "volume_h24": 40_000, "age_hours": 72, "eth_usd": 4000},
             {"sushiswap": {"sell_success": True, "recovery_percent": 98},
              "uniswap": {"sell_success": False, "recovery_percent": None}},
             0.003,
         )
-        self.assertEqual(result["verdict"], "reject")
+        self.assertEqual(result["verdict"], "caution")
+        self.assertEqual(result["score"], 85)
         self.assertIn("NO_PROVIDER_REDUNDANCY", result["reasons"])
-        self.assertIn("NO_PROVIDER_REDUNDANCY", result["reasons"])
+
+    def test_single_provider_recovery_is_graded(self):
+        market = {"liquidity_usd": 150_000, "volume_h24": 40_000,
+                  "age_hours": 72, "eth_usd": 4000}
+        strong = score_assessment(
+            market, {"sushiswap": {"sell_success": True, "recovery_percent": 98},
+                     "uniswap": {"sell_success": False}}, 0.003,
+        )
+        thinner = score_assessment(
+            market, {"sushiswap": {"sell_success": True, "recovery_percent": 92.1},
+                     "uniswap": {"sell_success": False}}, 0.003,
+        )
+        self.assertEqual(strong["score"], 85)
+        self.assertEqual(thinner["score"], 79)
+        self.assertEqual(thinner["verdict"], "caution")
 
     def test_deep_redundant_coin_passes(self):
         result = score_assessment(
