@@ -1,5 +1,6 @@
 import unittest
 
+import dashboard_test_env  # noqa: F401  (must precede application import)
 from dashboard_server import _allowlisted_status_payload
 
 

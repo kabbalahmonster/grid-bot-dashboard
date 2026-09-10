@@ -660,6 +660,13 @@ SSE events:
 
 Latest state and the 100-entry status history are persisted atomically to `STATE_FILE` (default `data/dashboard_state.json`) and restored after restart. Frequent updates are coalesced and flushed every `STATE_FLUSH_INTERVAL` seconds (default 15), with a final flush on normal shutdown, avoiding a complete history rewrite for every status request. Bot-side trade and Event histories are separately persisted and capped at 50 entries each. Persistent profit accounting lives in the bot's `data/profit_totals.json`.
 
+When buy and sell route tournaments overlap, their cards are ordered by each
+tournament's `updated_at` event time, newest first. Every card displays a live
+age counter. The crown identifies the economically selected route only; a
+separate green `TRANSACTION CONFIRMED ON-CHAIN` badge and transaction link are
+shown only after a successful receipt is reported. Completed results remain
+visible for two minutes unless superseded by a newer tournament.
+
 Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is
 opened. Chart resolution and card market values share the token's preferred
 WETH-pair cache. The cache refreshes at most once per minute per unique

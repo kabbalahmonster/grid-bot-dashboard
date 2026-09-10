@@ -1,6 +1,7 @@
 import gzip
 import unittest
 
+import dashboard_test_env  # noqa: F401  (must precede application import)
 import dashboard_server
 
 

@@ -4,6 +4,7 @@ import subprocess
 import unittest
 from unittest.mock import patch
 
+import dashboard_test_env  # noqa: F401  (must precede application import)
 import dashboard_server as server
 
 
@@ -178,7 +179,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("Observation failed", rendered[3])
         self.assertNotIn("<script>", rendered[4])
         self.assertIn("&lt;script&gt;", rendered[4])
-        self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
+        self.assertIn(".forEach(function(comparison) { html += renderRouteComparison(comparison, botKey); })", html)
 
     def test_renderer_tolerates_restored_malformed_rejections(self):
         html = server.DASHBOARD_HTML
@@ -451,9 +452,30 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("const tournamentOwnsSellStatus = Boolean(", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && d.sell_attempt.status === 'quote_below_minimum')", html)
         self.assertIn("if (!tournamentOwnsSellStatus && d.sell_attempt && (d.sell_attempt.status === 'quote_provider_disagreement' || d.sell_attempt.status === 'quote_provider_changed'))", html)
-        self.assertIn("renderRouteComparison(sellRouteComparison, botKey)", html)
-        self.assertLess(html.index("renderRouteComparison(sellRouteComparison, botKey)"),
-                        html.index("renderRouteComparison(buyRouteComparison, botKey)"))
+        self.assertIn("[buyRouteComparison, sellRouteComparison]", html)
+        self.assertIn("tournamentTimestamp(b) - tournamentTimestamp(a)", html)
+        self.assertIn("html += renderRouteComparison(comparison, botKey)", html)
+
+    def test_tournament_recency_and_confirmation_are_distinct(self):
+        html = server.DASHBOARD_HTML
+        for needle in ("data-tournament-age", "tournamentAgeLabel", "updated_at",
+                       "✅ TRANSACTION CONFIRMED ON-CHAIN", "👑 "):
+            self.assertIn(needle, html)
+        self.assertIn("setInterval(function() { updateTournamentAges(document); }, 1000)", html)
+
+    def test_tournament_timestamp_and_buy_confirmation_are_allowlisted(self):
+        value = comparison("buy")
+        value.update(
+            mode="execution_preflight", status="completed",
+            updated_at="2026-09-10T03:30:00+00:00",
+            final={"tx_hash": "0x" + "b" * 64, "side": "buy",
+                   "eth_amount": 0.003, "token_amount": 12345.0,
+                   "gas_fee_eth": 0.00004},
+        )
+        clean = self.clean(value, "buy")["route_comparison"]
+        self.assertEqual(clean["updated_at"], value["updated_at"])
+        self.assertEqual(clean["final"]["side"], "buy")
+        self.assertEqual(clean["final"]["token_amount"], 12345.0)
 
     def test_completed_tournament_lingers_two_minutes_and_active_replaces_it(self):
         html = server.DASHBOARD_HTML

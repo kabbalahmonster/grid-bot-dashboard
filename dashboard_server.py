@@ -503,6 +503,15 @@ def _route_number(value, *, raw=False, nonnegative=False):
     return abs(number) <= Decimal("1e96") and (not nonnegative or number >= 0)
 
 
+def _route_timestamp(value):
+    if not isinstance(value, str) or len(value) > 64:
+        return False
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).tzinfo is not None
+    except ValueError:
+        return False
+
+
 def _allowlisted_route_comparison(value, direction):
     """Explicit, fixed-depth shadow schema; no generic recursive copying."""
     if not isinstance(value, dict):
@@ -519,6 +528,8 @@ def _allowlisted_route_comparison(value, direction):
             or not isinstance(value.get("candidates"), list)):
         return None
     result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
+    if _route_timestamp(value.get("updated_at")):
+        result["updated_at"] = value["updated_at"]
     # Four providers can each report native and WETH settlement candidates.
     for row in value["candidates"][:8]:
         if (not isinstance(row, dict) or row.get("execution_eligible") is not False
@@ -605,7 +616,10 @@ def _allowlisted_route_comparison(value, direction):
         tx_hash = final.get("tx_hash")
         if isinstance(tx_hash, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash):
             clean_final = {"tx_hash": tx_hash}
-            for key in ("received_eth", "gas_fee_eth", "profit_eth", "profit_percent"):
+            if final.get("side") in {"buy", "sell"}:
+                clean_final["side"] = final["side"]
+            for key in ("received_eth", "gas_fee_eth", "profit_eth", "profit_percent",
+                        "eth_amount", "token_amount"):
                 number = final.get(key)
                 if type(number) in (int, float) and math.isfinite(number) and abs(number) < 1e96:
                     clean_final[key] = number
@@ -1437,6 +1451,9 @@ DASHBOARD_HTML = """\
   .shadow-routes li { border-top: 1px solid #334155; padding: 0.5rem 0; }
   .tournament-card { border: 1px solid #7c3aed; background: linear-gradient(145deg, rgba(76,29,149,.28), rgba(15,23,42,.8)); border-radius: .65rem; padding: .8rem; margin-bottom: .8rem; }
   .tournament-card h4 { margin: 0 0 .25rem; color: #ddd6fe; letter-spacing: .04em; }
+  .tournament-heading { display:flex; align-items:center; justify-content:space-between; gap:.65rem; flex-wrap:wrap; }
+  .tournament-age { color:#94a3b8; font-size:.74rem; font-variant-numeric:tabular-nums; }
+  .tournament-confirmed { display:inline-flex; align-items:center; gap:.3rem; margin:.15rem 0 .55rem; padding:.25rem .5rem; border:1px solid #22c55e; border-radius:999px; background:rgba(20,83,45,.45); color:#86efac; font-size:.76rem; font-weight:800; letter-spacing:.04em; }
   .tournament-card .arena-status { color: #c4b5fd; margin-bottom: .55rem; }
   .tournament-scoreboard { display: grid; gap: .4rem; }
   .tournament-contestant { border: 1px solid #334155; background: rgba(15,23,42,.72); border-radius: .45rem; overflow: hidden; }
@@ -1982,6 +1999,29 @@ DASHBOARD_HTML = """\
     return comparison;
   }
 
+  function tournamentTimestamp(comparison) {
+    const timestamp = Date.parse(comparison?.updated_at || '');
+    return Number.isFinite(timestamp) ? timestamp : 0;
+  }
+
+  function tournamentAgeLabel(timestamp) {
+    const parsed = Date.parse(timestamp || '');
+    if (!Number.isFinite(parsed)) return 'age unavailable';
+    const seconds = Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+    if (seconds < 5) return 'just now';
+    if (seconds < 60) return seconds + 's ago';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes + 'm ' + String(seconds % 60).padStart(2, '0') + 's ago';
+    const hours = Math.floor(minutes / 60);
+    return hours + 'h ' + String(minutes % 60).padStart(2, '0') + 'm ago';
+  }
+
+  function updateTournamentAges(root) {
+    (root || document).querySelectorAll('[data-tournament-age]').forEach(function(node) {
+      node.textContent = tournamentAgeLabel(node.dataset.tournamentAge);
+    });
+  }
+
   function renderRouteComparison(comparison, botKey) {
     if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return '';
     const value = v => esc(v ?? '—');
@@ -2005,7 +2045,10 @@ DASHBOARD_HTML = """\
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
-      let html = '<section class="tournament-card" data-tournament-card><h4>' + title + '</h4><div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms' + targetText + '</div><div class="tournament-scoreboard">';
+      const updatedAt = comparison.updated_at || '';
+      const confirmationBadge = completed && comparison.final
+        ? '<div class="tournament-confirmed" role="status">✅ TRANSACTION CONFIRMED ON-CHAIN</div>' : '';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + '<div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms' + targetText + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
@@ -2036,7 +2079,10 @@ DASHBOARD_HTML = """\
       if (completed && comparison.final) {
         const f = comparison.final;
         const tx = value(f.tx_hash);
-        html += '</div><div class="tournament-final">🏆 Confirmed · profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong> · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div></section>';
+        const finalDetail = isBuy
+          ? 'Bought <strong>' + formatTokenAmount(Number(f.token_amount || 0)) + ' tokens for ' + Number(f.eth_amount || 0).toFixed(8) + ' ETH</strong>'
+          : 'Profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong>';
+        html += '</div><div class="tournament-final">✅ ' + finalDetail + ' · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div></section>';
       } else html += '</div></section>';
       return html;
     }
@@ -3298,8 +3344,10 @@ DASHBOARD_HTML = """\
           ' · ' + esc(attempt.quote_divergence_percent ?? '?') + '% difference</span></div>';
       }
 
-      html += renderRouteComparison(sellRouteComparison, botKey);
-      html += renderRouteComparison(buyRouteComparison, botKey);
+      [buyRouteComparison, sellRouteComparison]
+        .filter(Boolean)
+        .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })
+        .forEach(function(comparison) { html += renderRouteComparison(comparison, botKey); });
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
@@ -3603,6 +3651,7 @@ DASHBOARD_HTML = """\
     });
     if (expiredBotIds.size) render(false, expiredBotIds);
   }, 1000);
+  setInterval(function() { updateTournamentAges(document); }, 1000);
   window.addEventListener('scroll', markViewportBusy, { passive: true });
   window.addEventListener('touchmove', markViewportBusy, { passive: true });
   window.addEventListener('touchstart', function() {

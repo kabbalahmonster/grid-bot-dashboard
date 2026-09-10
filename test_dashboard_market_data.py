@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
+import dashboard_test_env  # noqa: F401  (must precede application import)
 import dashboard_server
 
 
