@@ -305,6 +305,20 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("mode === 'needs-positions'", body)
         self.assertIn("Number(Boolean(av.capacity_warning))", body)
 
+    def test_status_sort_uses_comprehensive_operational_hierarchy(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("function operationalStatus(state)", body)
+        self.assertIn("state?.buy_attempt?.route_comparison, state?.sell_attempt?.route_comparison", body)
+        self.assertIn("item.status === 'completed' && item.final?.tx_hash", body)
+        self.assertIn("Date.now() - completedAt < completedTournamentLingerMs", body)
+        self.assertIn("if (activeTournament) return { rank: 1", body)
+        self.assertIn("state?.sell_attempt?.status === 'position_balance_mismatch'", body)
+        self.assertIn("if (needsGasState(state)) return { rank: 3", body)
+        self.assertIn("if (state?.funding_warning) return { rank: 4", body)
+        self.assertIn("if (state?.capacity_warning) return { rank: 6", body)
+        self.assertIn("const aStatus = operationalStatus(av), bStatus = operationalStatus(bv)", body)
+        self.assertIn("bStatus.timestamp - aStatus.timestamp", body)
+
     def test_browser_notification_types_are_optional_and_deduplicated(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="notification-menu" id="notification-menu" hidden', body)

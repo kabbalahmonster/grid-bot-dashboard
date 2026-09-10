@@ -2528,6 +2528,41 @@ DASHBOARD_HTML = """\
     };
   }
 
+  // Status sorting reflects the most important state visible on each card,
+  // rather than sorting only by report connectivity. Lower ranks appear first
+  // with the default ascending direction.
+  function operationalStatus(state) {
+    const ageStatus = reportAge(state && state.received_at).status;
+    if (ageStatus !== 'running') {
+      return { rank: { stale: 9, offline: 10, unknown: 11 }[ageStatus] ?? 11, timestamp: 0 };
+    }
+
+    const comparisons = [state?.buy_attempt?.route_comparison, state?.sell_attempt?.route_comparison]
+      .filter(function(item) { return item && item.mode === 'execution_preflight'; });
+    const confirmed = comparisons
+      .filter(function(item) {
+        const completedAt = tournamentTimestamp(item);
+        return item.status === 'completed' && item.final?.tx_hash && completedAt > 0 && Date.now() - completedAt < completedTournamentLingerMs;
+      })
+      .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })[0];
+    if (confirmed) return { rank: 0, timestamp: tournamentTimestamp(confirmed) };
+
+    const activeTournament = comparisons
+      .filter(function(item) { return !['completed', 'execution_aborted'].includes(item.status); })
+      .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })[0];
+    if (activeTournament) return { rank: 1, timestamp: tournamentTimestamp(activeTournament) };
+
+    if (state?.sell_attempt?.status === 'position_balance_mismatch') return { rank: 2, timestamp: 0 };
+    if (needsGasState(state)) return { rank: 3, timestamp: 0 };
+    if (state?.funding_warning) return { rank: 4, timestamp: 0 };
+    if (state?.buy_attempt?.status === 'projected_gas_above_cap') return { rank: 5, timestamp: 0 };
+    if (state?.capacity_warning) return { rank: 6, timestamp: 0 };
+    if (state?.sell_attempt?.status && state.sell_attempt.route_comparison?.mode !== 'execution_preflight') {
+      return { rank: 7, timestamp: 0 };
+    }
+    return { rank: 8, timestamp: 0 };
+  }
+
   function updateSummary(botIds) {
     summaryBotIds = botIds.slice();
     const states = botIds.map(function(id) { return bots[id]; });
@@ -3102,7 +3137,6 @@ DASHBOARD_HTML = """\
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
     const wantedProvider = providerFilter.value;
-    const rank = { running: 0, stale: 1, offline: 2, unknown: 3 };
     const botIds = Object.keys(bots).filter(function(id) {
       const d = bots[id];
       const provider = String(d.swap_provider || '').toLowerCase();
@@ -3198,7 +3232,12 @@ DASHBOARD_HTML = """\
       }
       else if (mode === 'eth-balance') result = (parseFloat(av.eth_balance) || 0) - (parseFloat(bv.eth_balance) || 0);
       else if (mode === 'usdg-balance') result = (parseFloat(av.usdg_balance) || 0) - (parseFloat(bv.usdg_balance) || 0);
-      else if (mode === 'status') result = rank[reportAge(av.received_at).status] - rank[reportAge(bv.received_at).status];
+      else if (mode === 'status') {
+        const aStatus = operationalStatus(av), bStatus = operationalStatus(bv);
+        result = aStatus.rank - bStatus.rank;
+        // Within transient statuses, show the freshest tournament/receipt first.
+        if (result === 0 && (aStatus.timestamp || bStatus.timestamp)) result = bStatus.timestamp - aStatus.timestamp;
+      }
       else result = a.localeCompare(b);
       return sortDirectionValue === 'asc' ? result : -result;
     });
