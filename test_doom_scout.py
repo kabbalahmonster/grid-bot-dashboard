@@ -9,6 +9,10 @@ from doom_scout import DoomScout, score_assessment
 TOKEN = "0x" + "12" * 20
 
 
+def runtime(*selectors, opcodes=b""):
+    return "0x" + (b"".join(b"\x63" + bytes.fromhex(selector) for selector in selectors) + opcodes).hex()
+
+
 class TestDoomScout(unittest.TestCase):
     def test_discovery_enriches_sparse_profiles(self):
         scout = DoomScout(state_file="/dev/null")
@@ -55,6 +59,26 @@ class TestDoomScout(unittest.TestCase):
         )
         self.assertEqual(result["verdict"], "pass")
         self.assertGreaterEqual(result["score"], 75)
+
+    def test_tx_origin_contract_is_hard_rejected(self):
+        result = score_assessment(
+            {"liquidity_usd": 100_000, "volume_h24": 50_000, "age_hours": 240, "eth_usd": 4_000},
+            {"uniswap": {"sell_success": True, "recovery_percent": 96},
+             "sushiswap": {"sell_success": True, "recovery_percent": 95}}, 0.003,
+            {"flags": ["TX_ORIGIN_LOGIC"]},
+        )
+        self.assertEqual(result["verdict"], "reject")
+        self.assertIn("TX_ORIGIN_DEPENDENT_TOKEN_LOGIC", result["reasons"])
+
+    def test_active_owner_tax_template_is_hard_rejected(self):
+        result = score_assessment(
+            {"liquidity_usd": 100_000, "volume_h24": 50_000, "age_hours": 240, "eth_usd": 4_000},
+            {"uniswap": {"sell_success": True, "recovery_percent": 96},
+             "sushiswap": {"sell_success": True, "recovery_percent": 95}}, 0.003,
+            {"flags": ["ACTIVE_OWNER_TAX_TOKEN"]},
+        )
+        self.assertEqual(result["verdict"], "reject")
+        self.assertIn("ACTIVE_OWNER_CONTROLS_TAX_TOKEN", result["reasons"])
 
     def test_watchlist_is_durable_and_validated(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -123,6 +147,30 @@ class TestDoomScout(unittest.TestCase):
         scout.http.post = Mock(return_value=response)
         with self.assertRaisesRegex(ValueError, "wallet/EOA"):
             scout.assess(TOKEN, persist=False)
+
+    def test_contract_security_detects_astro_style_controls(self):
+        scout = DoomScout(state_file="/dev/null")
+        owner = "34" * 20
+        code = runtime(*(
+            "8da5cb5b", "2dc0562d", "8a8c523c", "8f3fa860",
+            "8c0b5e22", "8f3d6e04", "40b0c56e", "d8454a82",
+        ), opcodes=b"\x32\x00")
+        scout._rpc_call = Mock(return_value="0x" + "0" * 24 + owner)
+        security = scout._contract_security(TOKEN, 4663, code)
+        self.assertTrue(security["owner_active"])
+        self.assertTrue(security["tax_template"])
+        self.assertIn("ACTIVE_OWNER_TAX_TOKEN", security["flags"])
+        self.assertIn("TX_ORIGIN_LOGIC", security["flags"])
+        self.assertEqual(security["bytecode_size"], (len(code) - 2) // 2)
+
+    def test_push_data_does_not_create_false_dangerous_opcode_flags(self):
+        scout = DoomScout(state_file="/dev/null")
+        # ORIGIN/DELEGATECALL/SELFDESTRUCT occur only inside PUSH3 data.
+        code = "0x6232f4ff00"
+        security = scout._contract_security(TOKEN, 4663, code)
+        self.assertNotIn("TX_ORIGIN_LOGIC", security["flags"])
+        self.assertNotIn("DELEGATECALL", security["flags"])
+        self.assertNotIn("SELFDESTRUCT", security["flags"])
 
     def test_uniswap_probes_specific_protocols_after_default_no_route(self):
         scout = DoomScout(state_file="/dev/null", uniswap_api_key="x")

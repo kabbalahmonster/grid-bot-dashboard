@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import threading
@@ -22,6 +23,13 @@ CHAIN_RPC_URLS = {
     1: "https://ethereum-rpc.publicnode.com",
 }
 UNISWAP_PROTOCOLS = ("V4", "V3", "V2")
+ZERO_WORD = "0x" + "0" * 64
+SECURITY_SELECTORS = {
+    "owner": "8da5cb5b", "tax_wallet": "2dc0562d",
+    "enable_trading": "8a8c523c", "max_wallet": "8f3fa860",
+    "max_transaction": "8c0b5e22", "min_swap": "8f3d6e04",
+    "max_swap": "40b0c56e", "tax_collected": "d8454a82",
+}
 
 
 def _number(value, default=0.0):
@@ -31,7 +39,7 @@ def _number(value, default=0.0):
         return default
 
 
-def score_assessment(market, providers, budget_eth):
+def score_assessment(market, providers, budget_eth, security=None):
     """Return a transparent score, verdict, reasons and warnings."""
     liquidity = _number(market.get("liquidity_usd"))
     volume = _number(market.get("volume_h24"))
@@ -44,6 +52,23 @@ def score_assessment(market, providers, budget_eth):
 
     score = 100
     reasons, warnings = [], []
+    security = security or {}
+    security_flags = set(security.get("flags") or [])
+    if "TX_ORIGIN_LOGIC" in security_flags:
+        score -= 45
+        reasons.append("TX_ORIGIN_DEPENDENT_TOKEN_LOGIC")
+    if "ACTIVE_OWNER_TAX_TOKEN" in security_flags:
+        score -= 30
+        reasons.append("ACTIVE_OWNER_CONTROLS_TAX_TOKEN")
+    elif "ACTIVE_OWNER" in security_flags:
+        score -= 10
+        warnings.append("contract owner remains active")
+    if "DELEGATECALL" in security_flags:
+        score -= 25
+        reasons.append("DELEGATECALL_OR_UPGRADEABLE_LOGIC")
+    if "SELFDESTRUCT" in security_flags:
+        score -= 35
+        reasons.append("SELFDESTRUCT_OPCODE_PRESENT")
     if not successful:
         score -= 60
         reasons.append("NO_EXECUTABLE_SELL_ROUTE")
@@ -86,6 +111,8 @@ def score_assessment(market, providers, budget_eth):
         "NO_EXECUTABLE_SELL_ROUTE", "ROUND_TRIP_RECOVERY_BELOW_85_PERCENT",
         "LIQUIDITY_BELOW_5000_USD", "PLANNED_CAPITAL_TOO_LARGE_FOR_LIQUIDITY",
         "NO_PROVIDER_REDUNDANCY",
+        "TX_ORIGIN_DEPENDENT_TOKEN_LOGIC", "ACTIVE_OWNER_CONTROLS_TAX_TOKEN",
+        "DELEGATECALL_OR_UPGRADEABLE_LOGIC", "SELFDESTRUCT_OPCODE_PRESENT",
     ))
     # A clean PASS is deliberately strict: even non-fatal deficiencies must be
     # visible as CAUTION rather than disappearing behind a high numeric score.
@@ -197,7 +224,77 @@ class DoomScout:
             raise ValueError("address is a wallet/EOA, not a token contract")
         if not code.startswith("0x"):
             raise LookupError(str((payload.get("error") or {}).get("message") or "RPC contract check failed"))
-        return {"status": "contract", "bytecode_present": True}
+        return self._contract_security(address, chain_id, code)
+
+    @staticmethod
+    def _runtime_opcodes(code):
+        """Return opcodes while excluding bytes embedded in PUSH immediates."""
+        raw = bytes.fromhex(code[2:])
+        opcodes, index = [], 0
+        while index < len(raw):
+            opcode = raw[index]
+            opcodes.append(opcode)
+            index += 1 + (opcode - 0x5f if 0x60 <= opcode <= 0x7f else 0)
+        return opcodes
+
+    @staticmethod
+    def _runtime_selectors(code):
+        raw = bytes.fromhex(code[2:])
+        selectors, index = set(), 0
+        while index < len(raw):
+            opcode = raw[index]
+            if opcode == 0x63 and index + 4 < len(raw):
+                selectors.add(raw[index + 1:index + 5].hex())
+            index += 1 + (opcode - 0x5f if 0x60 <= opcode <= 0x7f else 0)
+        return selectors
+
+    def _rpc_call(self, chain_id, address, selector):
+        rpc_url = CHAIN_RPC_URLS[int(chain_id)]
+        response = self.http.post(rpc_url, json={
+            "jsonrpc": "2.0", "id": 1, "method": "eth_call",
+            "params": [{"to": address, "data": "0x" + selector}, "latest"],
+        }, timeout=self.timeout)
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get("error"):
+            raise LookupError(str((payload["error"] or {}).get("message") or "eth_call failed"))
+        return str(payload.get("result") or "")
+
+    def _contract_security(self, address, chain_id, code):
+        selectors = self._runtime_selectors(code)
+        opcodes = set(self._runtime_opcodes(code))
+        present = sorted(name for name, selector in SECURITY_SELECTORS.items() if selector in selectors)
+        tax_template = len(set(SECURITY_SELECTORS.values()) & selectors) >= 5
+        owner = None
+        if SECURITY_SELECTORS["owner"] in selectors:
+            try:
+                value = self._rpc_call(chain_id, address, SECURITY_SELECTORS["owner"])
+                if len(value) >= 66:
+                    owner = "0x" + value[-40:]
+            except Exception:
+                pass
+        owner_active = bool(owner and owner.lower() != ZERO.lower())
+        flags = []
+        if owner_active:
+            flags.append("ACTIVE_OWNER")
+        if tax_template:
+            flags.append("TAX_TOKEN_TEMPLATE")
+        if owner_active and tax_template:
+            flags.append("ACTIVE_OWNER_TAX_TOKEN")
+        if 0x32 in opcodes:
+            flags.append("TX_ORIGIN_LOGIC")
+        if 0xf4 in opcodes:
+            flags.append("DELEGATECALL")
+        if 0xff in opcodes:
+            flags.append("SELFDESTRUCT")
+        return {
+            "status": "contract", "bytecode_present": True,
+            "bytecode_sha256": hashlib.sha256(bytes.fromhex(code[2:])).hexdigest(),
+            "bytecode_size": len(code[2:]) // 2,
+            "owner": owner, "owner_active": owner_active,
+            "tax_template": tax_template, "features": present, "flags": flags,
+            "note": "static bytecode and live owner analysis; routes remain read-only",
+        }
 
     def snapshot(self):
         with self._lock:
@@ -406,13 +503,13 @@ class DoomScout:
         budget_wei = max(1, int(budget_eth * 10**18))
         providers = {name: self._provider_roundtrip(name, address, chain_id, budget_wei)
                      for name in ("sushiswap", "uniswap")}
-        scored = score_assessment(market, providers, budget_eth)
+        scored = score_assessment(market, providers, budget_eth, contract_check)
         report = {
             "address": address, "chain_id": chain_id, "budget_eth": budget_eth, "positions": positions,
             "position_budget_eth": round(budget_eth / max(1, positions), 12),
             "assessed_at": datetime.now(timezone.utc).isoformat(), "market": market,
             "market_error": market_error, "providers": providers, **scored,
-            "security": {**contract_check, "note": "bytecode verified; external contract-risk coverage unavailable for this chain"},
+            "security": contract_check,
         }
         if persist:
             key = address.lower()

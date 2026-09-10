@@ -231,10 +231,13 @@ Run a one-off check or add a durable watch:
 Verdicts are intentionally asymmetric: recovery below 85%, inadequate
 liquidity, planned capital too large for the pool, no sell route, or no
 provider redundancy is a hard reject. Candidate addresses must contain
-deployed bytecode; wallets/EOAs are rejected before provider calls. This check
-proves only that the address is a contract, not that its token logic is safe.
-Contract security remains `unknown` where external analysis is unavailable;
-that is displayed explicitly instead of inventing a safety claim. Authenticated
+deployed bytecode; wallets/EOAs are rejected before provider calls. Scout also
+fingerprints runtime selectors and opcodes, reads a standard `owner()` when
+available, and hard-rejects tx.origin-dependent token logic, active-owner tax
+templates, delegatecall/upgrade surfaces, and self-destruct capability. The
+report includes the runtime bytecode hash, size, detected controls, ownership,
+and explicit flags. These conservative static checks detect the ASTRO family
+without pretending to prove arbitrary bytecode safe. Authenticated
 `POST /api/scout/assess` and `POST/DELETE /api/scout/watch` endpoints drive
 operations, while `GET /api/scout` and per-address history are public and
 read-only for the dashboard.

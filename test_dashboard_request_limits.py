@@ -28,6 +28,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertNotIn('<details class="scout-panel" id="scout-panel" open>', body)
         self.assertIn('class="scout-routes"', body)
         self.assertIn("route.recovery_percent", body)
+        self.assertIn("securityFlags", body)
+        self.assertIn("Bytecode:", body)
         self.assertIn("scout-summary", body)
         self.assertIn('class="scout-icon"', body)
         self.assertIn('aria-hidden="true">🧭</span>', body)

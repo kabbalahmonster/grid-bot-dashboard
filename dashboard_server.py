@@ -3889,6 +3889,8 @@ DASHBOARD_HTML = """\
       const reasons = Array.isArray(report.reasons) ? report.reasons : [];
       const warnings = Array.isArray(report.warnings) ? report.warnings : [];
       const providers = report.providers || {};
+      const security = report.security || {};
+      const securityFlags = Array.isArray(security.flags) ? security.flags : [];
       const watchedItem = watched.get(String(report.address || '').toLowerCase());
       const recovery = report.best_recovery_percent == null ? 'no exit quote' : Number(report.best_recovery_percent).toFixed(1) + '% quoted recovery';
       const assessed = report.assessed_at ? new Date(report.assessed_at).toLocaleString() : 'never';
@@ -3913,6 +3915,9 @@ DASHBOARD_HTML = """\
         esc(marketAge) + ' · 24h ' + (change >= 0 ? '+' : '') + change.toFixed(1) + '% · ' + Number(report.budget_eth || 0) + ' ETH / ' + Number(report.positions || 0) + ' positions<br>' +
         'Assessed ' + esc(assessed) + (stale ? ' · <span class="scout-stale">STALE</span>' : '') + '</div>' +
         '<div class="scout-routes">' + routeHtml + '</div>' +
+        (securityFlags.length ? '<div class="scout-reason">Contract: ' + esc(securityFlags.join(' · ').replaceAll('_', ' ').toLowerCase()) + '</div>' : '') +
+        (security.bytecode_size ? '<div class="scout-meta">Bytecode: ' + Number(security.bytecode_size).toLocaleString() + ' bytes' +
+          (security.owner_active && security.owner ? ' · active owner ' + esc(String(security.owner).slice(0, 8) + '…') : '') + '</div>' : '') +
         (reasons.length ? '<div class="scout-reason">' + esc(reasons.join(' · ').replaceAll('_', ' ').toLowerCase()) + '</div>' : '') +
         (warnings.length ? '<div class="scout-warning">' + esc(warnings.join(' · ')) + '</div>' : '') +
         '<div class="scout-links">' + (chartUrl ? '<a href="' + esc(chartUrl) + '" target="_blank" rel="noopener noreferrer">Chart ↗</a>' : '') +

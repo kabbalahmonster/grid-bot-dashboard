@@ -1268,12 +1268,17 @@ class TelegramAlerts:
             protocol_text = f" ({protocols})" if protocols else ""
             routes.append(f"{name.title()}{protocol_text}: {recovery:.2f}% quoted recovery" if recovery is not None else f"{name.title()}{protocol_text}: no round trip")
         reasons = report.get("reasons") or []
+        security = report.get("security") or {}
+        flags = security.get("flags") or []
+        security_text = ", ".join(str(flag).replace("_", " ").lower() for flag in flags) or "no static flags"
         reason_text = ", ".join(str(x).replace("_", " ").lower() for x in reasons) or "none"
         return (
             f"{icon} DoomScout: {verdict} · {report.get('score', 0)}/100\n"
             f"{market.get('symbol') or 'TOKEN'} · budget {float(report.get('budget_eth') or 0):.6f} ETH\n"
             f"Liquidity: ${float(market.get('liquidity_usd') or 0):,.0f} · 24h volume: ${float(market.get('volume_h24') or 0):,.0f}\n"
-            + "\n".join(routes) + f"\nProvider redundancy: {report.get('sell_provider_count', 0)}\nReasons: {reason_text}"
+            + "\n".join(routes)
+            + f"\nProvider redundancy: {report.get('sell_provider_count', 0)}"
+            + f"\nContract security: {security_text}\nReasons: {reason_text}"
         )
 
     def _candidates_text(self):
