@@ -106,6 +106,26 @@ class TestRouteComparison(unittest.TestCase):
         self.assertEqual(result["candidates"][0]["validation_level"], "rejected")
         self.assertIsNone(result["selected_hypothetical_winner"])
 
+    def test_baseline_fallback_survives_sanitization(self):
+        value = comparison("sell")
+        value.update(
+            mode="execution_preflight",
+            status="baseline_fallback",
+            selected_hypothetical_winner=None,
+            runner_up_delta=None,
+            execution_fallback={
+                "reason": "no_fresh_tournament_candidate",
+                "provider": "uniswap",
+                "secret": "must-not-survive",
+            },
+        )
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["status"], "baseline_fallback")
+        self.assertEqual(clean["execution_fallback"], {
+            "reason": "no_fresh_tournament_candidate", "provider": "uniswap",
+        })
+        self.assertNotIn("secret", json.dumps(clean))
+
     def test_not_sampled_candidate_is_preserved_and_rendered(self):
         value = comparison("sell")
         row = value["candidates"][0]
@@ -455,6 +475,8 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("[buyRouteComparison, sellRouteComparison]", html)
         self.assertIn("tournamentTimestamp(b) - tournamentTimestamp(a)", html)
         self.assertIn("html += renderRouteComparison(comparison, botKey)", html)
+        self.assertIn("TOURNAMENT BASELINE FALLBACK", html)
+        self.assertIn("'completed', 'execution_aborted', 'baseline_fallback'", html)
 
     def test_tournament_recency_and_confirmation_are_distinct(self):
         html = server.DASHBOARD_HTML

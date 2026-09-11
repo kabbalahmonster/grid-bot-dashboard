@@ -524,7 +524,7 @@ def _allowlisted_route_comparison(value, direction):
                               "preflight_no_authorized_candidate", "preflight_candidate_selected",
                               "preflight_failed", "required_provider_unavailable",
                               "required_local_gas_estimator_unavailable", "execution_aborted",
-                              "completed"}
+                              "baseline_fallback", "completed"}
             or not isinstance(value.get("candidates"), list)):
         return None
     result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
@@ -611,6 +611,13 @@ def _allowlisted_route_comparison(value, direction):
             if type(number) in (int, float) and math.isfinite(number) and abs(number) < 1e6:
                 clean_abort[key] = number
         result["execution_abort"] = clean_abort
+    fallback = value.get("execution_fallback")
+    if (status == "baseline_fallback" and isinstance(fallback, dict)
+            and fallback.get("reason") == "no_fresh_tournament_candidate"):
+        clean_fallback = {"reason": "no_fresh_tournament_candidate"}
+        if _route_enum("provider", fallback.get("provider")):
+            clean_fallback["provider"] = fallback["provider"]
+        result["execution_fallback"] = clean_fallback
     final = value.get("final")
     if status == "completed" and isinstance(final, dict):
         tx_hash = final.get("tx_hash")
@@ -2034,14 +2041,16 @@ DASHBOARD_HTML = """\
       const isBuy = comparison.direction === 'buy';
       const completed = comparison.status === 'completed';
       const aborted = comparison.status === 'execution_aborted';
+      const baselineFallback = comparison.status === 'baseline_fallback';
       const abort = comparison.execution_abort || {};
       const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : baselineFallback ? '🛡️ TOURNAMENT BASELINE FALLBACK' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
-      const status = completed ? 'Final result confirmed on-chain' : aborted ? abortStatus : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const fallbackProvider = comparison.execution_fallback?.provider || 'configured primary';
+      const status = completed ? 'Final result confirmed on-chain' : aborted ? abortStatus : baselineFallback ? 'No contestant cleared every guard · checked ' + fallbackProvider + ' baseline safely' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
@@ -2548,7 +2557,7 @@ DASHBOARD_HTML = """\
     if (confirmed) return { rank: 0, timestamp: tournamentTimestamp(confirmed) };
 
     const activeTournament = comparisons
-      .filter(function(item) { return !['completed', 'execution_aborted'].includes(item.status); })
+      .filter(function(item) { return !['completed', 'execution_aborted', 'baseline_fallback'].includes(item.status); })
       .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })[0];
     if (activeTournament) return { rank: 1, timestamp: tournamentTimestamp(activeTournament) };
 
@@ -2585,7 +2594,7 @@ DASHBOARD_HTML = """\
     const activeTournaments = Object.keys(bots).filter(function(id) {
       const state = bots[id];
       const tournament = state.sell_attempt?.route_comparison;
-      return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted'].includes(tournament.status)) && reportAge(state.received_at).status === 'running';
+      return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'baseline_fallback'].includes(tournament.status)) && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
