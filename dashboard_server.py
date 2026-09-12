@@ -2149,12 +2149,12 @@ DASHBOARD_HTML = """\
       const abort = comparison.execution_abort || {};
       const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : baselineFallback ? '🛡️ TOURNAMENT BASELINE FALLBACK' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : (isBuy ? '🛒 BUY ROUTE TOURNAMENT' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
       const fallbackProvider = comparison.execution_fallback?.provider || 'configured primary';
-      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback ? 'No contestant cleared every guard · checked ' + fallbackProvider + ' baseline safely' : comparison.status === 'collecting_candidates' ? 'Routes are racing now' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback ? 'Tournament continuing with configured ' + fallbackProvider + ' baseline route' : comparison.status === 'collecting_candidates' ? 'Routes are racing now' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
@@ -2664,7 +2664,7 @@ DASHBOARD_HTML = """\
     if (confirmed) return { rank: 0, timestamp: tournamentTimestamp(confirmed) };
 
     const activeTournament = comparisons
-      .filter(function(item) { return !['completed', 'execution_aborted', 'baseline_fallback'].includes(item.status); })
+      .filter(function(item) { return !['completed', 'execution_aborted'].includes(item.status); })
       .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })[0];
     if (activeTournament) return { rank: 1, timestamp: tournamentTimestamp(activeTournament) };
 
@@ -2702,7 +2702,7 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       const comparisons = [state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison];
       return comparisons.some(function(tournament) {
-        return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'baseline_fallback', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status));
+        return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status));
       }) && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {

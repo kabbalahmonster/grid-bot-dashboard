@@ -680,6 +680,11 @@ separate green `TRANSACTION CONFIRMED ON-CHAIN` badge and transaction link are
 shown only after a successful receipt is reported. Completed results remain
 visible for two minutes unless superseded by a newer tournament.
 
+If no contestant clears every fresh execution guard, the bot may continue via
+its configured baseline provider. The dashboard keeps this inside the same
+active tournament card and summary count, showing the baseline route only as a
+detail; it does not relabel the user-facing tournament as a fallback.
+
 Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is
 opened. Chart resolution and card market values share the token's preferred
 WETH-pair cache. The cache refreshes at most once per minute per unique

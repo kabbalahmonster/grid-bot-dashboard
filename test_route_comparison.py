@@ -480,7 +480,7 @@ class TestRouteComparison(unittest.TestCase):
 
     def test_live_tournament_renderer_has_buy_copy_and_sell_target(self):
         html = server.DASHBOARD_HTML
-        for needle in ("BUY ROUTE BATTLE", "SELL ROUTE TOURNAMENT",
+        for needle in ("BUY ROUTE TOURNAMENT", "SELL ROUTE TOURNAMENT",
                        "Best acquisition route selected", "Quoted tokens:",
                        "Conservative receive floor:", "target +",
                        "BUY TOURNAMENT ABORTED", "No transaction sent",
@@ -497,8 +497,9 @@ class TestRouteComparison(unittest.TestCase):
         self.assertIn("[buyRouteComparison, sellRouteComparison]", html)
         self.assertIn("tournamentTimestamp(b) - tournamentTimestamp(a)", html)
         self.assertIn("html += renderRouteComparison(comparison, botKey)", html)
-        self.assertIn("TOURNAMENT BASELINE FALLBACK", html)
-        self.assertIn("'completed', 'execution_aborted', 'baseline_fallback'", html)
+        self.assertNotIn("TOURNAMENT BASELINE FALLBACK", html)
+        self.assertIn("Tournament continuing with configured", html)
+        self.assertIn("!['completed', 'execution_aborted'].includes(item.status)", html)
 
     def test_tournament_recency_and_confirmation_are_distinct(self):
         html = server.DASHBOARD_HTML
