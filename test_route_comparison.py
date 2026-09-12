@@ -126,6 +126,28 @@ class TestRouteComparison(unittest.TestCase):
         })
         self.assertNotIn("secret", json.dumps(clean))
 
+    def test_pending_tournament_identity_and_transaction_survive_sanitization(self):
+        value = comparison("sell")
+        value.update(
+            mode="execution_preflight", status="transaction_submitted",
+            tournament_id="round-42", revision=4,
+            started_at="2026-09-12T17:00:00+00:00",
+            updated_at="2026-09-12T17:00:02+00:00",
+            submitted_at="2026-09-12T17:00:02+00:00",
+            pending_transaction={
+                "tx_hash": "0x" + "a" * 64, "side": "sell",
+                "submitted_at": "2026-09-12T17:00:02+00:00",
+                "private": "drop-me",
+            },
+        )
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["tournament_id"], "round-42")
+        self.assertEqual(clean["revision"], 4)
+        self.assertEqual(clean["pending_transaction"], {
+            "tx_hash": "0x" + "a" * 64, "side": "sell",
+            "submitted_at": "2026-09-12T17:00:02+00:00",
+        })
+
     def test_not_sampled_candidate_is_preserved_and_rendered(self):
         value = comparison("sell")
         row = value["candidates"][0]
@@ -484,6 +506,9 @@ class TestRouteComparison(unittest.TestCase):
                        "✅ TRANSACTION CONFIRMED ON-CHAIN", "👑 "):
             self.assertIn(needle, html)
         self.assertIn("setInterval(function() { updateTournamentAges(document); }, 1000)", html)
+        self.assertIn("📡 TRANSACTION SUBMITTED", html)
+        self.assertIn("⏳ PENDING ON-CHAIN", html)
+        self.assertIn("waiting for on-chain confirmation", html)
 
     def test_tournament_timestamp_and_buy_confirmation_are_allowlisted(self):
         value = comparison("buy")
@@ -524,6 +549,49 @@ console.log(JSON.stringify(results));
         self.assertEqual(json.loads(output), [True, True, False, True, True])
         self.assertIn("setInterval(function() {", html)
         self.assertIn("expiredBotIds.add(display.botId)", html)
+
+    def test_pending_transaction_round_trip_and_renderer(self):
+        value = comparison("sell")
+        tx_hash = "0x" + "d" * 64
+        value.update(
+            mode="execution_preflight", status="transaction_submitted",
+            tournament_id="round-9", revision=4,
+            started_at="2026-09-12T17:00:00+00:00",
+            submitted_at="2026-09-12T17:00:03+00:00",
+            updated_at="2026-09-12T17:00:03+00:00",
+            pending_transaction={"tx_hash": tx_hash, "side": "sell",
+                                 "submitted_at": "2026-09-12T17:00:03+00:00"},
+        )
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["pending_transaction"]["tx_hash"], tx_hash)
+        self.assertIn("TRANSACTION SUBMITTED", server.DASHBOARD_HTML)
+        self.assertIn("PENDING ON-CHAIN", server.DASHBOARD_HTML)
+
+    def test_monotonic_report_and_tournament_ordering(self):
+        old = {"incarnation_id": "process-1", "revision": 9,
+               "timestamp": "2026-09-12T17:00:09+00:00"}
+        self.assertTrue(server._is_stale_status_report(old, {
+            "incarnation_id": "process-1", "revision": 8,
+            "timestamp": "2026-09-12T17:00:10+00:00"}))
+        self.assertFalse(server._is_stale_status_report(old, {
+            "incarnation_id": "process-1", "revision": 10,
+            "timestamp": "2026-09-12T17:00:08+00:00"}))
+
+        previous = {"sell_attempt": {"route_comparison": {
+            "tournament_id": "round-1", "revision": 5,
+            "updated_at": "2026-09-12T17:00:05+00:00"}}}
+        incoming = {"sell_attempt": {"route_comparison": {
+            "tournament_id": "round-1", "revision": 4,
+            "updated_at": "2026-09-12T17:00:06+00:00"}}}
+        server._preserve_newer_tournaments(previous, incoming)
+        self.assertEqual(incoming["sell_attempt"]["route_comparison"]["revision"], 5)
+
+    def test_active_summary_checks_buy_and_sell_tournaments(self):
+        html = server.DASHBOARD_HTML
+        self.assertIn(
+            "[state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison]",
+            html,
+        )
 
 
 if __name__ == "__main__":

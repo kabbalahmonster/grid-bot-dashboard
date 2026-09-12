@@ -97,7 +97,7 @@ _PRIVATE_KEY_PATTERNS = [
 # accepted schema deliberately narrow so a bot-side regression cannot persist
 # arbitrary config or secret material merely because it has the ingest key.
 _STATUS_FIELDS = frozenset({
-    "dashboard_schema_version", "bot_id", "timestamp", "uptime_seconds",
+    "dashboard_schema_version", "incarnation_id", "revision", "bot_id", "timestamp", "uptime_seconds",
     "price", "eth_balance", "gas_reserve_eth", "usdg_balance", "treasury_sent_usdg", "token_balance",
     "moonbag_balance", "estimated_moonbag_value_eth",
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
@@ -521,15 +521,23 @@ def _allowlisted_route_comparison(value, direction):
     if (mode not in {"shadow", "execution_preflight"} or value.get("direction") != direction
             or not isinstance(status, str)
             or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed",
-                              "preflight_no_authorized_candidate", "preflight_candidate_selected",
+                              "collecting_candidates", "preflight_no_authorized_candidate", "preflight_candidate_selected",
                               "preflight_failed", "required_provider_unavailable",
                               "required_local_gas_estimator_unavailable", "execution_aborted",
-                              "baseline_fallback", "completed"}
+                              "baseline_fallback", "transaction_submitted", "completed"}
             or not isinstance(value.get("candidates"), list)):
         return None
     result = {"mode": mode, "direction": direction, "status": status, "candidates": []}
-    if _route_timestamp(value.get("updated_at")):
-        result["updated_at"] = value["updated_at"]
+    tournament_id = value.get("tournament_id")
+    if (isinstance(tournament_id, str) and 1 <= len(tournament_id) <= 128
+            and re.fullmatch(r"[A-Za-z0-9._:-]+", tournament_id)):
+        result["tournament_id"] = tournament_id
+    revision = value.get("revision")
+    if isinstance(revision, int) and not isinstance(revision, bool) and 0 <= revision < 2**53:
+        result["revision"] = revision
+    for key in ("started_at", "updated_at", "submitted_at", "confirmed_at"):
+        if _route_timestamp(value.get(key)):
+            result[key] = value[key]
     # Four providers can each report native and WETH settlement candidates.
     for row in value["candidates"][:8]:
         if (not isinstance(row, dict) or row.get("execution_eligible") is not False
@@ -591,7 +599,7 @@ def _allowlisted_route_comparison(value, direction):
         result["candidates"].append(clean)
     winner = value.get("selected_hypothetical_winner")
     result["selected_hypothetical_winner"] = None
-    if status in {"hypothetical_only", "preflight_candidate_selected", "execution_aborted", "completed"} and isinstance(winner, dict):
+    if status in {"hypothetical_only", "preflight_candidate_selected", "transaction_submitted", "execution_aborted", "completed"} and isinstance(winner, dict):
         if any(row["validation_level"] == "quote_only" and not row["rejections"]
                and all(row[key] == winner.get(key) for key in ("provider", "settlement"))
                for row in result["candidates"]):
@@ -618,6 +626,16 @@ def _allowlisted_route_comparison(value, direction):
         if _route_enum("provider", fallback.get("provider")):
             clean_fallback["provider"] = fallback["provider"]
         result["execution_fallback"] = clean_fallback
+    pending = value.get("pending_transaction")
+    if status == "transaction_submitted" and isinstance(pending, dict):
+        tx_hash = pending.get("tx_hash")
+        if isinstance(tx_hash, str) and re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash):
+            clean_pending = {"tx_hash": tx_hash}
+            if pending.get("side") in {"buy", "sell"}:
+                clean_pending["side"] = pending["side"]
+            if _route_timestamp(pending.get("submitted_at")):
+                clean_pending["submitted_at"] = pending["submitted_at"]
+            result["pending_transaction"] = clean_pending
     final = value.get("final")
     if status == "completed" and isinstance(final, dict):
         tx_hash = final.get("tx_hash")
@@ -637,6 +655,14 @@ def _allowlisted_route_comparison(value, direction):
 def _allowlisted_status_payload(data):
     """Drop unrecognized top-level and nested fields before persistence/publication."""
     filtered = {key: data[key] for key in _STATUS_FIELDS if key in data}
+    incarnation_id = filtered.get("incarnation_id")
+    if not (isinstance(incarnation_id, str)
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", incarnation_id)):
+        filtered.pop("incarnation_id", None)
+    revision = filtered.get("revision")
+    if not (isinstance(revision, int) and not isinstance(revision, bool)
+            and 0 <= revision < 2**53):
+        filtered.pop("revision", None)
 
     for field, allowed, maximum in (
         ("positions", _POSITION_FIELDS, _MAX_POSITIONS),
@@ -670,6 +696,78 @@ def _allowlisted_status_payload(data):
                 filtered[field]["route_comparison"] = comparison
 
     return filtered
+
+
+def _tournament_event_key(comparison):
+    """Return an ordering key for one tournament update.
+
+    New bots provide an identity and monotonic revision.  Timestamps retain
+    sensible ordering for legacy senders and across tournament identities.
+    """
+    if not isinstance(comparison, dict):
+        return None
+    raw_time = comparison.get("updated_at") or comparison.get("submitted_at") or comparison.get("started_at")
+    parsed = None
+    if _route_timestamp(raw_time):
+        parsed = datetime.fromisoformat(raw_time.replace("Z", "+00:00")).timestamp()
+    revision = comparison.get("revision")
+    return (
+        comparison.get("tournament_id") if isinstance(comparison.get("tournament_id"), str) else None,
+        revision if isinstance(revision, int) and not isinstance(revision, bool) else None,
+        parsed,
+    )
+
+
+def _preserve_newer_tournaments(previous, incoming):
+    """Prevent delayed dashboard POSTs from rolling tournament UI backward."""
+    if not isinstance(previous, dict) or not isinstance(incoming, dict):
+        return
+    for attempt_name in ("buy_attempt", "sell_attempt"):
+        old_attempt = previous.get(attempt_name)
+        new_attempt = incoming.get(attempt_name)
+        if not isinstance(old_attempt, dict) or not isinstance(new_attempt, dict):
+            continue
+        old = old_attempt.get("route_comparison")
+        new = new_attempt.get("route_comparison")
+        old_key, new_key = _tournament_event_key(old), _tournament_event_key(new)
+        if old_key is None or new_key is None:
+            continue
+        old_id, old_revision, old_time = old_key
+        new_id, new_revision, new_time = new_key
+        stale = False
+        if old_id and new_id and old_id == new_id and old_revision is not None and new_revision is not None:
+            stale = new_revision < old_revision
+        elif old_time is not None and new_time is not None:
+            stale = new_time < old_time
+        if stale:
+            new_attempt["route_comparison"] = old
+
+
+def _is_stale_status_report(previous, incoming):
+    """Order complete snapshots emitted by one bot process.
+
+    A reporter incarnation plus revision gives exact ordering even when HTTP
+    retries arrive out of order. Across process restarts, timestamps prevent a
+    delayed payload from the former process replacing the new process state.
+    Legacy senders remain accepted.
+    """
+    if not isinstance(previous, dict) or not isinstance(incoming, dict):
+        return False
+    old_incarnation = previous.get("incarnation_id")
+    new_incarnation = incoming.get("incarnation_id")
+    old_revision = previous.get("revision")
+    new_revision = incoming.get("revision")
+    if old_incarnation and old_incarnation == new_incarnation:
+        if isinstance(old_revision, int) and isinstance(new_revision, int):
+            return new_revision <= old_revision
+    if old_incarnation and new_incarnation and old_incarnation != new_incarnation:
+        try:
+            old_time = datetime.fromisoformat(previous["timestamp"].replace("Z", "+00:00"))
+            new_time = datetime.fromisoformat(incoming["timestamp"].replace("Z", "+00:00"))
+            return new_time <= old_time
+        except (KeyError, TypeError, ValueError):
+            return False
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -769,6 +867,9 @@ def receive_status():
 
     with _lock:
         previous_state = bot_states.get(bot_id)
+        if _is_stale_status_report(previous_state, data):
+            return jsonify({"ok": True, "stale": True, "received_at": now}), 200
+        _preserve_newer_tournaments(previous_state, data)
         bot_states[bot_id] = data
         bot_history[bot_id].append(entry)
         _mark_state_dirty_locked()
@@ -1461,6 +1562,8 @@ DASHBOARD_HTML = """\
   .tournament-heading { display:flex; align-items:center; justify-content:space-between; gap:.65rem; flex-wrap:wrap; }
   .tournament-age { color:#94a3b8; font-size:.74rem; font-variant-numeric:tabular-nums; }
   .tournament-confirmed { display:inline-flex; align-items:center; gap:.3rem; margin:.15rem 0 .55rem; padding:.25rem .5rem; border:1px solid #22c55e; border-radius:999px; background:rgba(20,83,45,.45); color:#86efac; font-size:.76rem; font-weight:800; letter-spacing:.04em; }
+  .tournament-pending { display:inline-flex; align-items:center; gap:.3rem; margin:.15rem 0 .55rem; padding:.25rem .5rem; border:1px solid #38bdf8; border-radius:999px; background:rgba(7,89,133,.42); color:#bae6fd; font-size:.76rem; font-weight:800; letter-spacing:.04em; animation:capacity-pulse 1.5s ease-in-out infinite; }
+  .tournament-pending a { color:inherit; }
   .tournament-card .arena-status { color: #c4b5fd; margin-bottom: .55rem; }
   .tournament-scoreboard { display: grid; gap: .4rem; }
   .tournament-contestant { border: 1px solid #334155; background: rgba(15,23,42,.72); border-radius: .45rem; overflow: hidden; }
@@ -2042,22 +2145,26 @@ DASHBOARD_HTML = """\
       const completed = comparison.status === 'completed';
       const aborted = comparison.status === 'execution_aborted';
       const baselineFallback = comparison.status === 'baseline_fallback';
+      const pending = comparison.status === 'transaction_submitted';
       const abort = comparison.execution_abort || {};
       const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : baselineFallback ? '🛡️ TOURNAMENT BASELINE FALLBACK' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : baselineFallback ? '🛡️ TOURNAMENT BASELINE FALLBACK' : (isBuy ? '🛒 BUY ROUTE BATTLE' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
       const fallbackProvider = comparison.execution_fallback?.provider || 'configured primary';
-      const status = completed ? 'Final result confirmed on-chain' : aborted ? abortStatus : baselineFallback ? 'No contestant cleared every guard · checked ' + fallbackProvider + ' baseline safely' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback ? 'No contestant cleared every guard · checked ' + fallbackProvider + ' baseline safely' : comparison.status === 'collecting_candidates' ? 'Routes are racing now' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
       const updatedAt = comparison.updated_at || '';
       const confirmationBadge = completed && comparison.final
         ? '<div class="tournament-confirmed" role="status">✅ TRANSACTION CONFIRMED ON-CHAIN</div>' : '';
-      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + '<div class="arena-status">' + value(status) + ' · ' + value(comparison.elapsed_ms) + ' ms' + targetText + '</div><div class="tournament-scoreboard">';
+      const pendingTx = pending && comparison.pending_transaction?.tx_hash;
+      const pendingBadge = pendingTx
+        ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
@@ -2593,8 +2700,10 @@ DASHBOARD_HTML = """\
     });
     const activeTournaments = Object.keys(bots).filter(function(id) {
       const state = bots[id];
-      const tournament = state.sell_attempt?.route_comparison;
-      return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'baseline_fallback'].includes(tournament.status)) && reportAge(state.received_at).status === 'running';
+      const comparisons = [state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison];
+      return comparisons.some(function(tournament) {
+        return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'baseline_fallback', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status));
+      }) && reportAge(state.received_at).status === 'running';
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
