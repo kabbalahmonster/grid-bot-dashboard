@@ -39,6 +39,49 @@ class TestTelegramAlerts(unittest.TestCase):
             "https://base.blockscout.com/tx/0xabc",
         )
 
+    def test_failed_sell_delivery_is_retried_on_next_status(self):
+        trade = {"side": "sell", "tx_hash": "0xretry", "profit_eth": 0.001}
+        previous = {"trades_history": []}
+        current = {"trades_history": [trade]}
+        self.alerts._preferences["fun"] = False
+        self.alerts.send.side_effect = [False, True]
+
+        self.alerts.process_status("retry", previous, current)
+        self.assertIn("trade:sells:retry:0xretry", self.alerts._pending_trade_alerts)
+
+        self.alerts.process_status("retry", current, current)
+        self.alerts.process_status("retry", current, current)
+
+        self.assertEqual(self.alerts.send.call_count, 2)
+        self.assertNotIn("trade:sells:retry:0xretry", self.alerts._pending_trade_alerts)
+
+    def test_failed_sell_delivery_retry_survives_restart(self):
+        trade = {"side": "sell", "tx_hash": "0xrestart", "profit_eth": 0.001}
+        current = {"trades_history": [trade]}
+        self.alerts._preferences["fun"] = False
+        self.alerts.send.return_value = False
+        self.alerts.process_status("restart", {"trades_history": []}, current)
+
+        reloaded = TelegramAlerts("", "7045629589", self.alerts.state_file, lambda: {})
+        reloaded.enabled = True
+        reloaded.send = Mock(return_value=True)
+        try:
+            reloaded.process_status("restart", current, current)
+            self.assertEqual(reloaded.send.call_count, 1)
+            self.assertFalse(reloaded._pending_trade_alerts)
+        finally:
+            reloaded.close()
+
+    def test_muted_sell_does_not_create_retry_backlog(self):
+        trade = {"side": "sell", "tx_hash": "0xmuted", "profit_eth": 0.001}
+        self.alerts._preferences["fun"] = False
+        self.alerts._muted_until = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        self.alerts.process_status("muted", {"trades_history": []}, {"trades_history": [trade]})
+
+        self.alerts.send.assert_not_called()
+        self.assertFalse(self.alerts._pending_trade_alerts)
+
     def test_overlapping_sell_achievements_are_bundled(self):
         previous_trades = [
             {"side": "sell", "tx_hash": f"0x{i}", "profit_eth": 0.001,

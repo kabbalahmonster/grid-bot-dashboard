@@ -277,6 +277,11 @@ configured wallet balance and re-arms below half the threshold. Both states,
 alert preferences, mute expiry, Telegram update offset, and the last digest
 date persist in `TELEGRAM_ALERT_STATE_FILE`.
 
+Confirmed-trade alerts are marked delivered only after Telegram accepts the
+message. A transient send failure is persisted and retried on a later status
+update (and after a DoomDash restart), while an in-flight claim and the normal
+delivered-message identity prevent duplicate alerts.
+
 The digest runs once per UTC date after `TELEGRAM_DAILY_DIGEST_TIME` and
 contains estimated fleet crypto value, USDG, 24-hour realized profit, buys,
 sells, treasury banking, best/worst bot, and the `/attention` report. Set the

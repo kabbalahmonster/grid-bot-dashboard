@@ -65,6 +65,8 @@ class TelegramAlerts:
         self._preferences = dict(DEFAULT_PREFERENCES)
         self._seen = deque(maxlen=5000)
         self._seen_set = set()
+        self._pending_trade_alerts = set()
+        self._trade_alerts_inflight = set()
         self._offline_notified = set()
         self._low_funds_notified = set()
         self._unbanked_usdg_notified = set()
@@ -113,6 +115,7 @@ class TelegramAlerts:
             self._preferences.update(state.get("preferences", {}))
             self._seen = deque(state.get("seen", [])[-5000:], maxlen=5000)
             self._seen_set = set(self._seen)
+            self._pending_trade_alerts = set(state.get("pending_trade_alerts", []))
             self._offline_notified = set(state.get("offline_notified", []))
             self._low_funds_notified = set(state.get("low_funds_notified", []))
             self._unbanked_usdg_notified = set(state.get("unbanked_usdg_notified", []))
@@ -136,6 +139,7 @@ class TelegramAlerts:
             json.dump({
                 "preferences": self._preferences,
                 "seen": list(self._seen),
+                "pending_trade_alerts": sorted(self._pending_trade_alerts),
                 "offline_notified": sorted(self._offline_notified),
                 "low_funds_notified": sorted(self._low_funds_notified),
                 "unbanked_usdg_notified": sorted(self._unbanked_usdg_notified),
@@ -159,6 +163,31 @@ class TelegramAlerts:
             self._seen_set.add(identity)
             self._save_locked()
             return True
+
+    def _claim_trade_alert(self, identity, is_new):
+        """Claim a new or previously failed trade alert without duplicating sends."""
+        with self._lock:
+            if identity in self._seen_set or identity in self._trade_alerts_inflight:
+                return False
+            if not is_new and identity not in self._pending_trade_alerts:
+                return False
+            self._trade_alerts_inflight.add(identity)
+            return True
+
+    def _finish_trade_alert(self, identity, delivered):
+        """Persist success only after Telegram accepts the message; queue failures."""
+        with self._lock:
+            self._trade_alerts_inflight.discard(identity)
+            if delivered:
+                if len(self._seen) == self._seen.maxlen:
+                    self._seen_set.discard(self._seen[0])
+                if identity not in self._seen_set:
+                    self._seen.append(identity)
+                    self._seen_set.add(identity)
+                self._pending_trade_alerts.discard(identity)
+            else:
+                self._pending_trade_alerts.add(identity)
+            self._save_locked()
 
     def _wanted(self, category):
         with self._lock:
@@ -505,8 +534,7 @@ class TelegramAlerts:
         previous_trades = {self._trade_id(trade) for trade in previous.get("trades_history", [])}
         for trade in current.get("trades_history", []):
             trade_id = self._trade_id(trade)
-            if trade_id in previous_trades:
-                continue
+            is_new = trade_id not in previous_trades
             side = str(trade.get("side", "")).lower()
             try:
                 profit = float(trade.get("profit_eth"))
@@ -515,8 +543,12 @@ class TelegramAlerts:
             category = "stoploss" if side == "sell" and profit is not None and profit < 0 else side + "s"
             if category not in ("sells", "stoploss", "buys") or not self._wanted(category):
                 continue
+            # Muting intentionally suppresses alerts; it is not a delivery
+            # failure and must not create a backlog when the mute expires.
+            if self._is_muted(bot_id):
+                continue
             identity = f"trade:{category}:{bot_id}:{trade_id}"
-            if not self._remember(identity):
+            if not self._claim_trade_alert(identity, is_new):
                 continue
             if side == "buy":
                 amount = float(trade.get("eth_amount") or 0)
@@ -529,7 +561,10 @@ class TelegramAlerts:
                 if drama:
                     message += f"\n{drama}"
             tx_url = self._tx_url(current, str(trade.get("tx_hash") or ""))
-            self.send(message, reply_markup=self._fun_buttons(bot_id, category, tx_url), bot_id=bot_id)
+            delivered = self.send(
+                message, reply_markup=self._fun_buttons(bot_id, category, tx_url), bot_id=bot_id,
+            )
+            self._finish_trade_alert(identity, delivered)
 
         for achievement in self._achievement_messages(bot_id, previous, current):
             identity = f"achievement:{bot_id}:{achievement}"
