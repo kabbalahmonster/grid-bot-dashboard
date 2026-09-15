@@ -109,7 +109,12 @@ _STATUS_FIELDS = frozenset({
     "display_name", "group", "buy_point_percent", "sell_point_percent",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
-_POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
+_POSITION_FIELDS = frozenset({
+    "id", "buy_amount_token", "cost_basis", "pnl", "timestamp",
+    "executable_pnl", "executable_net_return_eth", "executable_projected_gas_eth",
+    "executable_quote_provider", "executable_quote_settlement",
+    "executable_quote_basis", "executable_quote_at", "executable_sell_amount_raw",
+})
 _TRADE_FIELDS = frozenset({
     "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
     "profit_eth", "gas_fee_eth",
@@ -1423,6 +1428,10 @@ DASHBOARD_HTML = """\
   .position .pos-pnl { font-weight: 600; }
   .position .pos-pnl.positive { color: #22c55e; }
   .position .pos-pnl.negative { color: #ef4444; }
+  .position .pos-exit { margin-top:.28rem; color:#cbd5e1; }
+  .position .pos-exit strong.positive { color:#4ade80; }
+  .position .pos-exit strong.negative { color:#f87171; }
+  .position .pos-exit.stale { color:#f59e0b; }
   .position .pos-details { color: #94a3b8; font-size: 0.75rem; }
   .position.pos-hidden { display: none; }
   .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
@@ -1609,7 +1618,7 @@ DASHBOARD_HTML = """\
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <button id="tax-filter" type="button" aria-pressed="false" title="Show only manually declared or auto-detected taxed tokens">Tax coins</button>
-    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="moonbag-value">Moonbag value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
+    <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="moonbag-value">Moonbag value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG spot P&amp;L</option><option value="top-position-pnl">Top spot position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
       <div class="notification-menu" id="notification-menu" hidden>
@@ -3511,7 +3520,7 @@ DASHBOARD_HTML = """\
 
       const metrics = [
         ['Estimated Bag Value', 'estimated_bag_value'],
-        ['AVG P&L', 'profit_percent'],
+        ['AVG spot P&L', 'profit_percent'],
         ['Session Profit', 'session_profit_eth'],
         ['Realized Profit', 'realized_profit_eth'],
         ['Filled / Max Positions', 'position_capacity'],
@@ -3664,17 +3673,30 @@ DASHBOARD_HTML = """\
         sorted.forEach(function(pos, i) {
           const pnl = pos.pnl !== undefined ? pos.pnl : null;
           const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
+          const executablePnl = parseFloat(pos.executable_pnl);
+          const executableClass = Number.isFinite(executablePnl) ? (executablePnl >= 0 ? 'positive' : 'negative') : '';
+          const quoteTime = Date.parse(pos.executable_quote_at || '');
+          const quoteAgeSeconds = Number.isFinite(quoteTime) ? Math.max(0, (Date.now() - quoteTime) / 1000) : Infinity;
+          const quoteIsStale = quoteAgeSeconds > 180;
           const hidden = i >= showCount ? ' pos-hidden' : '';
           const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
           html += '<div class="position' + hidden + '"' + visibleStyle + '>';
           html += '<div class="pos-header"><span class="pos-id">#' + esc(pos.id || '—') + '</span>';
           if (pnl !== null) {
-            html += '<span class="pos-pnl ' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
+            html += '<span class="pos-pnl ' + pnlClass + '">Spot ' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
           }
           html += '</div>';
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';
           html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(8)) + ' ETH';
+          if (Number.isFinite(executablePnl)) {
+            const source = pos.executable_quote_basis === 'tournament' ? 'tournament' : 'sampled reverse quote';
+            const age = Number.isFinite(quoteAgeSeconds) ? tournamentAgeLabel(pos.executable_quote_at) : 'unknown age';
+            html += '<div class="pos-exit' + (quoteIsStale ? ' stale' : '') + '">Est. exit: <strong class="' + executableClass + '">' +
+              (executablePnl >= 0 ? '+' : '') + esc(executablePnl.toFixed(1)) + '%</strong> · ' +
+              esc(pos.executable_quote_provider || 'unknown') + '/' + esc(String(pos.executable_quote_settlement || 'unknown').toUpperCase()) +
+              ' · ' + esc(source) + ' · ' + esc(age) + (quoteIsStale ? ' · stale' : '') + '</div>';
+          }
           html += '</div></div>';
         });
         if (sorted.length > showCount) {
