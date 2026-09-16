@@ -107,6 +107,7 @@ _STATUS_FIELDS = frozenset({
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
+    "pnl_polling_mode", "pnl_trigger_mode",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({
@@ -668,6 +669,14 @@ def _allowlisted_status_payload(data):
     if not (isinstance(revision, int) and not isinstance(revision, bool)
             and 0 <= revision < 2**53):
         filtered.pop("revision", None)
+    if filtered.get("pnl_polling_mode") not in {
+        "legacy", "bidirectional", "buy", "sell",
+    }:
+        filtered.pop("pnl_polling_mode", None)
+    if filtered.get("pnl_trigger_mode") not in {
+        "sell_threshold", "minimum_profit",
+    }:
+        filtered.pop("pnl_trigger_mode", None)
 
     for field, allowed, maximum in (
         ("positions", _POSITION_FIELDS, _MAX_POSITIONS),
@@ -1371,8 +1380,10 @@ DASHBOARD_HTML = """\
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
-  .chain-badge, .provider-badge, .group-badge, .tax-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
+  .chain-badge, .provider-badge, .group-badge, .tax-badge, .pnl-mode-badge, .pnl-trigger-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .tax-badge { color: #fde68a; background: #713f12; }
+  .pnl-mode-badge { color: #cffafe; background: #155e75; }
+  .pnl-trigger-badge { color: #dcfce7; background: #166534; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
@@ -3421,9 +3432,20 @@ DASHBOARD_HTML = """\
         ? '<span class="tax-badge" title="' + esc(taxSource === 'auto-detected' ? 'Runtime auto-detected transfer fee' : 'Declared transfer fee') + '">' +
           (taxSource === 'auto-detected' ? 'AUTO TAX ' : 'TAX ') + esc(taxFee.toFixed(1)) + '%</span>'
         : '';
+      const pnlMode = String(d.pnl_polling_mode || '').toLowerCase();
+      const pnlModeLabel = pnlMode === 'bidirectional' ? 'P&L BUY ↔ SELL'
+        : pnlMode === 'buy' ? 'P&L BUY ONLY'
+        : pnlMode === 'sell' ? 'P&L SELL ONLY' : '';
+      const pnlModeBadge = pnlModeLabel
+        ? '<span class="pnl-mode-badge" title="Active net P&amp;L polling mode">' + esc(pnlModeLabel) + '</span>'
+        : '';
+      const triggerBadge = d.pnl_trigger_mode === 'minimum_profit'
+        ? '<span class="pnl-trigger-badge" title="Normal sells wake at MIN_PROFIT_PERCENT">SELL ≥ MIN ' + esc(d.sell_point_percent) + '%</span>'
+        : '';
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
+        pnlModeBadge + triggerBadge +
         taxBadge +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 
@@ -3535,6 +3557,7 @@ DASHBOARD_HTML = """\
       const moreMetrics = [
         ['Price', 'price'],
         ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
+        ['P&L Polling', 'pnl_polling_mode'], ['Sell Trigger', 'pnl_trigger_mode'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
@@ -3584,6 +3607,10 @@ DASHBOARD_HTML = """\
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
           } else if (key === 'poll_interval_seconds') {
             val = parseFloat(val) + 's';
+          } else if (key === 'pnl_polling_mode') {
+            val = String(val) === 'bidirectional' ? 'Buy ↔ Sell' : String(val).toUpperCase() + ' only';
+          } else if (key === 'pnl_trigger_mode') {
+            val = String(val) === 'minimum_profit' ? 'Minimum profit' : 'Sell threshold';
           } else if (key === 'next_buy_estimated_eth' || key === 'gas_reserve_eth' || key === 'estimated_moonbag_value_eth') {
             val = parseFloat(val).toFixed(5).replace(/\\.?0+$/, '') + ' ETH';
           } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {

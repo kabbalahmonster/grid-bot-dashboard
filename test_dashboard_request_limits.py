@@ -23,6 +23,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn('<span>Sell exit</span><span>net</span>', body)
         self.assertIn("pos.sell_quote_source_position_id", body)
         self.assertIn("extrapolated exit", body)
+        self.assertIn("P&L BUY ↔ SELL", body)
+        self.assertIn("SELL ≥ MIN", body)
 
     def test_trade_histories_show_confirmed_gas_fee_when_available(self):
         body = self.client.get("/").get_data(as_text=True)
