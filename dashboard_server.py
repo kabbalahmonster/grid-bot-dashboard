@@ -109,7 +109,12 @@ _STATUS_FIELDS = frozenset({
     "display_name", "group", "buy_point_percent", "sell_point_percent",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
-_POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
+_POSITION_FIELDS = frozenset({
+    "id", "buy_amount_token", "cost_basis", "pnl", "timestamp",
+    "buy_pnl", "buy_quote_at", "buy_quote_provider", "buy_projected_gas_eth",
+    "sell_pnl", "sell_quote_at", "sell_quote_provider",
+    "sell_quote_source_position_id", "sell_projected_gas_eth", "sell_quote_basis",
+})
 _TRADE_FIELDS = frozenset({
     "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
     "profit_eth", "gas_fee_eth",
@@ -1418,11 +1423,21 @@ DASHBOARD_HTML = """\
   .positions { margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
   .positions h3 { font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .position { background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
-  .position .pos-header { display: flex; justify-content: space-between; margin-bottom: 0.25rem; }
+  .position .pos-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
   .position .pos-id { color: #64748b; font-size: 0.7rem; }
   .position .pos-pnl { font-weight: 600; }
   .position .pos-pnl.positive { color: #22c55e; }
   .position .pos-pnl.negative { color: #ef4444; }
+  .position .pnl-sides { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0.4rem; margin-bottom: 0.4rem; }
+  .position .pnl-side { min-width: 0; padding: 0.42rem 0.48rem; border: 1px solid #263449; border-radius: 0.35rem; background: #111c2f; }
+  .position .pnl-side.sell { background: #101d1a; border-color: #234138; }
+  .position .pnl-label { display: flex; justify-content: space-between; gap: 0.25rem; color: #7c8ba1; font-size: 0.61rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .position .pnl-value { display: block; margin-top: 0.12rem; font-size: 1rem; font-weight: 750; line-height: 1.15; }
+  .position .pnl-value.positive { color: #22c55e; }
+  .position .pnl-value.negative { color: #ef4444; }
+  .position .pnl-value.unknown { color: #64748b; }
+  .position .pnl-meta { display: block; overflow: hidden; margin-top: 0.14rem; color: #64748b; font-size: 0.6rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .position .quote-kind { color: #a78bfa; font-size: 0.58rem; }
   .position .pos-details { color: #94a3b8; font-size: 0.75rem; }
   .position.pos-hidden { display: none; }
   .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
@@ -3020,7 +3035,8 @@ DASHBOARD_HTML = """\
 
   function topPositionPnl(state) {
     const values = (state.positions || []).map(function(position) {
-      return parseFloat(position.pnl);
+      const sell = parseFloat(position.sell_pnl);
+      return Number.isFinite(sell) ? sell : parseFloat(position.buy_pnl ?? position.pnl);
     }).filter(Number.isFinite);
     return values.length ? Math.max.apply(null, values) : null;
   }
@@ -3654,23 +3670,37 @@ DASHBOARD_HTML = """\
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
         const sorted = d.positions.slice().sort(function(a, b) {
-          const ap = Number.isFinite(parseFloat(a.pnl)) ? parseFloat(a.pnl) : -Infinity;
-          const bp = Number.isFinite(parseFloat(b.pnl)) ? parseFloat(b.pnl) : -Infinity;
+          const ap = Number.isFinite(parseFloat(a.sell_pnl)) ? parseFloat(a.sell_pnl) : (Number.isFinite(parseFloat(a.buy_pnl)) ? parseFloat(a.buy_pnl) : -Infinity);
+          const bp = Number.isFinite(parseFloat(b.sell_pnl)) ? parseFloat(b.sell_pnl) : (Number.isFinite(parseFloat(b.buy_pnl)) ? parseFloat(b.buy_pnl) : -Infinity);
           if (ap !== bp) return bp - ap;
           return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
         });
         const showCount = 3;
         html += '<div class="positions"><h3>Positions (' + sorted.length + ')</h3>';
         sorted.forEach(function(pos, i) {
-          const pnl = pos.pnl !== undefined ? pos.pnl : null;
-          const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
+          const legacyPnl = pos.pnl !== undefined ? parseFloat(pos.pnl) : null;
+          const hasBuyNet = Number.isFinite(parseFloat(pos.buy_pnl));
+          const buyPnl = hasBuyNet ? parseFloat(pos.buy_pnl) : legacyPnl;
+          const sellPnl = Number.isFinite(parseFloat(pos.sell_pnl)) ? parseFloat(pos.sell_pnl) : null;
+          const buyClass = Number.isFinite(buyPnl) ? (buyPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const sellClass = Number.isFinite(sellPnl) ? (sellPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const buyAge = reportAge(pos.buy_quote_at).text;
+          const sellAge = reportAge(pos.sell_quote_at).text;
+          const sellExact = String(pos.sell_quote_source_position_id || '') === String(pos.id || '');
           const hidden = i >= showCount ? ' pos-hidden' : '';
           const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
           html += '<div class="position' + hidden + '"' + visibleStyle + '>';
-          html += '<div class="pos-header"><span class="pos-id">#' + esc(pos.id || '—') + '</span>';
-          if (pnl !== null) {
-            html += '<span class="pos-pnl ' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
-          }
+          html += '<div class="pos-header"><span class="pos-id">POSITION #' + esc(pos.id || '—') + '</span>' +
+            (sellPnl !== null ? '<span class="quote-kind">' + (sellExact ? 'exact exit size' : 'extrapolated exit') + '</span>' : '') + '</div>';
+          html += '<div class="pnl-sides">';
+          html += '<div class="pnl-side buy" title="Net buy-side mark using conservative quoted token output and projected gas">' +
+            '<span class="pnl-label"><span>' + (hasBuyNet ? 'Buy mark' : 'P&amp;L') + '</span><span>' + (hasBuyNet ? 'net' : 'legacy') + '</span></span>' +
+            '<span class="pnl-value ' + buyClass + '">' + (Number.isFinite(buyPnl) ? ((buyPnl >= 0 ? '+' : '') + esc(buyPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.buy_quote_at ? esc((pos.buy_quote_provider || 'route') + ' · ' + buyAge) : (hasBuyNet ? 'awaiting quote' : 'upgrade bot for net quote')) + '</span></div>';
+          html += '<div class="pnl-side sell" title="Net sell-side exit after conservative fees, slippage and projected gas">' +
+            '<span class="pnl-label"><span>Sell exit</span><span>net</span></span>' +
+            '<span class="pnl-value ' + sellClass + '">' + (Number.isFinite(sellPnl) ? ((sellPnl >= 0 ? '+' : '') + esc(sellPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.sell_quote_at ? esc((pos.sell_quote_provider || 'route') + ' · ' + sellAge) : 'awaiting quote') + '</span></div>';
           html += '</div>';
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';

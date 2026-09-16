@@ -16,6 +16,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("formatTokenAmount(trade.token_amount)", body)
         self.assertNotIn("parseFloat(pos.buy_amount_token || 0).toFixed(0)", body)
 
+    def test_positions_show_bidirectional_net_pnl_columns(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('class="pnl-sides"', body)
+        self.assertIn("hasBuyNet ? 'Buy mark' : 'P&amp;L'", body)
+        self.assertIn('<span>Sell exit</span><span>net</span>', body)
+        self.assertIn("pos.sell_quote_source_position_id", body)
+        self.assertIn("extrapolated exit", body)
+
     def test_trade_histories_show_confirmed_gas_fee_when_available(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("trade.gas_fee_eth", body)
