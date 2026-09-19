@@ -3434,10 +3434,17 @@ DASHBOARD_HTML = """\
         : '';
       const pnlMode = String(d.pnl_polling_mode || '').toLowerCase();
       const pnlModeLabel = pnlMode === 'bidirectional' ? 'P&L BUY ↔ SELL'
-        : pnlMode === 'buy' ? 'P&L BUY ONLY'
-        : pnlMode === 'sell' ? 'P&L SELL ONLY' : '';
+        : pnlMode === 'buy' ? 'P&L BUY POLLS'
+        : pnlMode === 'sell' ? 'P&L SELL POLLS' : '';
+      const pnlModeTitle = pnlMode === 'bidirectional'
+        ? 'Buy triggers use buy-side marks; sell triggers use sell-side marks'
+        : pnlMode === 'buy'
+          ? 'Only buy-side quotes are polled; both buy and sell triggers use the buy-side mark'
+          : pnlMode === 'sell'
+            ? 'Only sell-side quotes are polled; both buy and sell triggers use the sell-side mark'
+            : '';
       const pnlModeBadge = pnlModeLabel
-        ? '<span class="pnl-mode-badge" title="Active net P&amp;L polling mode">' + esc(pnlModeLabel) + '</span>'
+        ? '<span class="pnl-mode-badge" title="' + esc(pnlModeTitle) + '">' + esc(pnlModeLabel) + '</span>'
         : '';
       const triggerBadge = d.pnl_trigger_mode === 'minimum_profit'
         ? '<span class="pnl-trigger-badge" title="Normal sells wake at MIN_PROFIT_PERCENT">SELL ≥ MIN ' + esc(d.sell_point_percent) + '%</span>'

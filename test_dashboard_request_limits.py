@@ -24,6 +24,10 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("pos.sell_quote_source_position_id", body)
         self.assertIn("extrapolated exit", body)
         self.assertIn("P&L BUY ↔ SELL", body)
+        self.assertIn("P&L BUY POLLS", body)
+        self.assertIn("P&L SELL POLLS", body)
+        self.assertIn("both buy and sell triggers use the buy-side mark", body)
+        self.assertIn("both buy and sell triggers use the sell-side mark", body)
         self.assertIn("SELL ≥ MIN", body)
 
     def test_trade_histories_show_confirmed_gas_fee_when_available(self):
