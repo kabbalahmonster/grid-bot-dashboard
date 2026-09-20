@@ -108,6 +108,7 @@ _STATUS_FIELDS = frozenset({
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
     "pnl_polling_mode", "pnl_legacy_triggers", "pnl_trigger_mode",
+    "pnl_focus_side", "pnl_focus_reason", "pnl_focus_directions",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({
@@ -676,6 +677,16 @@ def _allowlisted_status_payload(data):
         filtered.pop("pnl_polling_mode", None)
     if not isinstance(filtered.get("pnl_legacy_triggers"), bool):
         filtered.pop("pnl_legacy_triggers", None)
+    focus_side = filtered.get("pnl_focus_side")
+    if not (isinstance(focus_side, str) and re.fullmatch(
+        r"(?:buy|sell|legacy)(?:\+(?:buy|sell|legacy)){0,2}", focus_side
+    )):
+        filtered.pop("pnl_focus_side", None)
+    if filtered.get("pnl_focus_reason") not in {"near", "triggered"}:
+        filtered.pop("pnl_focus_reason", None)
+    focus_directions = filtered.get("pnl_focus_directions")
+    if focus_directions not in {"", "buy", "sell", "buy+sell"}:
+        filtered.pop("pnl_focus_directions", None)
     if filtered.get("pnl_trigger_mode") not in {
         "sell_threshold", "minimum_profit",
     }:
@@ -3456,13 +3467,22 @@ DASHBOARD_HTML = """\
       const pnlModeBadge = pnlModeLabel
         ? '<span class="pnl-mode-badge" title="' + esc(pnlModeTitle) + '">' + esc(pnlModeLabel) + '</span>'
         : '';
+      const pnlFocusSide = String(d.pnl_focus_side || '').toUpperCase();
+      const pnlFocusReason = String(d.pnl_focus_reason || '');
+      const pnlFocusDirections = String(d.pnl_focus_directions || '');
+      const pnlFocusTitle = pnlFocusReason === 'triggered'
+        ? 'Trigger latched for ' + (pnlFocusDirections || 'strategy') + '; this quote lane is refreshed every cycle until execution succeeds or a fresh mark exits trigger range'
+        : 'This quote lane is within the trigger approach window and is refreshed every other cycle';
+      const pnlFocusBadge = pnlFocusSide
+        ? '<span class="pnl-trigger-badge" title="' + esc(pnlFocusTitle) + '">FOCUS ' + esc(pnlFocusSide) + (pnlFocusReason === 'triggered' ? ' ⚡' : '') + '</span>'
+        : '';
       const triggerBadge = d.pnl_trigger_mode === 'minimum_profit'
         ? '<span class="pnl-trigger-badge" title="Normal sells wake at MIN_PROFIT_PERCENT">SELL ≥ MIN ' + esc(d.sell_point_percent) + '%</span>'
         : '';
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
-        pnlModeBadge + triggerBadge +
+        pnlModeBadge + pnlFocusBadge + triggerBadge +
         taxBadge +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 

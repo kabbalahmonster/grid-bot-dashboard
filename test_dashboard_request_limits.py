@@ -32,6 +32,9 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("both buy and sell triggers use the buy-side mark", body)
         self.assertIn("both buy and sell triggers use the sell-side mark", body)
         self.assertIn("legacy triggers are ", body)
+        self.assertIn("FOCUS ", body)
+        self.assertIn("refreshed every cycle until execution succeeds", body)
+        self.assertIn("refreshed every other cycle", body)
         self.assertIn("SELL ≥ MIN", body)
 
     def test_trade_histories_show_confirmed_gas_fee_when_available(self):
