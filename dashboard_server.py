@@ -2826,8 +2826,8 @@ DASHBOARD_HTML = """\
             const directionLabel = entry.direction === 'buy' ? 'Buy tournament' : 'Sell tournament';
             const crown = entry.confirmed ? ' 👑' : '';
             return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(entry.botId) + '" title="' + directionLabel + '">' +
-              '<span aria-label="' + directionLabel + '">' + directionEmoji + '</span> ' +
-              esc(bots[entry.botId].token_symbol || bots[entry.botId].display_name || entry.botId) + crown + '</button>';
+              esc(bots[entry.botId].token_symbol || bots[entry.botId].display_name || entry.botId) + ' ' +
+              '<span aria-label="' + directionLabel + '">' + directionEmoji + '</span>' + crown + '</button>';
           }).join(', ') + ')</span></span>'
         : '') +
       (buyGasBlocked.length
