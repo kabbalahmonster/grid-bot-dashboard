@@ -595,7 +595,7 @@ console.log(JSON.stringify(results));
             "tournament.status === 'completed' && Boolean(tournament.final?.tx_hash)",
             "const directionEmoji = entry.direction === 'buy' ? '💰' : '⚔️'",
             "const crown = entry.confirmed ? ' 👑' : ''",
-            "entry.botId) + ' ' +\n              '<span aria-label=",
+            "directionEmoji + '</span> ' +\n              esc(bots[entry.botId]",
         ):
             self.assertIn(needle, html)
 
