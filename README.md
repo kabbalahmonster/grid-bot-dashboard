@@ -12,7 +12,7 @@ Each bot card shows:
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
 - The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
-Each position shows token amount, ETH cost basis, and P&L percentage. Bots using net P&L reporting also show a card badge for `BUY ↔ SELL`, `BUY POLLS`, or `SELL POLLS`; its tooltip explains whether triggers use separate marks or share the one polled side. A separate minimum-profit trigger badge appears when enabled. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
+Each position shows token amount, ETH cost basis, and separate buy, sell, and legacy P&L marks. Polling badges cover `LEGACY POLLS`, `BUY POLLS`, `SELL POLLS`, `BUY ↔ SELL`, and `BUY ↔ SELL ↔ LEGACY`; their tooltips explain which marks may wake triggers. A separate minimum-profit trigger badge appears when enabled. **More info** reveals price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
 
 ## Features
 

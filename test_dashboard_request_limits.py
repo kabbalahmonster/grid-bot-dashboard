@@ -19,15 +19,19 @@ class TestDashboardRequestLimits(unittest.TestCase):
     def test_positions_show_bidirectional_net_pnl_columns(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="pnl-sides"', body)
-        self.assertIn("hasBuyNet ? 'Buy mark' : 'P&amp;L'", body)
+        self.assertIn('<span>Buy mark</span><span>net</span>', body)
         self.assertIn('<span>Sell exit</span><span>net</span>', body)
+        self.assertIn('<span>Legacy</span><span>gross</span>', body)
         self.assertIn("pos.sell_quote_source_position_id", body)
         self.assertIn("extrapolated exit", body)
         self.assertIn("P&L BUY ↔ SELL", body)
         self.assertIn("P&L BUY POLLS", body)
         self.assertIn("P&L SELL POLLS", body)
+        self.assertIn("P&L LEGACY POLLS", body)
+        self.assertIn("P&L BUY ↔ SELL ↔ LEGACY", body)
         self.assertIn("both buy and sell triggers use the buy-side mark", body)
         self.assertIn("both buy and sell triggers use the sell-side mark", body)
+        self.assertIn("legacy triggers are ", body)
         self.assertIn("SELL ≥ MIN", body)
 
     def test_trade_histories_show_confirmed_gas_fee_when_available(self):

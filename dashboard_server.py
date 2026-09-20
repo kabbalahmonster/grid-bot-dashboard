@@ -107,7 +107,7 @@ _STATUS_FIELDS = frozenset({
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
-    "pnl_polling_mode", "pnl_trigger_mode",
+    "pnl_polling_mode", "pnl_legacy_triggers", "pnl_trigger_mode",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
 _POSITION_FIELDS = frozenset({
@@ -115,6 +115,7 @@ _POSITION_FIELDS = frozenset({
     "buy_pnl", "buy_quote_at", "buy_quote_provider", "buy_projected_gas_eth",
     "sell_pnl", "sell_quote_at", "sell_quote_provider",
     "sell_quote_source_position_id", "sell_projected_gas_eth", "sell_quote_basis",
+    "legacy_pnl", "legacy_quote_at", "legacy_quote_provider", "legacy_quote_basis",
 })
 _TRADE_FIELDS = frozenset({
     "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
@@ -670,9 +671,11 @@ def _allowlisted_status_payload(data):
             and 0 <= revision < 2**53):
         filtered.pop("revision", None)
     if filtered.get("pnl_polling_mode") not in {
-        "legacy", "bidirectional", "buy", "sell",
+        "legacy", "buy", "sell", "bidirectional", "trilateral",
     }:
         filtered.pop("pnl_polling_mode", None)
+    if not isinstance(filtered.get("pnl_legacy_triggers"), bool):
+        filtered.pop("pnl_legacy_triggers", None)
     if filtered.get("pnl_trigger_mode") not in {
         "sell_threshold", "minimum_profit",
     }:
@@ -1439,9 +1442,10 @@ DASHBOARD_HTML = """\
   .position .pos-pnl { font-weight: 600; }
   .position .pos-pnl.positive { color: #22c55e; }
   .position .pos-pnl.negative { color: #ef4444; }
-  .position .pnl-sides { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 0.4rem; margin-bottom: 0.4rem; }
+  .position .pnl-sides { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0.4rem; margin-bottom: 0.4rem; }
   .position .pnl-side { min-width: 0; padding: 0.42rem 0.48rem; border: 1px solid #263449; border-radius: 0.35rem; background: #111c2f; }
   .position .pnl-side.sell { background: #101d1a; border-color: #234138; }
+  .position .pnl-side.legacy { background: #1d1928; border-color: #42355d; }
   .position .pnl-label { display: flex; justify-content: space-between; gap: 0.25rem; color: #7c8ba1; font-size: 0.61rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
   .position .pnl-value { display: block; margin-top: 0.12rem; font-size: 1rem; font-weight: 750; line-height: 1.15; }
   .position .pnl-value.positive { color: #22c55e; }
@@ -3434,10 +3438,16 @@ DASHBOARD_HTML = """\
         : '';
       const pnlMode = String(d.pnl_polling_mode || '').toLowerCase();
       const pnlModeLabel = pnlMode === 'bidirectional' ? 'P&L BUY ↔ SELL'
+        : pnlMode === 'trilateral' ? 'P&L BUY ↔ SELL ↔ LEGACY'
+        : pnlMode === 'legacy' ? 'P&L LEGACY POLLS'
         : pnlMode === 'buy' ? 'P&L BUY POLLS'
         : pnlMode === 'sell' ? 'P&L SELL POLLS' : '';
       const pnlModeTitle = pnlMode === 'bidirectional'
         ? 'Buy triggers use buy-side marks; sell triggers use sell-side marks'
+        : pnlMode === 'trilateral'
+          ? 'Buy, sell and legacy marks rotate at one quote per cycle; legacy triggers are ' + (d.pnl_legacy_triggers ? 'enabled for both directions' : 'observational only')
+        : pnlMode === 'legacy'
+          ? 'Only the original gross 0.001 ETH/WETH buy quote is polled' + (d.pnl_legacy_triggers ? '; it drives both buy and sell triggers' : '; triggers are disabled')
         : pnlMode === 'buy'
           ? 'Only buy-side quotes are polled; both buy and sell triggers use the buy-side mark'
           : pnlMode === 'sell'
@@ -3704,22 +3714,26 @@ DASHBOARD_HTML = """\
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
         const sorted = d.positions.slice().sort(function(a, b) {
-          const ap = Number.isFinite(parseFloat(a.sell_pnl)) ? parseFloat(a.sell_pnl) : (Number.isFinite(parseFloat(a.buy_pnl)) ? parseFloat(a.buy_pnl) : -Infinity);
-          const bp = Number.isFinite(parseFloat(b.sell_pnl)) ? parseFloat(b.sell_pnl) : (Number.isFinite(parseFloat(b.buy_pnl)) ? parseFloat(b.buy_pnl) : -Infinity);
+          const ap = Number.isFinite(parseFloat(a.sell_pnl)) ? parseFloat(a.sell_pnl) : (Number.isFinite(parseFloat(a.buy_pnl)) ? parseFloat(a.buy_pnl) : (Number.isFinite(parseFloat(a.legacy_pnl)) ? parseFloat(a.legacy_pnl) : parseFloat(a.pnl)));
+          const bp = Number.isFinite(parseFloat(b.sell_pnl)) ? parseFloat(b.sell_pnl) : (Number.isFinite(parseFloat(b.buy_pnl)) ? parseFloat(b.buy_pnl) : (Number.isFinite(parseFloat(b.legacy_pnl)) ? parseFloat(b.legacy_pnl) : parseFloat(b.pnl)));
           if (ap !== bp) return bp - ap;
           return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
         });
         const showCount = 3;
         html += '<div class="positions"><h3>Positions (' + sorted.length + ')</h3>';
         sorted.forEach(function(pos, i) {
-          const legacyPnl = pos.pnl !== undefined ? parseFloat(pos.pnl) : null;
           const hasBuyNet = Number.isFinite(parseFloat(pos.buy_pnl));
-          const buyPnl = hasBuyNet ? parseFloat(pos.buy_pnl) : legacyPnl;
+          const buyPnl = hasBuyNet ? parseFloat(pos.buy_pnl) : null;
           const sellPnl = Number.isFinite(parseFloat(pos.sell_pnl)) ? parseFloat(pos.sell_pnl) : null;
+          const hasDedicatedLegacy = Number.isFinite(parseFloat(pos.legacy_pnl));
+          const legacyPnl = hasDedicatedLegacy ? parseFloat(pos.legacy_pnl)
+            : (!hasBuyNet && sellPnl === null && Number.isFinite(parseFloat(pos.pnl)) ? parseFloat(pos.pnl) : null);
           const buyClass = Number.isFinite(buyPnl) ? (buyPnl >= 0 ? 'positive' : 'negative') : 'unknown';
           const sellClass = Number.isFinite(sellPnl) ? (sellPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const legacyClass = Number.isFinite(legacyPnl) ? (legacyPnl >= 0 ? 'positive' : 'negative') : 'unknown';
           const buyAge = reportAge(pos.buy_quote_at).text;
           const sellAge = reportAge(pos.sell_quote_at).text;
+          const legacyAge = reportAge(pos.legacy_quote_at).text;
           const sellExact = String(pos.sell_quote_source_position_id || '') === String(pos.id || '');
           const hidden = i >= showCount ? ' pos-hidden' : '';
           const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
@@ -3728,13 +3742,17 @@ DASHBOARD_HTML = """\
             (sellPnl !== null ? '<span class="quote-kind">' + (sellExact ? 'exact exit size' : 'extrapolated exit') + '</span>' : '') + '</div>';
           html += '<div class="pnl-sides">';
           html += '<div class="pnl-side buy" title="Net buy-side mark using conservative quoted token output and projected gas">' +
-            '<span class="pnl-label"><span>' + (hasBuyNet ? 'Buy mark' : 'P&amp;L') + '</span><span>' + (hasBuyNet ? 'net' : 'legacy') + '</span></span>' +
+            '<span class="pnl-label"><span>Buy mark</span><span>net</span></span>' +
             '<span class="pnl-value ' + buyClass + '">' + (Number.isFinite(buyPnl) ? ((buyPnl >= 0 ? '+' : '') + esc(buyPnl.toFixed(1)) + '%') : '—') + '</span>' +
-            '<span class="pnl-meta">' + (pos.buy_quote_at ? esc((pos.buy_quote_provider || 'route') + ' · ' + buyAge) : (hasBuyNet ? 'awaiting quote' : 'upgrade bot for net quote')) + '</span></div>';
+            '<span class="pnl-meta">' + (pos.buy_quote_at ? esc((pos.buy_quote_provider || 'route') + ' · ' + buyAge) : 'awaiting quote') + '</span></div>';
           html += '<div class="pnl-side sell" title="Net sell-side exit after conservative fees, slippage and projected gas">' +
             '<span class="pnl-label"><span>Sell exit</span><span>net</span></span>' +
             '<span class="pnl-value ' + sellClass + '">' + (Number.isFinite(sellPnl) ? ((sellPnl >= 0 ? '+' : '') + esc(sellPnl.toFixed(1)) + '%') : '—') + '</span>' +
             '<span class="pnl-meta">' + (pos.sell_quote_at ? esc((pos.sell_quote_provider || 'route') + ' · ' + sellAge) : 'awaiting quote') + '</span></div>';
+          html += '<div class="pnl-side legacy" title="Original gross 0.001 ETH/WETH buy-side spot mark without projected gas or slippage floor">' +
+            '<span class="pnl-label"><span>Legacy</span><span>gross</span></span>' +
+            '<span class="pnl-value ' + legacyClass + '">' + (Number.isFinite(legacyPnl) ? ((legacyPnl >= 0 ? '+' : '') + esc(legacyPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.legacy_quote_at ? esc((pos.legacy_quote_provider || 'route') + ' · ' + legacyAge) : (hasDedicatedLegacy ? 'awaiting quote' : 'not polled')) + '</span></div>';
           html += '</div>';
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';
