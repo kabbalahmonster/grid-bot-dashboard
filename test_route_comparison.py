@@ -593,7 +593,7 @@ console.log(JSON.stringify(results));
             "tournamentForDisplay(state.buy_attempt?.route_comparison, botKey)",
             "tournamentForDisplay(state.sell_attempt?.route_comparison, botKey)",
             "tournament.status === 'completed' && Boolean(tournament.final?.tx_hash)",
-            "const directionEmoji = entry.direction === 'buy' ? '🛒' : '⚔️'",
+            "const directionEmoji = entry.direction === 'buy' ? '💰' : '⚔️'",
             "const crown = entry.confirmed ? ' 👑' : ''",
         ):
             self.assertIn(needle, html)

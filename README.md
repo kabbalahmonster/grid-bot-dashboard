@@ -684,7 +684,7 @@ age counter. The crown identifies the economically selected route only; a
 separate green `TRANSACTION CONFIRMED ON-CHAIN` badge and transaction link are
 shown only after a successful receipt is reported. Completed results remain
 visible for two minutes unless superseded by a newer tournament. The fleet
-summary mirrors those visible cards, marks buy rounds with `🛒` and sell rounds
+summary mirrors those visible cards, marks buy rounds with `💰` and sell rounds
 with `⚔️`, and adds `👑` beside a token after its transaction is confirmed.
 
 If no contestant clears every fresh execution guard, the bot may continue via
