@@ -589,10 +589,20 @@ console.log(JSON.stringify(results));
 
     def test_active_summary_checks_buy_and_sell_tournaments(self):
         html = server.DASHBOARD_HTML
-        self.assertIn(
-            "[state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison]",
-            html,
-        )
+        for needle in (
+            "tournamentForDisplay(state.buy_attempt?.route_comparison, botKey)",
+            "tournamentForDisplay(state.sell_attempt?.route_comparison, botKey)",
+            "tournament.status === 'completed' && Boolean(tournament.final?.tx_hash)",
+            "const directionEmoji = entry.direction === 'buy' ? '🛒' : '⚔️'",
+            "const crown = entry.confirmed ? ' 👑' : ''",
+        ):
+            self.assertIn(needle, html)
+
+    def test_active_summary_tracks_visible_tournaments_not_only_unique_bots(self):
+        html = server.DASHBOARD_HTML
+        self.assertIn("const activeTournaments = Object.keys(bots).flatMap", html)
+        self.assertIn("return confirmed || active", html)
+        self.assertIn("Active tournaments: ' + activeTournaments.length", html)
 
 
 if __name__ == "__main__":

@@ -2739,12 +2739,27 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(state.sell_attempt && state.sell_attempt.status && state.sell_attempt.route_comparison?.mode !== 'execution_preflight') && reportAge(state.received_at).status === 'running';
     });
-    const activeTournaments = Object.keys(bots).filter(function(id) {
+    const activeTournaments = Object.keys(bots).flatMap(function(id) {
       const state = bots[id];
-      const comparisons = [state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison];
-      return comparisons.some(function(tournament) {
-        return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status));
-      }) && reportAge(state.received_at).status === 'running';
+      if (reportAge(state.received_at).status !== 'running') return [];
+      const botKey = encodeURIComponent(id);
+      return [
+        { direction: 'buy', tournament: tournamentForDisplay(state.buy_attempt?.route_comparison, botKey) },
+        { direction: 'sell', tournament: tournamentForDisplay(state.sell_attempt?.route_comparison, botKey) },
+      ].filter(function(entry) {
+        const tournament = entry.tournament;
+        if (!tournament || tournament.mode !== 'execution_preflight') return false;
+        const confirmed = tournament.status === 'completed' && Boolean(tournament.final?.tx_hash);
+        const active = !['completed', 'execution_aborted', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status);
+        return confirmed || active;
+      }).map(function(entry) {
+        return {
+          botId: id,
+          direction: entry.tournament.direction === 'buy' || entry.tournament.direction === 'sell'
+            ? entry.tournament.direction : entry.direction,
+          confirmed: entry.tournament.status === 'completed' && Boolean(entry.tournament.final?.tx_hash),
+        };
+      });
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -2806,8 +2821,13 @@ DASHBOARD_HTML = """\
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
       const nextSummaryHtml = (activeTournaments.length
         ? '<span class="summary-item tournaments-active" aria-live="polite">⚔️ Active tournaments: ' + activeTournaments.length +
-          ' <span class="bot-names">(' + activeTournaments.map(function(id) {
-            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          ' <span class="bot-names">(' + activeTournaments.map(function(entry) {
+            const directionEmoji = entry.direction === 'buy' ? '🛒' : '⚔️';
+            const directionLabel = entry.direction === 'buy' ? 'Buy tournament' : 'Sell tournament';
+            const crown = entry.confirmed ? ' 👑' : '';
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(entry.botId) + '" title="' + directionLabel + '">' +
+              '<span aria-label="' + directionLabel + '">' + directionEmoji + '</span> ' +
+              esc(bots[entry.botId].token_symbol || bots[entry.botId].display_name || entry.botId) + crown + '</button>';
           }).join(', ') + ')</span></span>'
         : '') +
       (buyGasBlocked.length
