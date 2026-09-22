@@ -2190,7 +2190,7 @@ DASHBOARD_HTML = """\
       const abort = comparison.execution_abort || {};
       const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? '⏸️ BUY TOURNAMENT ABORTED' : (isBuy ? '💰 BUY ROUTE TOURNAMENT' : '⚔️ SELL ROUTE TOURNAMENT');
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? (isBuy ? '⏸️ BUY TOURNAMENT ABORTED' : '⏸️ SELL TOURNAMENT ABORTED') : (isBuy ? '💰 BUY ROUTE TOURNAMENT' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';

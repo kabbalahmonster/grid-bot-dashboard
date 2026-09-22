@@ -483,10 +483,36 @@ class TestRouteComparison(unittest.TestCase):
         for needle in ("BUY ROUTE TOURNAMENT", "SELL ROUTE TOURNAMENT",
                        "Best acquisition route selected", "Quoted tokens:",
                        "Conservative receive floor:", "target +",
-                       "BUY TOURNAMENT ABORTED", "No transaction sent",
+                       "BUY TOURNAMENT ABORTED", "SELL TOURNAMENT ABORTED",
+                       "No transaction sent",
                        "execution_aborted"):
             self.assertIn(needle, html)
         self.assertIn("timedOut ? 'timed out'", html)
+
+    def test_aborted_tournament_title_matches_direction(self):
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+        })};
+        function tournamentAgeLabel() { return ''; }
+        """ + html[start:end]
+        rendered = {}
+        for direction in ("buy", "sell"):
+            value = comparison(direction)
+            value.update(mode="execution_preflight", status="execution_aborted",
+                         candidates=[], selected_hypothetical_winner=None)
+            output = subprocess.run(
+                ["node", "-e", script + "\nconsole.log(renderRouteComparison(" + json.dumps(value) + "));"],
+                capture_output=True, text=True, check=True,
+            )
+            rendered[direction] = output.stdout
+
+        self.assertIn("BUY TOURNAMENT ABORTED", rendered["buy"])
+        self.assertNotIn("SELL TOURNAMENT ABORTED", rendered["buy"])
+        self.assertIn("SELL TOURNAMENT ABORTED", rendered["sell"])
+        self.assertNotIn("BUY TOURNAMENT ABORTED", rendered["sell"])
 
     def test_sell_tournament_suppresses_redundant_active_sell_check(self):
         html = server.DASHBOARD_HTML
