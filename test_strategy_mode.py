@@ -57,6 +57,9 @@ class TestStrategyModeRendering(unittest.TestCase):
         self.assertIn("strategyBadge + taxBadge", body)
         self.assertIn("['Strategy', 'strategy_display']", body)
         self.assertIn("['Ladder', 'ladder_summary']", body)
+        self.assertIn("['Next Ladder Buy', 'next_ladder_buy_price']", body)
+        self.assertIn("['Next Leading Buy', 'next_leading_buy_price']", body)
+        self.assertIn("['Leading Buy Trigger', 'leading_buy_trigger_percent']", body)
 
 
 if __name__ == "__main__":

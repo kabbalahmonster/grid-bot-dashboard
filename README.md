@@ -460,7 +460,10 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 `gridless_threshold`, `drawdown_ladder`, or `survivor`. Ladder payloads may also provide
 `strategy_spacing` (`linear` or `log`) and a bounded `drawdown_ladder` summary.
 The card keeps this to one compact badge; funded/open counts, terminal drawdown,
-and reserved ETH appear under **More info**. Older bots need no configuration
+reserved ETH, the exact next ready ladder price, and the indicative next Survivor
+leading-edge price appear under **More info**. The leading price is a display target;
+the bot still requires its fresh authorized route-side P&L observation before buying.
+Older bots need no configuration
 change: a missing explicit mode renders **LEGACY / UNKNOWN**, while older
 drawdown payloads can still be recognized from `entry_allocation_mode`.
 
