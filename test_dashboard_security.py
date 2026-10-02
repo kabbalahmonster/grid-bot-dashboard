@@ -175,6 +175,9 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "last_reanchor_at": 1790950000.0,
                 "leading_edge_pending": False,
                 "leading_edge_open": True,
+                "next_level_price": 0.00000123,
+                "next_leading_edge_price": 0.00000145,
+                "leading_edge_trigger_percent": 2.5,
                 "private_note": "drop me",
             },
         }
@@ -198,10 +201,17 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "last_reanchor_at": 1790950000.0,
             "leading_edge_pending": False,
             "leading_edge_open": True,
+            "next_level_price": 0.00000123,
+            "next_leading_edge_price": 0.00000145,
+            "leading_edge_trigger_percent": 2.5,
         })
         self.assertEqual(
             _allowlisted_status_payload({"strategy_mode": "survivor"}),
             {"strategy_mode": "survivor"},
+        )
+        self.assertEqual(
+            _allowlisted_status_payload({"entry_allocation_mode": "survivor"}),
+            {"entry_allocation_mode": "survivor"},
         )
 
     def test_invalid_strategy_values_are_dropped_for_legacy_safety(self):

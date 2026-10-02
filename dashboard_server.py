@@ -150,7 +150,7 @@ _DRAWDOWN_LADDER_FIELDS = frozenset({
     "completed_cycles", "next_level_price", "allocated_budget_eth", "deployed_eth",
     "reserved_eth", "average_position_eth", "realized_profit_eth", "expires_at",
     "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
-    "leading_edge_open",
+    "leading_edge_open", "next_leading_edge_price", "leading_edge_trigger_percent",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -479,14 +479,19 @@ def _allowlisted_drawdown_ladder(value):
                 and 0 <= number <= 10000):
             clean.pop(key, None)
     for key in (
-        "reference_price", "next_level_price", "allocated_budget_eth",
-        "deployed_eth", "reserved_eth",
+        "reference_price", "next_level_price", "next_leading_edge_price",
+        "allocated_budget_eth", "deployed_eth", "reserved_eth",
         "average_position_eth",
     ):
         number = clean.get(key)
         if not (type(number) in (int, float) and math.isfinite(number)
                 and 0 <= number < 1e96):
             clean.pop(key, None)
+    leading_trigger = clean.get("leading_edge_trigger_percent")
+    if not (type(leading_trigger) in (int, float)
+            and math.isfinite(leading_trigger)
+            and 0 <= leading_trigger <= 100):
+        clean.pop("leading_edge_trigger_percent", None)
     terminal = clean.get("terminal_drawdown_percent")
     if not (type(terminal) in (int, float) and math.isfinite(terminal)
             and 0 < terminal < 100):
@@ -758,7 +763,9 @@ def _allowlisted_status_payload(data):
         filtered.pop("strategy_mode", None)
     if filtered.get("strategy_spacing") not in {"linear", "log"}:
         filtered.pop("strategy_spacing", None)
-    if filtered.get("entry_allocation_mode") not in {"threshold", "drawdown_ladder"}:
+    if filtered.get("entry_allocation_mode") not in {
+        "threshold", "drawdown_ladder", "survivor",
+    }:
         filtered.pop("entry_allocation_mode", None)
 
     for field, allowed, maximum in (
@@ -3741,6 +3748,9 @@ DASHBOARD_HTML = """\
       ];
       const moreMetrics = [
         ['Strategy', 'strategy_display'], ['Ladder', 'ladder_summary'],
+        ['Next Ladder Buy', 'next_ladder_buy_price'],
+        ['Next Leading Buy', 'next_leading_buy_price'],
+        ['Leading Buy Trigger', 'leading_buy_trigger_percent'],
         ['Price', 'price'],
         ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
         ['P&L Polling', 'pnl_polling_mode'], ['Sell Trigger', 'pnl_trigger_mode'],
@@ -3761,6 +3771,11 @@ DASHBOARD_HTML = """\
         : null;
       d.strategy_display = strategy.detail;
       d.ladder_summary = strategy.ladderSummary || null;
+      const ladderTelemetry = d.drawdown_ladder && typeof d.drawdown_ladder === 'object'
+        ? d.drawdown_ladder : {};
+      d.next_ladder_buy_price = ladderTelemetry.next_level_price ?? null;
+      d.next_leading_buy_price = ladderTelemetry.next_leading_edge_price ?? null;
+      d.leading_buy_trigger_percent = ladderTelemetry.leading_edge_trigger_percent ?? null;
       d.next_buy_estimated_eth = estimatedNextBuy(d);
       d.estimated_bag_value = estimatedBagValue(d, profitCurrency);
 
@@ -3785,9 +3800,11 @@ DASHBOARD_HTML = """\
           } else if (key === 'profit_tracking_started_at') {
             const timestamp = Date.parse(val);
             val = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : val;
-          } else if (key === 'price') {
+          } else if (key === 'price' || key === 'next_ladder_buy_price' || key === 'next_leading_buy_price') {
             const n = parseFloat(val);
             val = n.toFixed(10);
+          } else if (key === 'leading_buy_trigger_percent') {
+            val = '+' + parseFloat(val).toFixed(2).replace(/\\.00$/, '') + '% P&L';
           } else if (key === 'uptime_seconds') {
             const s = parseInt(val);
             if (s < 60) val = s + 's';
