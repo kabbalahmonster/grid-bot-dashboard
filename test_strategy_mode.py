@@ -51,15 +51,24 @@ class TestStrategyModeRendering(unittest.TestCase):
             "17/50 funded · 4 open · 95% terminal · 0.043 ETH reserved",
         )
 
-    def test_card_uses_one_strategy_badge_and_more_info_details(self):
+    def test_card_uses_one_strategy_badge_and_compact_ladder_overview(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="strategy-mode-badge', body)
         self.assertIn("strategyBadge + taxBadge", body)
-        self.assertIn("['Strategy', 'strategy_display']", body)
-        self.assertIn("['Ladder', 'ladder_summary']", body)
-        self.assertIn("['Next Ladder Buy', 'next_ladder_buy_price']", body)
-        self.assertIn("['Next Leading Buy', 'next_leading_buy_price']", body)
-        self.assertIn("['Leading Buy Trigger', 'leading_buy_trigger_percent']", body)
+        self.assertIn('class="strategy-overview"', body)
+        self.assertIn('class="ladder-stats"', body)
+        self.assertIn("'Next ladder buy'", body)
+        self.assertIn("'Next leading buy'", body)
+        self.assertIn("ETH/token ·", body)
+        self.assertIn("'% P&L trigger'", body)
+        self.assertIn("...(strategyOverviewHtml ? [] : [['Strategy', 'strategy_display']])", body)
+
+    def test_ladder_overview_has_mobile_safe_layout(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn(".ladder-stats { display: grid;", body)
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", body)
+        self.assertIn(".buy-target-value { text-align: left; }", body)
 
 
 if __name__ == "__main__":
