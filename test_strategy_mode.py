@@ -28,11 +28,12 @@ class TestStrategyModeRendering(unittest.TestCase):
             {"strategy_mode": "gridless_threshold"},
             {"strategy_mode": "drawdown_ladder", "strategy_spacing": "linear"},
             {"strategy_mode": "drawdown_ladder", "strategy_spacing": "log"},
+            {"strategy_mode": "survivor", "strategy_spacing": "log"},
             {},
         ])
         self.assertEqual([item["label"] for item in rendered], [
             "GRID", "GRIDLESS · THRESHOLD", "DRAWDOWN · LINEAR",
-            "DRAWDOWN · LOG", "LEGACY / UNKNOWN",
+            "DRAWDOWN · LOG", "SURVIVOR · LOG", "LEGACY / UNKNOWN",
         ])
 
     def test_old_drawdown_payload_is_inferred_and_ladder_summary_is_compact(self):

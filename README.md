@@ -12,7 +12,7 @@ Each bot card shows:
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
 - The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
-Each position shows token amount, ETH cost basis, and P&L percentage. A compact strategy badge identifies **GRID**, **GRIDLESS · THRESHOLD**, **DRAWDOWN · LINEAR**, or **DRAWDOWN · LOG**; older payloads safely display **LEGACY / UNKNOWN**. **More info** reveals strategy/ladder detail, price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
+Each position shows token amount, ETH cost basis, and P&L percentage. A compact strategy badge identifies **GRID**, **GRIDLESS · THRESHOLD**, **DRAWDOWN · LINEAR/LOG**, or dynamic **SURVIVOR · LINEAR/LOG**; older payloads safely display **LEGACY / UNKNOWN**. **More info** reveals strategy/ladder detail, price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
 
 ## Features
 
@@ -457,7 +457,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
 Bots may additionally send `display_name`, `group`, and up to 50 entries in `trades_history`. Trade entries contain timestamp, side, ETH amount, token amount, execution price, transaction hash, and sell profit when applicable. They are recorded from swaps the bot already executes, so this adds no RPC or third-party API calls.
 
 `strategy_mode` is an optional display-only enum: `grid`,
-`gridless_threshold`, or `drawdown_ladder`. Drawdown payloads may also provide
+`gridless_threshold`, `drawdown_ladder`, or `survivor`. Ladder payloads may also provide
 `strategy_spacing` (`linear` or `log`) and a bounded `drawdown_ladder` summary.
 The card keeps this to one compact badge; funded/open counts, terminal drawdown,
 and reserved ETH appear under **More info**. Older bots need no configuration

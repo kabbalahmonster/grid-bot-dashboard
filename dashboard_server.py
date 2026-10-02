@@ -141,6 +141,8 @@ _DRAWDOWN_LADDER_FIELDS = frozenset({
     "levels_total", "levels_funded", "levels_open", "levels_adopted", "levels_ready",
     "completed_cycles", "next_level_price", "allocated_budget_eth", "deployed_eth",
     "reserved_eth", "average_position_eth", "realized_profit_eth", "expires_at",
+    "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
+    "leading_edge_open",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -458,9 +460,11 @@ def _allowlisted_drawdown_ladder(value):
         clean.pop("status", None)
     if clean.get("spacing") not in {"linear", "log"}:
         clean.pop("spacing", None)
+    if clean.get("mode") not in {"drawdown_ladder", "survivor"}:
+        clean.pop("mode", None)
     for key in (
         "levels_total", "levels_funded", "levels_open", "levels_adopted",
-        "levels_ready", "completed_cycles",
+        "levels_ready", "completed_cycles", "reanchor_count",
     ):
         number = clean.get(key)
         if not (isinstance(number, int) and not isinstance(number, bool)
@@ -484,6 +488,14 @@ def _allowlisted_drawdown_ladder(value):
         clean.pop("realized_profit_eth", None)
     if "expires_at" in clean and not _route_timestamp(clean["expires_at"]):
         clean.pop("expires_at", None)
+    reanchored = clean.get("last_reanchor_at")
+    if ("last_reanchor_at" in clean
+            and not (type(reanchored) in (int, float) and math.isfinite(reanchored)
+                     and 0 <= reanchored < 1e12)):
+        clean.pop("last_reanchor_at", None)
+    for key in ("leading_edge_pending", "leading_edge_open"):
+        if key in clean and not isinstance(clean[key], bool):
+            clean.pop(key)
     return clean
 
 
@@ -712,7 +724,7 @@ def _allowlisted_status_payload(data):
             and 0 <= revision < 2**53):
         filtered.pop("revision", None)
     if filtered.get("strategy_mode") not in {
-        "grid", "gridless_threshold", "drawdown_ladder",
+        "grid", "gridless_threshold", "drawdown_ladder", "survivor",
     }:
         filtered.pop("strategy_mode", None)
     if filtered.get("strategy_spacing") not in {"linear", "log"}:
@@ -2662,7 +2674,7 @@ DASHBOARD_HTML = """\
     const allocation = String(data.entry_allocation_mode || '').toLowerCase();
     const ladder = data.drawdown_ladder && typeof data.drawdown_ladder === 'object'
       ? data.drawdown_ladder : null;
-    const mode = ['grid', 'gridless_threshold', 'drawdown_ladder'].includes(explicit)
+    const mode = ['grid', 'gridless_threshold', 'drawdown_ladder', 'survivor'].includes(explicit)
       ? explicit
       : (allocation === 'drawdown_ladder' ? 'drawdown_ladder' : 'unknown');
     const spacingValue = String(data.strategy_spacing || ladder?.spacing || '').toLowerCase();
@@ -2673,8 +2685,9 @@ DASHBOARD_HTML = """\
     if (mode === 'gridless_threshold') {
       return { label: 'GRIDLESS · THRESHOLD', detail: 'Gridless threshold', css: '', ladderSummary: '' };
     }
-    if (mode === 'drawdown_ladder') {
-      const label = 'DRAWDOWN' + (spacing ? ' · ' + spacing.toUpperCase() : '');
+    if (mode === 'drawdown_ladder' || mode === 'survivor') {
+      const label = (mode === 'survivor' ? 'SURVIVOR' : 'DRAWDOWN') +
+        (spacing ? ' · ' + spacing.toUpperCase() : '');
       const details = [];
       if (ladder) {
         const funded = Number(ladder.levels_funded);
@@ -2689,7 +2702,8 @@ DASHBOARD_HTML = """\
       }
       return {
         label: label,
-        detail: 'Drawdown ladder' + (spacing ? ' · ' + spacing : ''),
+        detail: (mode === 'survivor' ? 'Dynamic survivor ladder' : 'Drawdown ladder') +
+          (spacing ? ' · ' + spacing : ''),
         css: '',
         ladderSummary: details.join(' · '),
       };

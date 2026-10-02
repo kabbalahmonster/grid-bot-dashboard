@@ -131,6 +131,11 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "levels_funded": 17,
                 "levels_open": 4,
                 "reserved_eth": 0.043,
+                "mode": "survivor",
+                "reanchor_count": 3,
+                "last_reanchor_at": 1790950000.0,
+                "leading_edge_pending": False,
+                "leading_edge_open": True,
                 "private_note": "drop me",
             },
         }
@@ -142,7 +147,14 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "id": "ladder-1", "status": "active", "spacing": "log",
             "terminal_drawdown_percent": 95.0, "levels_total": 50,
             "levels_funded": 17, "levels_open": 4, "reserved_eth": 0.043,
+            "mode": "survivor", "reanchor_count": 3,
+            "last_reanchor_at": 1790950000.0,
+            "leading_edge_pending": False, "leading_edge_open": True,
         })
+        self.assertEqual(
+            _allowlisted_status_payload({"strategy_mode": "survivor"}),
+            {"strategy_mode": "survivor"},
+        )
 
     def test_invalid_strategy_values_are_dropped_for_legacy_safety(self):
         result = _allowlisted_status_payload({
