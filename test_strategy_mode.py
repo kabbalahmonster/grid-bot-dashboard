@@ -34,6 +34,7 @@ class TestStrategyModeRendering(unittest.TestCase):
             {"strategy_mode": "gridless_threshold"},
             {"strategy_mode": "drawdown_ladder", "strategy_spacing": "linear"},
             {"strategy_mode": "drawdown_ladder", "strategy_spacing": "log"},
+            {"strategy_mode": "survivor", "strategy_spacing": "log"},
             {},
         ])
 
@@ -42,6 +43,7 @@ class TestStrategyModeRendering(unittest.TestCase):
             "GRIDLESS · THRESHOLD",
             "DRAWDOWN · LINEAR",
             "DRAWDOWN · LOG",
+            "SURVIVOR · LOG",
             "LEGACY / UNKNOWN",
         ])
 
