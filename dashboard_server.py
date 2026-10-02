@@ -103,6 +103,7 @@ _STATUS_FIELDS = frozenset({
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "buy_attempt", "sell_attempt",
+    "strategy_mode", "strategy_spacing", "entry_allocation_mode", "drawdown_ladder",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
@@ -143,6 +144,12 @@ _SELL_ATTEMPT_FIELDS = frozenset({
     "detected_fee_percent", "tracked_sell_amount_raw", "wallet_balance_raw", "deficit_raw",
 })
 _REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "5d", "3d", "24h", "12h", "6h", "4h", "2h", "1h"})
+_DRAWDOWN_LADDER_FIELDS = frozenset({
+    "id", "status", "spacing", "reference_price", "terminal_drawdown_percent",
+    "levels_total", "levels_funded", "levels_open", "levels_adopted", "levels_ready",
+    "completed_cycles", "next_level_price", "allocated_budget_eth", "deployed_eth",
+    "reserved_eth", "average_position_eth", "realized_profit_eth", "expires_at",
+})
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
 _MAX_TRADES = 50
@@ -447,6 +454,48 @@ def _allowlisted_mapping(value, allowed_fields):
     return {key: value[key] for key in allowed_fields if key in value}
 
 
+def _allowlisted_drawdown_ladder(value):
+    """Keep only bounded, public ladder summary fields."""
+    clean = _allowlisted_mapping(value, _DRAWDOWN_LADDER_FIELDS)
+    if clean is None:
+        return None
+    if not (isinstance(clean.get("id"), str)
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", clean["id"])):
+        clean.pop("id", None)
+    if clean.get("status") not in {"active", "expired"}:
+        clean.pop("status", None)
+    if clean.get("spacing") not in {"linear", "log"}:
+        clean.pop("spacing", None)
+    for key in (
+        "levels_total", "levels_funded", "levels_open", "levels_adopted",
+        "levels_ready", "completed_cycles",
+    ):
+        number = clean.get(key)
+        if not (isinstance(number, int) and not isinstance(number, bool)
+                and 0 <= number <= 10000):
+            clean.pop(key, None)
+    for key in (
+        "reference_price", "next_level_price", "allocated_budget_eth",
+        "deployed_eth", "reserved_eth",
+        "average_position_eth",
+    ):
+        number = clean.get(key)
+        if not (type(number) in (int, float) and math.isfinite(number)
+                and 0 <= number < 1e96):
+            clean.pop(key, None)
+    terminal = clean.get("terminal_drawdown_percent")
+    if not (type(terminal) in (int, float) and math.isfinite(terminal)
+            and 0 < terminal < 100):
+        clean.pop("terminal_drawdown_percent", None)
+    realized = clean.get("realized_profit_eth")
+    if not (type(realized) in (int, float) and math.isfinite(realized)
+            and abs(realized) < 1e96):
+        clean.pop("realized_profit_eth", None)
+    if "expires_at" in clean and not _route_timestamp(clean["expires_at"]):
+        clean.pop("expires_at", None)
+    return clean
+
+
 _ROUTE_ENUMS = {
     "provider": {"uniswap", "sushiswap", "umbra", "lifi"},
     "settlement": {"native", "weth"},
@@ -691,6 +740,14 @@ def _allowlisted_status_payload(data):
         "sell_threshold", "minimum_profit",
     }:
         filtered.pop("pnl_trigger_mode", None)
+    if filtered.get("strategy_mode") not in {
+        "grid", "gridless_threshold", "drawdown_ladder",
+    }:
+        filtered.pop("strategy_mode", None)
+    if filtered.get("strategy_spacing") not in {"linear", "log"}:
+        filtered.pop("strategy_spacing", None)
+    if filtered.get("entry_allocation_mode") not in {"threshold", "drawdown_ladder"}:
+        filtered.pop("entry_allocation_mode", None)
 
     for field, allowed, maximum in (
         ("positions", _POSITION_FIELDS, _MAX_POSITIONS),
@@ -715,6 +772,13 @@ def _allowlisted_status_payload(data):
     ):
         if field in filtered and filtered[field] is not None:
             filtered[field] = _allowlisted_mapping(filtered[field], allowed)
+
+    if "drawdown_ladder" in filtered:
+        filtered["drawdown_ladder"] = _allowlisted_drawdown_ladder(
+            filtered["drawdown_ladder"]
+        )
+        if filtered["drawdown_ladder"] is None:
+            filtered.pop("drawdown_ladder")
 
     for direction in ("buy", "sell"):
         field = direction + "_attempt"
@@ -1394,8 +1458,10 @@ DASHBOARD_HTML = """\
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
-  .chain-badge, .provider-badge, .group-badge, .tax-badge, .pnl-mode-badge, .pnl-trigger-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
+  .chain-badge, .provider-badge, .group-badge, .tax-badge, .strategy-mode-badge, .pnl-mode-badge, .pnl-trigger-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .tax-badge { color: #fde68a; background: #713f12; }
+  .strategy-mode-badge { color: #ede9fe; background: #5b21b6; }
+  .strategy-mode-badge.unknown { color: #cbd5e1; background: #475569; }
   .pnl-mode-badge { color: #cffafe; background: #155e75; }
   .pnl-trigger-badge { color: #dcfce7; background: #166534; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
@@ -2633,6 +2699,51 @@ DASHBOARD_HTML = """\
     return '<span class="badge ' + esc(s) + '">' + esc(s) + '</span>';
   }
 
+  function strategyPresentation(data) {
+    const explicit = String(data.strategy_mode || '').toLowerCase();
+    const allocation = String(data.entry_allocation_mode || '').toLowerCase();
+    const ladder = data.drawdown_ladder && typeof data.drawdown_ladder === 'object'
+      ? data.drawdown_ladder : null;
+    const mode = ['grid', 'gridless_threshold', 'drawdown_ladder'].includes(explicit)
+      ? explicit
+      : (allocation === 'drawdown_ladder' ? 'drawdown_ladder' : 'unknown');
+    const spacingValue = String(data.strategy_spacing || ladder?.spacing || '').toLowerCase();
+    const spacing = ['linear', 'log'].includes(spacingValue) ? spacingValue : '';
+    if (mode === 'grid') {
+      return { label: 'GRID', detail: 'Classic grid', css: '', ladderSummary: '' };
+    }
+    if (mode === 'gridless_threshold') {
+      return { label: 'GRIDLESS · THRESHOLD', detail: 'Gridless threshold', css: '', ladderSummary: '' };
+    }
+    if (mode === 'drawdown_ladder') {
+      const label = 'DRAWDOWN' + (spacing ? ' · ' + spacing.toUpperCase() : '');
+      const details = [];
+      if (ladder) {
+        const funded = Number(ladder.levels_funded);
+        const total = Number(ladder.levels_total);
+        const open = Number(ladder.levels_open);
+        const terminal = Number(ladder.terminal_drawdown_percent);
+        const reserved = Number(ladder.reserved_eth);
+        if (Number.isInteger(funded) && Number.isInteger(total)) details.push(funded + '/' + total + ' funded');
+        if (Number.isInteger(open)) details.push(open + ' open');
+        if (Number.isFinite(terminal)) details.push(terminal + '% terminal');
+        if (Number.isFinite(reserved)) details.push(reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH reserved');
+      }
+      return {
+        label: label,
+        detail: 'Drawdown ladder' + (spacing ? ' · ' + spacing : ''),
+        css: '',
+        ladderSummary: details.join(' · '),
+      };
+    }
+    return {
+      label: 'LEGACY / UNKNOWN',
+      detail: 'This bot has not reported an explicit strategy mode',
+      css: ' unknown',
+      ladderSummary: '',
+    };
+  }
+
   function reportAge(receivedAt, precisionSeconds) {
     const timestamp = Date.parse(receivedAt || '');
     if (!Number.isFinite(timestamp)) return { status: 'unknown', text: 'unknown' };
@@ -3467,6 +3578,9 @@ DASHBOARD_HTML = """\
         ? '<span class="tax-badge" title="' + esc(taxSource === 'auto-detected' ? 'Runtime auto-detected transfer fee' : 'Declared transfer fee') + '">' +
           (taxSource === 'auto-detected' ? 'AUTO TAX ' : 'TAX ') + esc(taxFee.toFixed(1)) + '%</span>'
         : '';
+      const strategy = strategyPresentation(d);
+      const strategyBadge = '<span class="strategy-mode-badge' + strategy.css + '" title="' +
+        esc(strategy.detail) + '">' + esc(strategy.label) + '</span>';
       const pnlMode = String(d.pnl_polling_mode || '').toLowerCase();
       const pnlModeLabel = pnlMode === 'bidirectional' ? 'P&L BUY ↔ SELL'
         : pnlMode === 'trilateral' ? 'P&L BUY ↔ SELL ↔ LEGACY'
@@ -3502,7 +3616,7 @@ DASHBOARD_HTML = """\
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
-        pnlModeBadge + pnlFocusBadge + triggerBadge +
+        strategyBadge + pnlModeBadge + pnlFocusBadge + triggerBadge +
         taxBadge +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 
@@ -3612,6 +3726,7 @@ DASHBOARD_HTML = """\
         ['Filled / Max Positions', 'position_capacity'],
       ];
       const moreMetrics = [
+        ['Strategy', 'strategy_display'], ['Ladder', 'ladder_summary'],
         ['Price', 'price'],
         ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
         ['P&L Polling', 'pnl_polling_mode'], ['Sell Trigger', 'pnl_trigger_mode'],
@@ -3630,6 +3745,8 @@ DASHBOARD_HTML = """\
       d.position_capacity = (d.filled_positions !== undefined && d.max_positions !== undefined)
         ? d.filled_positions + ' / ' + d.max_positions
         : null;
+      d.strategy_display = strategy.detail;
+      d.ladder_summary = strategy.ladderSummary || null;
       d.next_buy_estimated_eth = estimatedNextBuy(d);
       d.estimated_bag_value = estimatedBagValue(d, profitCurrency);
 

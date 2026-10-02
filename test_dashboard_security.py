@@ -156,6 +156,50 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
         self.assertEqual(len(result["events"]), 50)
         self.assertEqual(result["events"][-1], {"message": "49"})
 
+    def test_strategy_and_drawdown_summary_are_strictly_allowlisted(self):
+        payload = {
+            "strategy_mode": "drawdown_ladder",
+            "strategy_spacing": "log",
+            "entry_allocation_mode": "drawdown_ladder",
+            "drawdown_ladder": {
+                "id": "ladder-1",
+                "status": "active",
+                "spacing": "log",
+                "terminal_drawdown_percent": 95.0,
+                "levels_total": 50,
+                "levels_funded": 17,
+                "levels_open": 4,
+                "reserved_eth": 0.043,
+                "private_note": "drop me",
+            },
+        }
+
+        result = _allowlisted_status_payload(payload)
+
+        self.assertEqual(result["strategy_mode"], "drawdown_ladder")
+        self.assertEqual(result["strategy_spacing"], "log")
+        self.assertEqual(result["entry_allocation_mode"], "drawdown_ladder")
+        self.assertEqual(result["drawdown_ladder"], {
+            "id": "ladder-1",
+            "status": "active",
+            "spacing": "log",
+            "terminal_drawdown_percent": 95.0,
+            "levels_total": 50,
+            "levels_funded": 17,
+            "levels_open": 4,
+            "reserved_eth": 0.043,
+        })
+
+    def test_invalid_strategy_values_are_dropped_for_legacy_safety(self):
+        result = _allowlisted_status_payload({
+            "strategy_mode": "execute_everything",
+            "strategy_spacing": "spiral",
+            "entry_allocation_mode": "surprise",
+            "drawdown_ladder": "not-an-object",
+        })
+
+        self.assertEqual(result, {})
+
 
 if __name__ == "__main__":
     unittest.main()
