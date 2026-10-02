@@ -334,9 +334,40 @@ class TestTelegramAlerts(unittest.TestCase):
         self.assertGreater(len(rendered), 1)
 
     def test_trade_drama_has_broad_deterministic_variety(self):
-        rendered = {self.alerts._drama(f"bot-{index}", 0.02) for index in range(100)}
-        self.assertGreaterEqual(len(rendered), 6)
+        tiers = (0.02, 0.005, -0.02, -0.001)
+        rendered = {
+            profit: {self.alerts._drama(f"bot-{index}", profit) for index in range(256)}
+            for profit in tiers
+        }
+        for choices in rendered.values():
+            self.assertGreaterEqual(len(choices), 12)
+        themed = " ".join(choice for choices in rendered.values() for choice in choices).lower()
+        for word in ("runway", "judges", "workroom", "crown", "reunion"):
+            self.assertIn(word, themed)
         self.assertEqual(self.alerts._drama("same", -0.02), self.alerts._drama("same", -0.02))
+
+    def test_rivalry_commentary_is_varied_but_never_invents_scores(self):
+        events = (
+            "rematch", "return", "profitline_coup", "underwater_pageant",
+            "collapse", "upset", "narrow", "dominant", "crown_change",
+        )
+        corpus = []
+        for event in events:
+            rendered = {
+                self.alerts._rivalry_message(
+                    event, "ALPHA", "BETA", 0.012, 0.007, f"{event}:{index}"
+                )
+                for index in range(128)
+            }
+            self.assertGreaterEqual(len(rendered), 6, event)
+            for message in rendered:
+                self.assertIn("ALPHA +0.01200000 ETH", message)
+                self.assertIn("BETA +0.00700000 ETH", message)
+                self.assertIn("Lead: 0.00500000 ETH", message)
+            corpus.extend(rendered)
+        joined = " ".join(corpus).lower()
+        for word in ("runway", "judges", "workroom", "receipts", "reunion", "untucked"):
+            self.assertIn(word, joined)
 
     def test_crown_change_reports_exact_scores_and_deduplicates_same_pair_and_day(self):
         day = datetime(2026, 9, 4, 12, 0, tzinfo=timezone.utc)

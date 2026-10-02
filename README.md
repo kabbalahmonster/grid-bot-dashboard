@@ -201,7 +201,9 @@ commands. It reads the same in-memory snapshots used by the dashboard.
 The optional `fun` alert category adds deterministic trade drama, durable
 first-sell/trade-milestone/profit-streak achievements, and 24-hour crown-change
 rivalries. Profit and loss reactions draw from expanded magnitude-aware copy
-pools, while crown alerts rotate deterministic copy and, using persisted standings
+that mix market gallows humor with original runway, judging-panel, workroom,
+and reunion energy. Crown alerts lean harder into heated, receipts-backed feuds
+while rotating deterministic copy and, using persisted standings
 only, recognize narrow or dominant leads, upsets, collapses, returning champions,
 profit-line coups, underwater pageants, and repeat-rivalry rematches. They include the contenders' exact 24-hour realized
 profit so the drama never invents a result. The existing once-per-pair-per-day
