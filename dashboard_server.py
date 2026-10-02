@@ -1520,6 +1520,28 @@ DASHBOARD_HTML = """\
   .copy-address.copied { color: #22c55e; }
   .metric .value.positive { color: #22c55e; }
   .metric .value.negative { color: #ef4444; }
+  .strategy-overview { margin: 0.55rem 0 0.7rem; padding: 0.8rem; border: 1px solid #334155; border-radius: 0.5rem; background: rgba(15, 23, 42, 0.48); }
+  .strategy-overview-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.65rem; }
+  .strategy-overview-kicker { color: #94a3b8; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+  .strategy-overview-name { color: #f1f5f9; font-size: 0.82rem; font-weight: 700; text-align: right; }
+  .strategy-overview-name .spacing { color: #c4b5fd; }
+  .ladder-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; margin-bottom: 0.65rem; }
+  .ladder-stat { min-width: 0; padding: 0.45rem 0.35rem; border-radius: 0.35rem; background: #1e293b; text-align: center; }
+  .ladder-stat strong { display: block; color: #f1f5f9; font-size: 0.78rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .ladder-stat span { display: block; margin-top: 0.12rem; color: #64748b; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .buy-targets { display: grid; gap: 0.4rem; }
+  .buy-target { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr); align-items: center; gap: 0.75rem; padding: 0.55rem 0.65rem; border-left: 3px solid #64748b; border-radius: 0.3rem; background: #172033; }
+  .buy-target.ladder { border-left-color: #38bdf8; }
+  .buy-target.leading { border-left-color: #a78bfa; }
+  .buy-target-label { min-width: 0; color: #cbd5e1; font-size: 0.72rem; font-weight: 700; }
+  .buy-target-label small { display: block; margin-top: 0.12rem; color: #64748b; font-size: 0.6rem; font-weight: 500; }
+  .buy-target-value { min-width: 0; color: #f8fafc; font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+  .buy-target-value small { display: block; margin-top: 0.12rem; color: #94a3b8; font-size: 0.6rem; font-weight: 500; }
+  @media (max-width: 480px) {
+    .ladder-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .buy-target { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+    .buy-target-value { text-align: left; }
+  }
   details.market-movement { border-bottom: 1px solid #1e293b; }
   details.market-movement summary { display: flex; justify-content: space-between; padding: 0.35rem 0; cursor: pointer; list-style: none; font-size: 0.875rem; }
   details.market-movement summary::-webkit-details-marker { display: none; }
@@ -2729,10 +2751,10 @@ DASHBOARD_HTML = """\
     const spacingValue = String(data.strategy_spacing || ladder?.spacing || '').toLowerCase();
     const spacing = ['linear', 'log'].includes(spacingValue) ? spacingValue : '';
     if (mode === 'grid') {
-      return { label: 'GRID', detail: 'Classic grid', css: '', ladderSummary: '' };
+      return { mode: mode, spacing: '', label: 'GRID', detail: 'Classic grid', css: '', ladderSummary: '' };
     }
     if (mode === 'gridless_threshold') {
-      return { label: 'GRIDLESS · THRESHOLD', detail: 'Gridless threshold', css: '', ladderSummary: '' };
+      return { mode: mode, spacing: '', label: 'GRIDLESS · THRESHOLD', detail: 'Gridless threshold', css: '', ladderSummary: '' };
     }
     if (mode === 'drawdown_ladder' || mode === 'survivor') {
       const label = (mode === 'survivor' ? 'SURVIVOR' : 'DRAWDOWN') +
@@ -2750,6 +2772,8 @@ DASHBOARD_HTML = """\
         if (Number.isFinite(reserved)) details.push(reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH reserved');
       }
       return {
+        mode: mode,
+        spacing: spacing,
         label: label,
         detail: (mode === 'survivor' ? 'Dynamic survivor ladder' : 'Drawdown ladder') +
           (spacing ? ' · ' + spacing : ''),
@@ -2758,11 +2782,66 @@ DASHBOARD_HTML = """\
       };
     }
     return {
+      mode: 'unknown',
+      spacing: '',
       label: 'LEGACY / UNKNOWN',
       detail: 'This bot has not reported an explicit strategy mode',
       css: ' unknown',
       ladderSummary: '',
     };
+  }
+
+  function strategyOverview(strategy, ladder, currentPrice) {
+    if (!ladder || !['drawdown_ladder', 'survivor'].includes(strategy.mode)) return '';
+    const integer = function(value) {
+      const parsed = Number(value);
+      return Number.isInteger(parsed) ? parsed : null;
+    };
+    const decimal = function(value) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const funded = integer(ladder.levels_funded);
+    const total = integer(ladder.levels_total);
+    const open = integer(ladder.levels_open);
+    const ready = integer(ladder.levels_ready);
+    const terminal = decimal(ladder.terminal_drawdown_percent);
+    const reserved = decimal(ladder.reserved_eth);
+    const market = decimal(currentPrice);
+    const ladderPrice = decimal(ladder.next_level_price);
+    const leadingPrice = decimal(ladder.next_leading_edge_price);
+    const leadingTrigger = decimal(ladder.leading_edge_trigger_percent);
+    const stat = function(value, label) {
+      return '<div class="ladder-stat"><strong>' + esc(value) + '</strong><span>' + esc(label) + '</span></div>';
+    };
+    const distance = function(target) {
+      if (!(target > 0) || !(market > 0)) return '';
+      const percent = ((target / market) - 1) * 100;
+      if (Math.abs(percent) < 0.005) return 'at market';
+      return Math.abs(percent).toFixed(2) + '% ' + (percent < 0 ? 'below' : 'above') + ' market';
+    };
+    const target = function(css, label, note, value) {
+      if (!(value > 0)) return '';
+      return '<div class="buy-target ' + css + '"><div class="buy-target-label">' + esc(label) +
+        '<small>' + esc(note) + '</small></div><div class="buy-target-value">' + esc(value.toFixed(10)) +
+        '<small>ETH/token · ' + esc(distance(value)) + '</small></div></div>';
+    };
+    const strategyName = strategy.mode === 'survivor' ? 'Survivor' : 'Drawdown';
+    const spacingName = strategy.spacing ? strategy.spacing.charAt(0).toUpperCase() + strategy.spacing.slice(1) : '';
+    let html = '<section class="strategy-overview" aria-label="Strategy and ladder">' +
+      '<div class="strategy-overview-header"><span class="strategy-overview-kicker">Strategy &amp; ladder</span>' +
+      '<span class="strategy-overview-name">' + esc(strategyName) +
+      (spacingName ? ' <span class="spacing">· ' + esc(spacingName) + '</span>' : '') + '</span></div>' +
+      '<div class="ladder-stats">';
+    html += stat(funded !== null && total !== null ? funded + '/' + total : '—', 'Funded');
+    html += stat(open !== null ? open : '—', 'Open');
+    html += stat(terminal !== null ? '−' + terminal + '%' : '—', 'Floor');
+    html += stat(reserved !== null ? reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH' : '—', 'Reserved');
+    html += '</div><div class="buy-targets">';
+    html += target('ladder', 'Next ladder buy', ready !== null ? ready + ' ready rung' + (ready === 1 ? '' : 's') : 'Pullback entry', ladderPrice);
+    html += target('leading', 'Next leading buy', leadingTrigger !== null ? '+' + leadingTrigger.toFixed(2).replace(/\\.00$/, '') + '% P&L trigger' : 'Momentum entry', leadingPrice);
+    html += '</div></section>';
+    return html;
   }
 
   function reportAge(receivedAt, precisionSeconds) {
@@ -3738,6 +3817,9 @@ DASHBOARD_HTML = """\
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
+      const ladderTelemetry = d.drawdown_ladder && typeof d.drawdown_ladder === 'object'
+        ? d.drawdown_ladder : null;
+      const strategyOverviewHtml = strategyOverview(strategy, ladderTelemetry, d.price);
 
       const metrics = [
         ['Estimated Bag Value', 'estimated_bag_value'],
@@ -3747,10 +3829,7 @@ DASHBOARD_HTML = """\
         ['Filled / Max Positions', 'position_capacity'],
       ];
       const moreMetrics = [
-        ['Strategy', 'strategy_display'], ['Ladder', 'ladder_summary'],
-        ['Next Ladder Buy', 'next_ladder_buy_price'],
-        ['Next Leading Buy', 'next_leading_buy_price'],
-        ['Leading Buy Trigger', 'leading_buy_trigger_percent'],
+        ...(strategyOverviewHtml ? [] : [['Strategy', 'strategy_display']]),
         ['Price', 'price'],
         ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
         ['P&L Polling', 'pnl_polling_mode'], ['Sell Trigger', 'pnl_trigger_mode'],
@@ -3771,11 +3850,6 @@ DASHBOARD_HTML = """\
         : null;
       d.strategy_display = strategy.detail;
       d.ladder_summary = strategy.ladderSummary || null;
-      const ladderTelemetry = d.drawdown_ladder && typeof d.drawdown_ladder === 'object'
-        ? d.drawdown_ladder : {};
-      d.next_ladder_buy_price = ladderTelemetry.next_level_price ?? null;
-      d.next_leading_buy_price = ladderTelemetry.next_leading_edge_price ?? null;
-      d.leading_buy_trigger_percent = ladderTelemetry.leading_edge_trigger_percent ?? null;
       d.next_buy_estimated_eth = estimatedNextBuy(d);
       d.estimated_bag_value = estimatedBagValue(d, profitCurrency);
 
@@ -3844,6 +3918,7 @@ DASHBOARD_HTML = """\
         '</div></details>';
       metrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
+      html += strategyOverviewHtml;
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '</details>';
 
