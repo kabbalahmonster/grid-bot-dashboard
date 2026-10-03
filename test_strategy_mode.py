@@ -76,6 +76,7 @@ class TestStrategyModeRendering(unittest.TestCase):
         self.assertIn("'Next ladder buy'", body)
         self.assertIn("'Next leading buy'", body)
         self.assertIn("ETH/token ·", body)
+        self.assertIn("' ETH next'", body)
         self.assertIn("'% P&L trigger'", body)
         self.assertIn("...(strategyOverviewHtml ? [] : [['Strategy', 'strategy_display']])", body)
 

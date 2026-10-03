@@ -423,12 +423,17 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "strategy_spacing": "log",
   "entry_allocation_mode": "drawdown_ladder",
   "drawdown_ladder": {
+    "state_version": 4,
     "status": "active",
     "spacing": "log",
     "terminal_drawdown_percent": 95,
     "levels_total": 50,
     "levels_funded": 17,
     "levels_open": 4,
+    "levels_ready": 12,
+    "levels_reserved": 13,
+    "next_level_price": 0.00000123,
+    "next_level_amount_eth": 0.001,
     "reserved_eth": 0.043
   },
   "capacity_warning": null,
@@ -459,9 +464,10 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 `strategy_mode` is an optional display-only enum: `grid`,
 `gridless_threshold`, `drawdown_ladder`, or `survivor`. Ladder payloads may also provide
 `strategy_spacing` (`linear` or `log`) and a bounded `drawdown_ladder` summary.
-The card keeps this to one compact badge; funded/open counts, terminal drawdown,
-reserved ETH, the exact next ready ladder price, and the indicative next Survivor
-leading-edge price appear under **More info**. The leading price is a display target;
+The card keeps this to one compact badge; live funded/open/reserved counts,
+terminal drawdown, reserved ETH, the exact next ready ladder price and amount,
+and the indicative next Survivor leading-edge price appear under **More info**.
+The leading price is a display target;
 the bot still requires its fresh authorized route-side P&L observation before buying.
 Older bots need no configuration
 change: a missing explicit mode renders **LEGACY / UNKNOWN**, while older

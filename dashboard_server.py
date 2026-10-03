@@ -145,12 +145,15 @@ _SELL_ATTEMPT_FIELDS = frozenset({
 })
 _REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "5d", "3d", "24h", "12h", "6h", "4h", "2h", "1h"})
 _DRAWDOWN_LADDER_FIELDS = frozenset({
-    "id", "status", "spacing", "reference_price", "terminal_drawdown_percent",
+    "id", "state_version", "status", "spacing", "reference_price", "terminal_drawdown_percent",
     "levels_total", "levels_funded", "levels_open", "levels_adopted", "levels_ready",
+    "levels_reserved",
     "completed_cycles", "next_level_price", "allocated_budget_eth", "deployed_eth",
-    "reserved_eth", "average_position_eth", "realized_profit_eth", "expires_at",
+    "reserved_eth", "average_position_eth", "next_level_amount_eth",
+    "realized_profit_eth", "expires_at",
     "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
-    "leading_edge_open", "next_leading_edge_price", "leading_edge_trigger_percent",
+    "leading_edge_open", "leading_edge_open_count", "next_leading_edge_price",
+    "leading_edge_trigger_percent",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -472,7 +475,8 @@ def _allowlisted_drawdown_ladder(value):
         clean.pop("mode", None)
     for key in (
         "levels_total", "levels_funded", "levels_open", "levels_adopted",
-        "levels_ready", "completed_cycles", "reanchor_count",
+        "state_version", "levels_ready", "levels_reserved", "completed_cycles",
+        "reanchor_count", "leading_edge_open_count",
     ):
         number = clean.get(key)
         if not (isinstance(number, int) and not isinstance(number, bool)
@@ -481,7 +485,7 @@ def _allowlisted_drawdown_ladder(value):
     for key in (
         "reference_price", "next_level_price", "next_leading_edge_price",
         "allocated_budget_eth", "deployed_eth", "reserved_eth",
-        "average_position_eth",
+        "average_position_eth", "next_level_amount_eth",
     ):
         number = clean.get(key)
         if not (type(number) in (int, float) and math.isfinite(number)
@@ -2805,10 +2809,12 @@ DASHBOARD_HTML = """\
     const total = integer(ladder.levels_total);
     const open = integer(ladder.levels_open);
     const ready = integer(ladder.levels_ready);
+    const reservedCount = integer(ladder.levels_reserved);
     const terminal = decimal(ladder.terminal_drawdown_percent);
     const reserved = decimal(ladder.reserved_eth);
     const market = decimal(currentPrice);
     const ladderPrice = decimal(ladder.next_level_price);
+    const ladderAmount = decimal(ladder.next_level_amount_eth);
     const leadingPrice = decimal(ladder.next_leading_edge_price);
     const leadingTrigger = decimal(ladder.leading_edge_trigger_percent);
     const stat = function(value, label) {
@@ -2838,7 +2844,11 @@ DASHBOARD_HTML = """\
     html += stat(terminal !== null ? '−' + terminal + '%' : '—', 'Floor');
     html += stat(reserved !== null ? reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH' : '—', 'Reserved');
     html += '</div><div class="buy-targets">';
-    html += target('ladder', 'Next ladder buy', ready !== null ? ready + ' ready rung' + (ready === 1 ? '' : 's') : 'Pullback entry', ladderPrice);
+    const ladderNotes = [];
+    if (ready !== null) ladderNotes.push(ready + ' ready rung' + (ready === 1 ? '' : 's'));
+    if (reservedCount !== null && reservedCount !== ready) ladderNotes.push(reservedCount + ' reserved');
+    if (ladderAmount !== null) ladderNotes.push(ladderAmount.toFixed(6).replace(/\\.?0+$/, '') + ' ETH next');
+    html += target('ladder', 'Next ladder buy', ladderNotes.join(' · ') || 'Pullback entry', ladderPrice);
     html += target('leading', 'Next leading buy', leadingTrigger !== null ? '+' + leadingTrigger.toFixed(2).replace(/\\.00$/, '') + '% P&L trigger' : 'Momentum entry', leadingPrice);
     html += '</div></section>';
     return html;
