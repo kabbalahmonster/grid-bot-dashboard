@@ -12,7 +12,7 @@ Each bot card shows:
 - **Filled / Max Positions** — active capacity, such as `12 / 12`
 - The three highest-P&L positions, expandable to show all positions sorted by P&L descending
 
-Each position shows token amount, ETH cost basis, and P&L percentage. A compact strategy badge identifies **GRID**, **GRIDLESS · THRESHOLD**, **DRAWDOWN · LINEAR/LOG**, or dynamic **SURVIVOR · LINEAR/LOG**; older payloads safely display **LEGACY / UNKNOWN**. **More info** reveals strategy/ladder detail, price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
+Each position shows token amount, ETH cost basis, and separate buy, sell, and legacy P&L marks. A compact strategy badge identifies **GRID**, **GRIDLESS · THRESHOLD**, **DRAWDOWN · LINEAR/LOG**, or dynamic **SURVIVOR · LINEAR/LOG**; older payloads safely display **LEGACY / UNKNOWN**. Polling badges cover `LEGACY POLLS`, `BUY POLLS`, `SELL POLLS`, `BUY ↔ SELL`, and `BUY ↔ SELL ↔ LEGACY`; their tooltips explain which marks may wake triggers. An adaptive `FOCUS` badge appears when a lane is approaching a trigger or latched across repeated tournament attempts. A separate minimum-profit trigger badge appears when enabled. **More info** reveals strategy/ladder detail, price, buys, sells, realized sell count/tracking date, ETH and USDG balances, cumulative confirmed USDG treasury sweeps, token balance, wallet/token explorer links, RPC status, and uptime. Cards may also show a static **ADD POSITIONS** capacity flag, provider badge, bounded Trade History, structured Events, and a cyan **SELL CHECK ACTIVE** strip while the current report says a sell quote is below the configured minimum.
 
 ## Features
 
@@ -714,7 +714,14 @@ tournament's `updated_at` event time, newest first. Every card displays a live
 age counter. The crown identifies the economically selected route only; a
 separate green `TRANSACTION CONFIRMED ON-CHAIN` badge and transaction link are
 shown only after a successful receipt is reported. Completed results remain
-visible for two minutes unless superseded by a newer tournament.
+visible for two minutes unless superseded by a newer tournament. The fleet
+summary mirrors those visible cards, marks buy rounds with `💰` and sell rounds
+with `⚔️`, and adds `👑` beside a token after its transaction is confirmed.
+When a new execution-preflight round begins, its card retains the previous
+non-empty contestant standings while fresh parallel quotes are collected, then
+atomically replaces and reorders them when the new candidate set arrives. A
+small freshness note distinguishes retained standings from current-round data;
+the card no longer flashes an empty scoreboard between rounds.
 
 If no contestant clears every fresh execution guard, the bot may continue via
 its configured baseline provider. The dashboard keeps this inside the same

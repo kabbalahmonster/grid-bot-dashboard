@@ -108,9 +108,17 @@ _STATUS_FIELDS = frozenset({
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
+    "pnl_polling_mode", "pnl_legacy_triggers", "pnl_trigger_mode",
+    "pnl_focus_side", "pnl_focus_reason", "pnl_focus_directions",
     "poll_interval_seconds", "trades_history", "events", "rpc_status", "sigil",
 })
-_POSITION_FIELDS = frozenset({"id", "buy_amount_token", "cost_basis", "pnl", "timestamp"})
+_POSITION_FIELDS = frozenset({
+    "id", "buy_amount_token", "cost_basis", "pnl", "timestamp",
+    "buy_pnl", "buy_quote_at", "buy_quote_provider", "buy_projected_gas_eth",
+    "sell_pnl", "sell_quote_at", "sell_quote_provider",
+    "sell_quote_source_position_id", "sell_projected_gas_eth", "sell_quote_basis",
+    "legacy_pnl", "legacy_quote_at", "legacy_quote_provider", "legacy_quote_basis",
+})
 _TRADE_FIELDS = frozenset({
     "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
     "profit_eth", "gas_fee_eth",
@@ -733,6 +741,26 @@ def _allowlisted_status_payload(data):
     if not (isinstance(revision, int) and not isinstance(revision, bool)
             and 0 <= revision < 2**53):
         filtered.pop("revision", None)
+    if filtered.get("pnl_polling_mode") not in {
+        "legacy", "buy", "sell", "bidirectional", "trilateral",
+    }:
+        filtered.pop("pnl_polling_mode", None)
+    if not isinstance(filtered.get("pnl_legacy_triggers"), bool):
+        filtered.pop("pnl_legacy_triggers", None)
+    focus_side = filtered.get("pnl_focus_side")
+    if not (isinstance(focus_side, str) and re.fullmatch(
+        r"(?:buy|sell|legacy)(?:\+(?:buy|sell|legacy)){0,2}", focus_side
+    )):
+        filtered.pop("pnl_focus_side", None)
+    if filtered.get("pnl_focus_reason") not in {"near", "triggered"}:
+        filtered.pop("pnl_focus_reason", None)
+    focus_directions = filtered.get("pnl_focus_directions")
+    if focus_directions not in {"", "buy", "sell", "buy+sell"}:
+        filtered.pop("pnl_focus_directions", None)
+    if filtered.get("pnl_trigger_mode") not in {
+        "sell_threshold", "minimum_profit",
+    }:
+        filtered.pop("pnl_trigger_mode", None)
     if filtered.get("strategy_mode") not in {
         "grid", "gridless_threshold", "drawdown_ladder", "survivor",
     }:
@@ -1453,10 +1481,12 @@ DASHBOARD_HTML = """\
   .filter-wrap { position: relative; display: inline-flex; }
   .filter-wrap input { padding-right: 2rem; width: 100%; }
   .clear-filter { position: absolute; right: 0.25rem; top: 50%; transform: translateY(-50%); border: 0 !important; background: transparent !important; padding: 0.25rem 0.45rem !important; color: #94a3b8 !important; font-size: 1rem; line-height: 1; display: none; }
-  .chain-badge, .provider-badge, .group-badge, .tax-badge, .strategy-mode-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
+  .chain-badge, .provider-badge, .group-badge, .tax-badge, .strategy-mode-badge, .pnl-mode-badge, .pnl-trigger-badge { display: inline-block; color: #cbd5e1; background: #334155; border-radius: 9999px; padding: 0.1rem 0.4rem; font-size: 0.65rem; margin-left: 0.3rem; }
   .tax-badge { color: #fde68a; background: #713f12; }
   .strategy-mode-badge { color: #ede9fe; background: #5b21b6; }
   .strategy-mode-badge.unknown { color: #cbd5e1; background: #475569; }
+  .pnl-mode-badge { color: #cffafe; background: #155e75; }
+  .pnl-trigger-badge { color: #dcfce7; background: #166534; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 1rem; }
   .card { background: #1e293b; border: 1px solid #334155; border-radius: 0.5rem; padding: 1.25rem; contain: layout paint style; }
   .card.capacity-warning { border-color: #f59e0b; box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.25); }
@@ -1529,11 +1559,22 @@ DASHBOARD_HTML = """\
   .positions { margin-top: 1rem; border-top: 1px solid #334155; padding-top: 0.75rem; }
   .positions h3 { font-size: 0.875rem; color: #94a3b8; margin-bottom: 0.5rem; }
   .position { background: #0f172a; padding: 0.5rem; border-radius: 0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
-  .position .pos-header { display: flex; justify-content: space-between; margin-bottom: 0.25rem; }
+  .position .pos-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem; }
   .position .pos-id { color: #64748b; font-size: 0.7rem; }
   .position .pos-pnl { font-weight: 600; }
   .position .pos-pnl.positive { color: #22c55e; }
   .position .pos-pnl.negative { color: #ef4444; }
+  .position .pnl-sides { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 0.4rem; margin-bottom: 0.4rem; }
+  .position .pnl-side { min-width: 0; padding: 0.42rem 0.48rem; border: 1px solid #263449; border-radius: 0.35rem; background: #111c2f; }
+  .position .pnl-side.sell { background: #101d1a; border-color: #234138; }
+  .position .pnl-side.legacy { background: #1d1928; border-color: #42355d; }
+  .position .pnl-label { display: flex; justify-content: space-between; gap: 0.25rem; color: #7c8ba1; font-size: 0.61rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+  .position .pnl-value { display: block; margin-top: 0.12rem; font-size: 1rem; font-weight: 750; line-height: 1.15; }
+  .position .pnl-value.positive { color: #22c55e; }
+  .position .pnl-value.negative { color: #ef4444; }
+  .position .pnl-value.unknown { color: #64748b; }
+  .position .pnl-meta { display: block; overflow: hidden; margin-top: 0.14rem; color: #64748b; font-size: 0.6rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .position .quote-kind { color: #a78bfa; font-size: 0.58rem; }
   .position .pos-details { color: #94a3b8; font-size: 0.75rem; }
   .position.pos-hidden { display: none; }
   .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
@@ -1676,6 +1717,7 @@ DASHBOARD_HTML = """\
   .tournament-pending { display:inline-flex; align-items:center; gap:.3rem; margin:.15rem 0 .55rem; padding:.25rem .5rem; border:1px solid #38bdf8; border-radius:999px; background:rgba(7,89,133,.42); color:#bae6fd; font-size:.76rem; font-weight:800; letter-spacing:.04em; animation:capacity-pulse 1.5s ease-in-out infinite; }
   .tournament-pending a { color:inherit; }
   .tournament-card .arena-status { color: #c4b5fd; margin-bottom: .55rem; }
+  .tournament-scoreboard-note { color:#94a3b8; font-size:.74rem; margin:-.15rem 0 .45rem; }
   .tournament-scoreboard { display: grid; gap: .4rem; }
   .tournament-contestant { border: 1px solid #334155; background: rgba(15,23,42,.72); border-radius: .45rem; overflow: hidden; }
   .tournament-contestant.winner { border-color: #facc15; box-shadow: 0 0 0 1px rgba(250,204,21,.22); }
@@ -1817,6 +1859,10 @@ DASHBOARD_HTML = """\
   const openTrades = new Set();
   const openEvents = new Set();
   const openTournamentContestants = new Set();
+  // A new execution-preflight round is announced before its parallel route
+  // workers return. Keep the last complete standings visible during that
+  // bounded collection window instead of flashing an empty scoreboard.
+  const tournamentContestantDisplays = new Map();
   // Completed tournament payloads can be repeated by subsequent bot reports.
   // Remember the transaction locally so routine SSE/incremental updates do not
   // restart its display lifetime on every poll.
@@ -2225,6 +2271,25 @@ DASHBOARD_HTML = """\
     return Number.isFinite(timestamp) ? timestamp : 0;
   }
 
+  function tournamentRowsForDisplay(comparison, botKey) {
+    const reported = Array.isArray(comparison?.candidates)
+      ? comparison.candidates.slice(0, 8) : [];
+    if (comparison?.mode !== 'execution_preflight') {
+      return { rows: reported, retained: false };
+    }
+    const displayKey = String(botKey || '') + ':' + String(comparison.direction || '');
+    if (reported.length) {
+      tournamentContestantDisplays.set(displayKey, {
+        tournamentId: String(comparison.tournament_id || ''),
+        rows: reported.slice()
+      });
+      return { rows: reported, retained: false };
+    }
+    const previous = tournamentContestantDisplays.get(displayKey);
+    if (!previous || !previous.rows.length) return { rows: [], retained: false };
+    return { rows: previous.rows.slice(), retained: true };
+  }
+
   function tournamentAgeLabel(timestamp) {
     const parsed = Date.parse(timestamp || '');
     if (!Number.isFinite(parsed)) return 'age unavailable';
@@ -2246,7 +2311,10 @@ DASHBOARD_HTML = """\
   function renderRouteComparison(comparison, botKey) {
     if (!comparison || !['shadow', 'execution_preflight'].includes(comparison.mode)) return '';
     const value = v => esc(v ?? '—');
-    const rows = (Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : []).sort(function(a, b) {
+    const displayedContestants = typeof tournamentRowsForDisplay === 'function'
+      ? tournamentRowsForDisplay(comparison, botKey)
+      : { rows: Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : [], retained: false };
+    const rows = displayedContestants.rows.sort(function(a, b) {
       const av = Number(a.projected_net_score); const bv = Number(b.projected_net_score);
       if (!Number.isFinite(av)) return 1; if (!Number.isFinite(bv)) return -1; return bv - av;
     });
@@ -2260,7 +2328,7 @@ DASHBOARD_HTML = """\
       const abort = comparison.execution_abort || {};
       const marketPnl = Number(abort.market_pnl_percent);
       const blockThreshold = Number(abort.block_threshold_percent);
-      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? (isBuy ? '⏸️ BUY TOURNAMENT ABORTED' : '⏸️ SELL TOURNAMENT ABORTED') : (isBuy ? '🛒 BUY ROUTE TOURNAMENT' : '⚔️ SELL ROUTE TOURNAMENT');
+      const title = completed ? '🏁 TOURNAMENT COMPLETE' : pending ? '📡 TRANSACTION SUBMITTED' : aborted ? (isBuy ? '⏸️ BUY TOURNAMENT ABORTED' : '⏸️ SELL TOURNAMENT ABORTED') : (isBuy ? '💰 BUY ROUTE TOURNAMENT' : '⚔️ SELL ROUTE TOURNAMENT');
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
@@ -2275,7 +2343,10 @@ DASHBOARD_HTML = """\
       const pendingTx = pending && comparison.pending_transaction?.tx_hash;
       const pendingBadge = pendingTx
         ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
-      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div><div class="tournament-scoreboard">';
+      const scoreboardNote = displayedContestants.retained
+        ? '<div class="tournament-scoreboard-note">Refreshing contestants · showing previous-round standings until fresh scores arrive</div>'
+        : '';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div>' + scoreboardNote + '<div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
@@ -2919,12 +2990,27 @@ DASHBOARD_HTML = """\
       const state = bots[id];
       return Boolean(state.sell_attempt && state.sell_attempt.status && state.sell_attempt.route_comparison?.mode !== 'execution_preflight') && reportAge(state.received_at).status === 'running';
     });
-    const activeTournaments = Object.keys(bots).filter(function(id) {
+    const activeTournaments = Object.keys(bots).flatMap(function(id) {
       const state = bots[id];
-      const comparisons = [state.buy_attempt?.route_comparison, state.sell_attempt?.route_comparison];
-      return comparisons.some(function(tournament) {
-        return Boolean(tournament && tournament.mode === 'execution_preflight' && !['completed', 'execution_aborted', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status));
-      }) && reportAge(state.received_at).status === 'running';
+      if (reportAge(state.received_at).status !== 'running') return [];
+      const botKey = encodeURIComponent(id);
+      return [
+        { direction: 'buy', tournament: tournamentForDisplay(state.buy_attempt?.route_comparison, botKey) },
+        { direction: 'sell', tournament: tournamentForDisplay(state.sell_attempt?.route_comparison, botKey) },
+      ].filter(function(entry) {
+        const tournament = entry.tournament;
+        if (!tournament || tournament.mode !== 'execution_preflight') return false;
+        const confirmed = tournament.status === 'completed' && Boolean(tournament.final?.tx_hash);
+        const active = !['completed', 'execution_aborted', 'preflight_failed', 'preflight_no_authorized_candidate'].includes(tournament.status);
+        return confirmed || active;
+      }).map(function(entry) {
+        return {
+          botId: id,
+          direction: entry.tournament.direction === 'buy' || entry.tournament.direction === 'sell'
+            ? entry.tournament.direction : entry.direction,
+          confirmed: entry.tournament.status === 'completed' && Boolean(entry.tournament.final?.tx_hash),
+        };
+      });
     });
     const buyGasBlocked = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -2986,8 +3072,13 @@ DASHBOARD_HTML = """\
     const nextRealizedProfitUnit = { eth: 'CAD', cad: 'USD', usd: 'ETH' }[realizedProfitUnit];
       const nextSummaryHtml = (activeTournaments.length
         ? '<span class="summary-item tournaments-active" aria-live="polite">⚔️ Active tournaments: ' + activeTournaments.length +
-          ' <span class="bot-names">(' + activeTournaments.map(function(id) {
-            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(id) + '">' + esc(bots[id].token_symbol || bots[id].display_name || id) + '</button>';
+          ' <span class="bot-names">(' + activeTournaments.map(function(entry) {
+            const directionEmoji = entry.direction === 'buy' ? '💰' : '⚔️';
+            const directionLabel = entry.direction === 'buy' ? 'Buy tournament' : 'Sell tournament';
+            const crown = entry.confirmed ? ' 👑' : '';
+            return '<button class="needs-position-link" type="button" data-focus-bot="' + esc(entry.botId) + '" title="' + directionLabel + '">' +
+              '<span aria-label="' + directionLabel + '">' + directionEmoji + '</span> ' +
+              esc(bots[entry.botId].token_symbol || bots[entry.botId].display_name || entry.botId) + crown + '</button>';
           }).join(', ') + ')</span></span>'
         : '') +
       (buyGasBlocked.length
@@ -3241,7 +3332,8 @@ DASHBOARD_HTML = """\
 
   function topPositionPnl(state) {
     const values = (state.positions || []).map(function(position) {
-      return parseFloat(position.pnl);
+      const sell = parseFloat(position.sell_pnl);
+      return Number.isFinite(sell) ? sell : parseFloat(position.buy_pnl ?? position.pnl);
     }).filter(Number.isFinite);
     return values.length ? Math.max.apply(null, values) : null;
   }
@@ -3629,10 +3721,43 @@ DASHBOARD_HTML = """\
       const strategy = strategyPresentation(d);
       const strategyBadge = '<span class="strategy-mode-badge' + strategy.css + '" title="' +
         esc(strategy.detail) + '">' + esc(strategy.label) + '</span>';
+      const pnlMode = String(d.pnl_polling_mode || '').toLowerCase();
+      const pnlModeLabel = pnlMode === 'bidirectional' ? 'P&L BUY ↔ SELL'
+        : pnlMode === 'trilateral' ? 'P&L BUY ↔ SELL ↔ LEGACY'
+        : pnlMode === 'legacy' ? 'P&L LEGACY POLLS'
+        : pnlMode === 'buy' ? 'P&L BUY POLLS'
+        : pnlMode === 'sell' ? 'P&L SELL POLLS' : '';
+      const pnlModeTitle = pnlMode === 'bidirectional'
+        ? 'Buy triggers use buy-side marks; sell triggers use sell-side marks'
+        : pnlMode === 'trilateral'
+          ? 'Buy, sell and legacy marks rotate at one quote per cycle; legacy triggers are ' + (d.pnl_legacy_triggers ? 'enabled for both directions' : 'observational only')
+        : pnlMode === 'legacy'
+          ? 'Only the original gross 0.001 ETH/WETH buy quote is polled' + (d.pnl_legacy_triggers ? '; it drives both buy and sell triggers' : '; triggers are disabled')
+        : pnlMode === 'buy'
+          ? 'Only buy-side quotes are polled; both buy and sell triggers use the buy-side mark'
+          : pnlMode === 'sell'
+            ? 'Only sell-side quotes are polled; both buy and sell triggers use the sell-side mark'
+            : '';
+      const pnlModeBadge = pnlModeLabel
+        ? '<span class="pnl-mode-badge" title="' + esc(pnlModeTitle) + '">' + esc(pnlModeLabel) + '</span>'
+        : '';
+      const pnlFocusSide = String(d.pnl_focus_side || '').toUpperCase();
+      const pnlFocusReason = String(d.pnl_focus_reason || '');
+      const pnlFocusDirections = String(d.pnl_focus_directions || '');
+      const pnlFocusTitle = pnlFocusReason === 'triggered'
+        ? 'Trigger latched for ' + (pnlFocusDirections || 'strategy') + '; this quote lane is refreshed every cycle until execution succeeds or a fresh mark exits trigger range'
+        : 'This quote lane is within the trigger approach window and is refreshed every other cycle';
+      const pnlFocusBadge = pnlFocusSide
+        ? '<span class="pnl-trigger-badge" title="' + esc(pnlFocusTitle) + '">FOCUS ' + esc(pnlFocusSide) + (pnlFocusReason === 'triggered' ? ' ⚡' : '') + '</span>'
+        : '';
+      const triggerBadge = d.pnl_trigger_mode === 'minimum_profit'
+        ? '<span class="pnl-trigger-badge" title="Normal sells wake at MIN_PROFIT_PERCENT">SELL ≥ MIN ' + esc(d.sell_point_percent) + '%</span>'
+        : '';
       html += '<div class="bot-id">' + esc(d.display_name || botId) + ' ' + statusBadge(status).replace('<span ', '<span data-inferred="' + (!d.status) + '" ') +
         (chain ? '<span class="chain-badge">' + esc(chain.name) + '</span>' : '') +
         (d.swap_provider ? '<span class="provider-badge">' + esc(String(d.swap_provider).toUpperCase()) + '</span>' : '') +
-        strategyBadge + taxBadge +
+        strategyBadge + pnlModeBadge + pnlFocusBadge + triggerBadge +
+        taxBadge +
         (d.group ? '<span class="group-badge">' + esc(d.group) + '</span>' : '') + '</div>';
 
       if (d.capacity_warning) {
@@ -3747,6 +3872,7 @@ DASHBOARD_HTML = """\
         ...(strategyOverviewHtml ? [] : [['Strategy', 'strategy_display']]),
         ['Price', 'price'],
         ['Buy Point', 'buy_point_percent'], ['Sell Point', 'sell_point_percent'],
+        ['P&L Polling', 'pnl_polling_mode'], ['Sell Trigger', 'pnl_trigger_mode'],
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
@@ -3800,6 +3926,10 @@ DASHBOARD_HTML = """\
             else val = Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm';
           } else if (key === 'poll_interval_seconds') {
             val = parseFloat(val) + 's';
+          } else if (key === 'pnl_polling_mode') {
+            val = String(val) === 'bidirectional' ? 'Buy ↔ Sell' : String(val).toUpperCase() + ' only';
+          } else if (key === 'pnl_trigger_mode') {
+            val = String(val) === 'minimum_profit' ? 'Minimum profit' : 'Sell threshold';
           } else if (key === 'next_buy_estimated_eth' || key === 'gas_reserve_eth' || key === 'estimated_moonbag_value_eth') {
             val = parseFloat(val).toFixed(5).replace(/\\.?0+$/, '') + ' ETH';
           } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {
@@ -3887,23 +4017,45 @@ DASHBOARD_HTML = """\
       // Display positions if available (show 3, expandable)
       if (d.positions && d.positions.length > 0) {
         const sorted = d.positions.slice().sort(function(a, b) {
-          const ap = Number.isFinite(parseFloat(a.pnl)) ? parseFloat(a.pnl) : -Infinity;
-          const bp = Number.isFinite(parseFloat(b.pnl)) ? parseFloat(b.pnl) : -Infinity;
+          const ap = Number.isFinite(parseFloat(a.sell_pnl)) ? parseFloat(a.sell_pnl) : (Number.isFinite(parseFloat(a.buy_pnl)) ? parseFloat(a.buy_pnl) : (Number.isFinite(parseFloat(a.legacy_pnl)) ? parseFloat(a.legacy_pnl) : parseFloat(a.pnl)));
+          const bp = Number.isFinite(parseFloat(b.sell_pnl)) ? parseFloat(b.sell_pnl) : (Number.isFinite(parseFloat(b.buy_pnl)) ? parseFloat(b.buy_pnl) : (Number.isFinite(parseFloat(b.legacy_pnl)) ? parseFloat(b.legacy_pnl) : parseFloat(b.pnl)));
           if (ap !== bp) return bp - ap;
           return (parseInt(b.id, 10) || 0) - (parseInt(a.id, 10) || 0);
         });
         const showCount = 3;
         html += '<div class="positions"><h3>Positions (' + sorted.length + ')</h3>';
         sorted.forEach(function(pos, i) {
-          const pnl = pos.pnl !== undefined ? pos.pnl : null;
-          const pnlClass = pnl !== null ? (parseFloat(pnl) >= 0 ? 'positive' : 'negative') : '';
+          const hasBuyNet = Number.isFinite(parseFloat(pos.buy_pnl));
+          const buyPnl = hasBuyNet ? parseFloat(pos.buy_pnl) : null;
+          const sellPnl = Number.isFinite(parseFloat(pos.sell_pnl)) ? parseFloat(pos.sell_pnl) : null;
+          const hasDedicatedLegacy = Number.isFinite(parseFloat(pos.legacy_pnl));
+          const legacyPnl = hasDedicatedLegacy ? parseFloat(pos.legacy_pnl)
+            : (!hasBuyNet && sellPnl === null && Number.isFinite(parseFloat(pos.pnl)) ? parseFloat(pos.pnl) : null);
+          const buyClass = Number.isFinite(buyPnl) ? (buyPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const sellClass = Number.isFinite(sellPnl) ? (sellPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const legacyClass = Number.isFinite(legacyPnl) ? (legacyPnl >= 0 ? 'positive' : 'negative') : 'unknown';
+          const buyAge = reportAge(pos.buy_quote_at).text;
+          const sellAge = reportAge(pos.sell_quote_at).text;
+          const legacyAge = reportAge(pos.legacy_quote_at).text;
+          const sellExact = String(pos.sell_quote_source_position_id || '') === String(pos.id || '');
           const hidden = i >= showCount ? ' pos-hidden' : '';
           const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
           html += '<div class="position' + hidden + '"' + visibleStyle + '>';
-          html += '<div class="pos-header"><span class="pos-id">#' + esc(pos.id || '—') + '</span>';
-          if (pnl !== null) {
-            html += '<span class="pos-pnl ' + pnlClass + '">' + (pnl >= 0 ? '+' : '') + esc(parseFloat(pnl).toFixed(1)) + '%</span>';
-          }
+          html += '<div class="pos-header"><span class="pos-id">POSITION #' + esc(pos.id || '—') + '</span>' +
+            (sellPnl !== null ? '<span class="quote-kind">' + (sellExact ? 'exact exit size' : 'extrapolated exit') + '</span>' : '') + '</div>';
+          html += '<div class="pnl-sides">';
+          html += '<div class="pnl-side buy" title="Net buy-side mark using conservative quoted token output and projected gas">' +
+            '<span class="pnl-label"><span>Buy mark</span><span>net</span></span>' +
+            '<span class="pnl-value ' + buyClass + '">' + (Number.isFinite(buyPnl) ? ((buyPnl >= 0 ? '+' : '') + esc(buyPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.buy_quote_at ? esc((pos.buy_quote_provider || 'route') + ' · ' + buyAge) : 'awaiting quote') + '</span></div>';
+          html += '<div class="pnl-side sell" title="Net sell-side exit after conservative fees, slippage and projected gas">' +
+            '<span class="pnl-label"><span>Sell exit</span><span>net</span></span>' +
+            '<span class="pnl-value ' + sellClass + '">' + (Number.isFinite(sellPnl) ? ((sellPnl >= 0 ? '+' : '') + esc(sellPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.sell_quote_at ? esc((pos.sell_quote_provider || 'route') + ' · ' + sellAge) : 'awaiting quote') + '</span></div>';
+          html += '<div class="pnl-side legacy" title="Original gross 0.001 ETH/WETH buy-side spot mark without projected gas or slippage floor">' +
+            '<span class="pnl-label"><span>Legacy</span><span>gross</span></span>' +
+            '<span class="pnl-value ' + legacyClass + '">' + (Number.isFinite(legacyPnl) ? ((legacyPnl >= 0 ? '+' : '') + esc(legacyPnl.toFixed(1)) + '%') : '—') + '</span>' +
+            '<span class="pnl-meta">' + (pos.legacy_quote_at ? esc((pos.legacy_quote_provider || 'route') + ' · ' + legacyAge) : (hasDedicatedLegacy ? 'awaiting quote' : 'not polled')) + '</span></div>';
           html += '</div>';
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';

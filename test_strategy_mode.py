@@ -16,9 +16,15 @@ class TestStrategyModeRendering(unittest.TestCase):
         end = body.index("\n  function reportAge(", start)
         script = body[start:end]
         result = subprocess.run(
-            ["node", "-e", script + "\nconsole.log(JSON.stringify("
-             + json.dumps(values) + ".map(strategyPresentation)));"],
-            capture_output=True, text=True, check=True,
+            [
+                "node",
+                "-e",
+                script + "\nconsole.log(JSON.stringify(" + json.dumps(values)
+                + ".map(strategyPresentation)));",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
         )
         return json.loads(result.stdout)
 
@@ -32,16 +38,23 @@ class TestStrategyModeRendering(unittest.TestCase):
             {},
         ])
         self.assertEqual([item["label"] for item in rendered], [
-            "GRID", "GRIDLESS · THRESHOLD", "DRAWDOWN · LINEAR",
-            "DRAWDOWN · LOG", "SURVIVOR · LOG", "LEGACY / UNKNOWN",
+            "GRID",
+            "GRIDLESS · THRESHOLD",
+            "DRAWDOWN · LINEAR",
+            "DRAWDOWN · LOG",
+            "SURVIVOR · LOG",
+            "LEGACY / UNKNOWN",
         ])
 
     def test_old_drawdown_payload_is_inferred_and_ladder_summary_is_compact(self):
         rendered = self._present([{
             "entry_allocation_mode": "drawdown_ladder",
             "drawdown_ladder": {
-                "spacing": "log", "levels_funded": 17, "levels_total": 50,
-                "levels_open": 4, "terminal_drawdown_percent": 95,
+                "spacing": "log",
+                "levels_funded": 17,
+                "levels_total": 50,
+                "levels_open": 4,
+                "terminal_drawdown_percent": 95,
                 "reserved_eth": 0.043,
             },
         }])[0]
@@ -54,7 +67,7 @@ class TestStrategyModeRendering(unittest.TestCase):
     def test_card_uses_one_strategy_badge_and_compact_ladder_overview(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('class="strategy-mode-badge', body)
-        self.assertIn("strategyBadge + taxBadge", body)
+        self.assertIn("strategyBadge + pnlModeBadge", body)
         self.assertIn('class="strategy-overview"', body)
         self.assertIn('class="ladder-stats"', body)
         self.assertIn("'Next ladder buy'", body)
