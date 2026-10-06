@@ -717,6 +717,11 @@ shown only after a successful receipt is reported. Completed results remain
 visible for two minutes unless superseded by a newer tournament. The fleet
 summary mirrors those visible cards, marks buy rounds with `💰` and sell rounds
 with `⚔️`, and adds `👑` beside a token after its transaction is confirmed.
+When a new execution-preflight round begins, its card retains the previous
+non-empty contestant standings while fresh parallel quotes are collected, then
+atomically replaces and reorders them when the new candidate set arrives. A
+small freshness note distinguishes retained standings from current-round data;
+the card no longer flashes an empty scoreboard between rounds.
 
 If no contestant clears every fresh execution guard, the bot may continue via
 its configured baseline provider. The dashboard keeps this inside the same

@@ -489,6 +489,45 @@ class TestRouteComparison(unittest.TestCase):
             self.assertIn(needle, html)
         self.assertIn("timedOut ? 'timed out'", html)
 
+    def test_live_tournament_scoreboard_retains_rows_while_next_round_collects(self):
+        html = server.DASHBOARD_HTML
+        start = html.index("  function tournamentRowsForDisplay(")
+        end = html.index("\n  function tournamentAgeLabel(", start)
+        helper = html[start:end]
+        script = """
+const tournamentContestantDisplays = new Map();
+""" + helper + """
+const previous = {
+  mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-1',
+  candidates: [{provider: 'uniswap', settlement: 'native', projected_net_score: '9'}]
+};
+const collecting = {
+  mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-2',
+  status: 'collecting_candidates', candidates: []
+};
+const fresh = {
+  mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-2',
+  candidates: [{provider: 'sushiswap', settlement: 'weth', projected_net_score: '10'}]
+};
+const results = [
+  tournamentRowsForDisplay(previous, 'BOT'),
+  tournamentRowsForDisplay(collecting, 'BOT'),
+  tournamentRowsForDisplay(fresh, 'BOT')
+];
+console.log(JSON.stringify(results));
+"""
+        output = subprocess.run(
+            ["node", "-e", script], capture_output=True, text=True, check=True,
+        ).stdout
+        first, retained, refreshed = json.loads(output)
+        self.assertFalse(first["retained"])
+        self.assertEqual(first["rows"][0]["provider"], "uniswap")
+        self.assertTrue(retained["retained"])
+        self.assertEqual(retained["rows"][0]["provider"], "uniswap")
+        self.assertFalse(refreshed["retained"])
+        self.assertEqual(refreshed["rows"][0]["provider"], "sushiswap")
+        self.assertIn("showing previous-round standings until fresh scores arrive", html)
+
     def test_aborted_tournament_title_matches_direction(self):
         html = server.DASHBOARD_HTML
         start = html.index("  function renderRouteComparison(")
