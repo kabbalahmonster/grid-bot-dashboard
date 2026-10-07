@@ -494,7 +494,7 @@ class TestRouteComparison(unittest.TestCase):
     def test_live_tournament_renderer_has_buy_copy_and_sell_target(self):
         html = server.DASHBOARD_HTML
         for needle in ("BUY ROUTE TOURNAMENT", "SELL ROUTE TOURNAMENT",
-                       "Best acquisition route selected", "Quoted tokens:",
+                       "Quoted tokens:",
                        "Conservative receive floor:", "target +",
                        "BUY TOURNAMENT ABORTED", "SELL TOURNAMENT ABORTED",
                        "No transaction sent",
@@ -513,7 +513,7 @@ const tournamentContestantDisplays = new Map();
 const previous = {
   mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-1',
   elapsed_ms: 2048,
-  candidates: [{provider: 'uniswap', settlement: 'native', projected_net_score: '9'}]
+  candidates: [{provider: 'uniswap', settlement: 'native', projected_net_score: '9', minimum_profit_percent: 3}]
 };
 const collecting = {
   mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-2',
@@ -537,9 +537,11 @@ console.log(JSON.stringify(results));
         self.assertFalse(first["retained"])
         self.assertEqual(first["rows"][0]["provider"], "uniswap")
         self.assertEqual(first["elapsedMs"], 2048)
+        self.assertEqual(first["targetPercent"], 3)
         self.assertTrue(retained["retained"])
         self.assertEqual(retained["rows"][0]["provider"], "uniswap")
         self.assertEqual(retained["elapsedMs"], 2048)
+        self.assertEqual(retained["targetPercent"], 3)
         self.assertFalse(refreshed["retained"])
         self.assertEqual(refreshed["rows"][0]["provider"], "sushiswap")
         self.assertNotIn("Refreshing contestants", html)
@@ -579,7 +581,7 @@ console.log(JSON.stringify(results));
         self.assertIn("tournamentTimestamp(b) - tournamentTimestamp(a)", html)
         self.assertIn("html += renderRouteComparison(comparison, botKey)", html)
         self.assertNotIn("TOURNAMENT BASELINE FALLBACK", html)
-        self.assertIn("'Tournament continuing'", html)
+        self.assertIn("const arenaText = [elapsedText, targetText].filter(Boolean).join(' · ')", html)
         self.assertNotIn("Routes are racing now", html)
         self.assertIn("!['completed', 'execution_aborted'].includes(item.status)", html)
 
@@ -591,7 +593,6 @@ console.log(JSON.stringify(results));
         self.assertIn("setInterval(function() { updateTournamentAges(document); }, 1000)", html)
         self.assertIn("📡 TRANSACTION SUBMITTED", html)
         self.assertIn("⏳ PENDING ON-CHAIN", html)
-        self.assertIn("waiting for on-chain confirmation", html)
 
     def test_tournament_timestamp_and_buy_confirmation_are_allowlisted(self):
         value = comparison("buy")

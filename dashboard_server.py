@@ -2283,27 +2283,38 @@ DASHBOARD_HTML = """\
     const displayKey = String(botKey || '') + ':' + String(comparison.direction || '');
     const reportedElapsedMs = Number(comparison.elapsed_ms);
     const hasReportedElapsedMs = Number.isFinite(reportedElapsedMs) && reportedElapsedMs >= 0;
+    const reportedTargetPercent = Number((reported.find(function(row) {
+      return Number.isFinite(Number(row.minimum_profit_percent));
+    }) || {}).minimum_profit_percent);
+    const hasReportedTargetPercent = Number.isFinite(reportedTargetPercent);
     const previous = tournamentContestantDisplays.get(displayKey);
     if (reported.length) {
       tournamentContestantDisplays.set(displayKey, {
         tournamentId: String(comparison.tournament_id || ''),
         rows: reported.slice(),
         // The collection-start update deliberately has no duration. Preserve
-        // the last completed collection time until a new one arrives.
-        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs
+        // the last completed collection time and target until new values arrive.
+        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs,
+        targetPercent: hasReportedTargetPercent ? reportedTargetPercent : previous?.targetPercent
       });
       return {
         rows: reported,
         retained: false,
-        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs
+        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs,
+        targetPercent: hasReportedTargetPercent ? reportedTargetPercent : previous?.targetPercent
       };
     }
     if (!previous || !previous.rows.length) {
-      return { rows: [], retained: false, elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : undefined };
+      return {
+        rows: [], retained: false,
+        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : undefined,
+        targetPercent: hasReportedTargetPercent ? reportedTargetPercent : undefined
+      };
     }
     return {
       rows: previous.rows.slice(), retained: true,
-      elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous.elapsedMs
+      elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous.elapsedMs,
+      targetPercent: hasReportedTargetPercent ? reportedTargetPercent : previous.targetPercent
     };
   }
 
@@ -2357,24 +2368,23 @@ DASHBOARD_HTML = """\
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
-      // A tournament card is a persistent live scoreboard.  In particular,
-      // collecting_candidates is the short gap between quote updates, not a
-      // new UI state: keeping this wording stable prevents the card from
-      // flickering between "racing" and the retained standings.
-      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback || comparison.status === 'collecting_candidates' ? 'Tournament continuing' : displayWinner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return displayWinner && row.provider === displayWinner.provider && row.settlement === displayWinner.settlement; });
-      const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
-      const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
+      const currentTargetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
+      const retainedTargetPercent = Number(displayedContestants.targetPercent);
+      const targetPercent = Number.isFinite(currentTargetPercent) ? currentTargetPercent : retainedTargetPercent;
       const updatedAt = comparison.updated_at || '';
       const elapsedMs = Number(displayedContestants.elapsedMs);
       const elapsedText = Number.isFinite(elapsedMs) && elapsedMs >= 0
-        ? ' · ' + value(elapsedMs) + ' ms' : '';
+        ? value(elapsedMs) + ' ms' : '';
+      const targetText = !isBuy && Number.isFinite(targetPercent)
+        ? 'target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
+      const arenaText = [elapsedText, targetText].filter(Boolean).join(' · ');
       const confirmationBadge = completed && comparison.final
         ? '<div class="tournament-confirmed" role="status">✅ TRANSACTION CONFIRMED ON-CHAIN</div>' : '';
       const pendingTx = pending && comparison.pending_transaction?.tx_hash;
       const pendingBadge = pendingTx
         ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
-      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + elapsedText + targetText + '</div><div class="tournament-scoreboard">';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(arenaText) + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
