@@ -436,7 +436,7 @@ class TestRouteComparison(unittest.TestCase):
                      observation_timing="parallel_pre_execution",
                      final={"tx_hash": "0x" + "a" * 64, "received_eth": 0.0023,
                             "gas_fee_eth": 0.00005, "profit_eth": 0.0002,
-                            "profit_percent": 9.52})
+                            "profit_percent": 9.52, "provider": "uniswap"})
         value["candidates"][0].update(
             score_unit="net_return_after_all_projected_gas_wei", protocol="V4",
             projected_profit_wei="200000000000000", projected_profit_eth=0.0002,
@@ -449,6 +449,7 @@ class TestRouteComparison(unittest.TestCase):
         self.assertEqual(clean["candidates"][0]["projected_profit_percent"], 9.52)
         self.assertEqual(clean["candidates"][0]["minimum_profit_percent"], 5.0)
         self.assertEqual(clean["final"]["tx_hash"], "0x" + "a" * 64)
+        self.assertEqual(clean["final"]["provider"], "uniswap")
 
     def test_aborted_buy_tournament_preserves_terminal_guard_details(self):
         value = comparison("buy")

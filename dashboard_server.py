@@ -721,6 +721,10 @@ def _allowlisted_route_comparison(value, direction):
             clean_final = {"tx_hash": tx_hash}
             if final.get("side") in {"buy", "sell"}:
                 clean_final["side"] = final["side"]
+            # The confirmed executor is distinct from the best preflight quote:
+            # a fallback/revalidation can legitimately send a different route.
+            if _route_enum("provider", final.get("provider")):
+                clean_final["provider"] = final["provider"]
             for key in ("received_eth", "gas_fee_eth", "profit_eth", "profit_percent",
                         "eth_amount", "token_amount"):
                 number = final.get(key)
@@ -2322,6 +2326,12 @@ DASHBOARD_HTML = """\
     if (comparison.mode === 'execution_preflight') {
       const isBuy = comparison.direction === 'buy';
       const completed = comparison.status === 'completed';
+      const actualProvider = completed && comparison.final?.provider;
+      // On completion, crown the route that actually landed on-chain rather
+      // than the earlier quote leader.  Revalidation/fallback can change it.
+      const displayWinner = actualProvider
+        ? rows.find(function(row) { return row.provider === actualProvider; })
+        : winner;
       const aborted = comparison.status === 'execution_aborted';
       const baselineFallback = comparison.status === 'baseline_fallback';
       const pending = comparison.status === 'transaction_submitted';
@@ -2336,8 +2346,8 @@ DASHBOARD_HTML = """\
       // collecting_candidates is the short gap between quote updates, not a
       // new UI state: keeping this wording stable prevents the card from
       // flickering between "racing" and the retained standings.
-      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback || comparison.status === 'collecting_candidates' ? 'Tournament continuing' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
-      const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
+      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback || comparison.status === 'collecting_candidates' ? 'Tournament continuing' : displayWinner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      const selectedRow = rows.find(function(row) { return displayWinner && row.provider === displayWinner.provider && row.settlement === displayWinner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
       const updatedAt = comparison.updated_at || '';
@@ -2353,7 +2363,7 @@ DASHBOARD_HTML = """\
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
-        const isWinner = winner && row.provider === winner.provider && row.settlement === winner.settlement;
+        const isWinner = displayWinner && row.provider === displayWinner.provider && row.settlement === displayWinner.settlement;
         const pct = Number(row.projected_profit_percent);
         const profitEth = Number(row.projected_profit_eth);
         const minimumEth = Number(row.minimum_return_eth);
@@ -2383,7 +2393,7 @@ DASHBOARD_HTML = """\
         const finalDetail = isBuy
           ? 'Bought <strong>' + formatTokenAmount(Number(f.token_amount || 0)) + ' tokens for ' + Number(f.eth_amount || 0).toFixed(8) + ' ETH</strong>'
           : 'Profit <strong>' + Number(f.profit_eth || 0).toFixed(8) + ' ETH (' + Number(f.profit_percent || 0).toFixed(2) + '%)</strong>';
-        html += '</div><div class="tournament-final">✅ ' + finalDetail + ' · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div></section>';
+        html += '</div><div class="tournament-final">✅ ' + finalDetail + (actualProvider ? ' · executed via <strong>' + value(actualProvider) + '</strong>' : '') + ' · gas ' + Number(f.gas_fee_eth || 0).toFixed(8) + ' ETH · <a href="https://robinhoodchain.blockscout.com/tx/' + tx + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div></section>';
       } else html += '</div></section>';
       return html;
     }
