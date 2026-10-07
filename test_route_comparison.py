@@ -563,7 +563,8 @@ console.log(JSON.stringify(results));
         self.assertIn("tournamentTimestamp(b) - tournamentTimestamp(a)", html)
         self.assertIn("html += renderRouteComparison(comparison, botKey)", html)
         self.assertNotIn("TOURNAMENT BASELINE FALLBACK", html)
-        self.assertIn("Tournament continuing with configured", html)
+        self.assertIn("'Tournament continuing'", html)
+        self.assertNotIn("Routes are racing now", html)
         self.assertIn("!['completed', 'execution_aborted'].includes(item.status)", html)
 
     def test_tournament_recency_and_confirmation_are_distinct(self):

@@ -2332,8 +2332,11 @@ DASHBOARD_HTML = """\
       const abortStatus = abort.reason === 'buy_trigger_recovered'
         ? 'No transaction sent · market P&L ' + (Number.isFinite(marketPnl) ? marketPnl.toFixed(2) + '%' : '—') + ' recovered above block threshold ' + (Number.isFinite(blockThreshold) ? blockThreshold.toFixed(2) + '%' : '—')
         : 'No transaction sent · execution guard blocked the selected route';
-      const fallbackProvider = comparison.execution_fallback?.provider || 'configured primary';
-      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback ? 'Tournament continuing with configured ' + fallbackProvider + ' baseline route' : comparison.status === 'collecting_candidates' ? 'Routes are racing now' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
+      // A tournament card is a persistent live scoreboard.  In particular,
+      // collecting_candidates is the short gap between quote updates, not a
+      // new UI state: keeping this wording stable prevents the card from
+      // flickering between "racing" and the retained standings.
+      const status = completed ? 'Final result confirmed on-chain' : pending ? 'Broadcast accepted · waiting for on-chain confirmation' : aborted ? abortStatus : baselineFallback || comparison.status === 'collecting_candidates' ? 'Tournament continuing' : winner ? (isBuy ? 'Best acquisition route selected' : 'Battle complete · winner selected') : 'No contestant cleared every guard';
       const selectedRow = rows.find(function(row) { return winner && row.provider === winner.provider && row.settlement === winner.settlement; });
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
