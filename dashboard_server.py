@@ -2281,16 +2281,30 @@ DASHBOARD_HTML = """\
       return { rows: reported, retained: false };
     }
     const displayKey = String(botKey || '') + ':' + String(comparison.direction || '');
+    const reportedElapsedMs = Number(comparison.elapsed_ms);
+    const hasReportedElapsedMs = Number.isFinite(reportedElapsedMs) && reportedElapsedMs >= 0;
+    const previous = tournamentContestantDisplays.get(displayKey);
     if (reported.length) {
       tournamentContestantDisplays.set(displayKey, {
         tournamentId: String(comparison.tournament_id || ''),
-        rows: reported.slice()
+        rows: reported.slice(),
+        // The collection-start update deliberately has no duration. Preserve
+        // the last completed collection time until a new one arrives.
+        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs
       });
-      return { rows: reported, retained: false };
+      return {
+        rows: reported,
+        retained: false,
+        elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous?.elapsedMs
+      };
     }
-    const previous = tournamentContestantDisplays.get(displayKey);
-    if (!previous || !previous.rows.length) return { rows: [], retained: false };
-    return { rows: previous.rows.slice(), retained: true };
+    if (!previous || !previous.rows.length) {
+      return { rows: [], retained: false, elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : undefined };
+    }
+    return {
+      rows: previous.rows.slice(), retained: true,
+      elapsedMs: hasReportedElapsedMs ? reportedElapsedMs : previous.elapsedMs
+    };
   }
 
   function tournamentAgeLabel(timestamp) {
@@ -2316,7 +2330,7 @@ DASHBOARD_HTML = """\
     const value = v => esc(v ?? '—');
     const displayedContestants = typeof tournamentRowsForDisplay === 'function'
       ? tournamentRowsForDisplay(comparison, botKey)
-      : { rows: Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : [], retained: false };
+      : { rows: Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : [], retained: false, elapsedMs: comparison.elapsed_ms };
     const rows = displayedContestants.rows.sort(function(a, b) {
       const av = Number(a.projected_net_score); const bv = Number(b.projected_net_score);
       if (!Number.isFinite(av)) return 1; if (!Number.isFinite(bv)) return -1; return bv - av;
@@ -2352,12 +2366,15 @@ DASHBOARD_HTML = """\
       const targetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const targetText = !isBuy && Number.isFinite(targetPercent) ? ' · target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
       const updatedAt = comparison.updated_at || '';
+      const elapsedMs = Number(displayedContestants.elapsedMs);
+      const elapsedText = Number.isFinite(elapsedMs) && elapsedMs >= 0
+        ? ' · ' + value(elapsedMs) + ' ms' : '';
       const confirmationBadge = completed && comparison.final
         ? '<div class="tournament-confirmed" role="status">✅ TRANSACTION CONFIRMED ON-CHAIN</div>' : '';
       const pendingTx = pending && comparison.pending_transaction?.tx_hash;
       const pendingBadge = pendingTx
         ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
-      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div><div class="tournament-scoreboard">';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + elapsedText + targetText + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';

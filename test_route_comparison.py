@@ -512,6 +512,7 @@ const tournamentContestantDisplays = new Map();
 """ + helper + """
 const previous = {
   mode: 'execution_preflight', direction: 'sell', tournament_id: 'round-1',
+  elapsed_ms: 2048,
   candidates: [{provider: 'uniswap', settlement: 'native', projected_net_score: '9'}]
 };
 const collecting = {
@@ -535,8 +536,10 @@ console.log(JSON.stringify(results));
         first, retained, refreshed = json.loads(output)
         self.assertFalse(first["retained"])
         self.assertEqual(first["rows"][0]["provider"], "uniswap")
+        self.assertEqual(first["elapsedMs"], 2048)
         self.assertTrue(retained["retained"])
         self.assertEqual(retained["rows"][0]["provider"], "uniswap")
+        self.assertEqual(retained["elapsedMs"], 2048)
         self.assertFalse(refreshed["retained"])
         self.assertEqual(refreshed["rows"][0]["provider"], "sushiswap")
         self.assertNotIn("Refreshing contestants", html)
