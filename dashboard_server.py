@@ -1721,7 +1721,6 @@ DASHBOARD_HTML = """\
   .tournament-pending { display:inline-flex; align-items:center; gap:.3rem; margin:.15rem 0 .55rem; padding:.25rem .5rem; border:1px solid #38bdf8; border-radius:999px; background:rgba(7,89,133,.42); color:#bae6fd; font-size:.76rem; font-weight:800; letter-spacing:.04em; animation:capacity-pulse 1.5s ease-in-out infinite; }
   .tournament-pending a { color:inherit; }
   .tournament-card .arena-status { color: #c4b5fd; margin-bottom: .55rem; }
-  .tournament-scoreboard-note { color:#94a3b8; font-size:.74rem; margin:-.15rem 0 .45rem; }
   .tournament-scoreboard { display: grid; gap: .4rem; }
   .tournament-contestant { border: 1px solid #334155; background: rgba(15,23,42,.72); border-radius: .45rem; overflow: hidden; }
   .tournament-contestant.winner { border-color: #facc15; box-shadow: 0 0 0 1px rgba(250,204,21,.22); }
@@ -2358,10 +2357,7 @@ DASHBOARD_HTML = """\
       const pendingTx = pending && comparison.pending_transaction?.tx_hash;
       const pendingBadge = pendingTx
         ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
-      const scoreboardNote = displayedContestants.retained
-        ? '<div class="tournament-scoreboard-note">Refreshing contestants · showing previous-round standings until fresh scores arrive</div>'
-        : '';
-      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div>' + scoreboardNote + '<div class="tournament-scoreboard">';
+      let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(status) + (comparison.elapsed_ms == null ? '' : ' · ' + value(comparison.elapsed_ms) + ' ms') + targetText + '</div><div class="tournament-scoreboard">';
       if (!rows.length) html += '<div>No contestants reported this round.</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';

@@ -539,7 +539,7 @@ console.log(JSON.stringify(results));
         self.assertEqual(retained["rows"][0]["provider"], "uniswap")
         self.assertFalse(refreshed["retained"])
         self.assertEqual(refreshed["rows"][0]["provider"], "sushiswap")
-        self.assertIn("showing previous-round standings until fresh scores arrive", html)
+        self.assertNotIn("Refreshing contestants", html)
 
     def test_aborted_tournament_title_matches_direction(self):
         html = server.DASHBOARD_HTML
