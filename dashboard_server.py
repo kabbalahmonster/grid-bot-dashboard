@@ -698,7 +698,7 @@ def _allowlisted_route_comparison(value, direction):
                 clean_abort[key] = number
         result["execution_abort"] = clean_abort
     fallback = value.get("execution_fallback")
-    if (status == "baseline_fallback" and isinstance(fallback, dict)
+    if (status in {"baseline_fallback", "completed"} and isinstance(fallback, dict)
             and fallback.get("reason") == "no_fresh_tournament_candidate"):
         clean_fallback = {"reason": "no_fresh_tournament_candidate"}
         if _route_enum("provider", fallback.get("provider")):
@@ -2326,7 +2326,9 @@ DASHBOARD_HTML = """\
     if (comparison.mode === 'execution_preflight') {
       const isBuy = comparison.direction === 'buy';
       const completed = comparison.status === 'completed';
-      const actualProvider = completed && comparison.final?.provider;
+      // Legacy bots do not yet report final.provider.  Their retained baseline
+      // fallback is the best available execution identity until they upgrade.
+      const actualProvider = completed && (comparison.final?.provider || comparison.execution_fallback?.provider);
       // On completion, crown the route that actually landed on-chain rather
       // than the earlier quote leader.  Revalidation/fallback can change it.
       const displayWinner = actualProvider

@@ -126,6 +126,18 @@ class TestRouteComparison(unittest.TestCase):
         })
         self.assertNotIn("secret", json.dumps(clean))
 
+    def test_completed_fallback_keeps_execution_identity(self):
+        value = comparison("sell")
+        value.update(
+            mode="execution_preflight", status="completed",
+            execution_fallback={
+                "reason": "no_fresh_tournament_candidate", "provider": "uniswap",
+            },
+            final={"tx_hash": "0x" + "a" * 64},
+        )
+        clean = self.clean(value, "sell")["route_comparison"]
+        self.assertEqual(clean["execution_fallback"]["provider"], "uniswap")
+
     def test_pending_tournament_identity_and_transaction_survive_sanitization(self):
         value = comparison("sell")
         value.update(
