@@ -1770,6 +1770,7 @@ DASHBOARD_HTML = """\
     <select id="chain-filter"><option value="">All chains</option><option value="4663">Robinhood</option><option value="8453">Base</option><option value="1">Ethereum</option></select>
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <button id="tax-filter" type="button" aria-pressed="false" title="Show only manually declared or auto-detected taxed tokens">Tax coins</button>
+    <button id="hide-offline" type="button" aria-pressed="false" title="Hide offline bot cards and exclude them from summary totals">Hide offline</button>
     <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="moonbag-value">Moonbag value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
@@ -1835,6 +1836,7 @@ DASHBOARD_HTML = """\
   const chainFilter = document.getElementById('chain-filter');
   const providerFilter = document.getElementById('provider-filter');
   const taxFilter = document.getElementById('tax-filter');
+  const hideOfflineButton = document.getElementById('hide-offline');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
   const sigilModal = document.getElementById('sigil-modal');
@@ -1906,6 +1908,12 @@ DASHBOARD_HTML = """\
     taxFilter.textContent = taxFilterEnabled ? 'Tax coins only ✓' : 'Tax coins';
   }
   updateTaxFilterButton();
+  let hideOfflineEnabled = localStorage.getItem('dashboard-hide-offline') === 'true';
+  function updateHideOfflineButton() {
+    hideOfflineButton.setAttribute('aria-pressed', String(hideOfflineEnabled));
+    hideOfflineButton.textContent = hideOfflineEnabled ? 'Offline hidden ✓' : 'Hide offline';
+  }
+  updateHideOfflineButton();
   clearFilter.style.display = botFilter.value ? 'block' : 'none';
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
@@ -2720,11 +2728,14 @@ DASHBOARD_HTML = """\
       chainFilter.value = '';
       providerFilter.value = '';
       taxFilterEnabled = false;
+      hideOfflineEnabled = false;
       localStorage.setItem('dashboard-bot-filter', '');
       localStorage.setItem('dashboard-chain-filter', '');
       localStorage.setItem('dashboard-provider-filter', '');
       localStorage.setItem('dashboard-tax-filter', 'false');
+      localStorage.setItem('dashboard-hide-offline', 'false');
       updateTaxFilterButton();
+      updateHideOfflineButton();
       clearFilter.style.display = 'none';
       render(true);
       card = Array.from(container.querySelectorAll('.card[data-bot-id]')).find(function(candidate) {
@@ -3630,7 +3641,8 @@ DASHBOARD_HTML = """\
         ['manual', 'declared', 'auto-detected'].includes(taxSource);
       return (!query || haystack.includes(query)) &&
         (!wantedChain || String(d.chain_id) === wantedChain) && providerMatches &&
-        (!taxFilterEnabled || isTaxedToken);
+        (!taxFilterEnabled || isTaxedToken) &&
+        (!hideOfflineEnabled || reportAge(d.received_at).status !== 'offline');
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
       let result;
@@ -3725,7 +3737,7 @@ DASHBOARD_HTML = """\
     });
     updateSummary(botIds);
     if (botIds.length === 0) {
-      const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider || taxFilterEnabled);
+      const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider || taxFilterEnabled || hideOfflineEnabled);
       emptyState.querySelector('p').textContent = filtered ? 'No bots match your filters' : 'No bots reporting yet';
       emptyState.querySelector('span').textContent = filtered ? 'Clear the active filters to show the fleet.' : 'Waiting for status updates…';
       clearAllFilters.hidden = !filtered;
@@ -4353,11 +4365,14 @@ DASHBOARD_HTML = """\
     chainFilter.value = '';
     providerFilter.value = '';
     taxFilterEnabled = false;
+    hideOfflineEnabled = false;
     localStorage.setItem('dashboard-bot-filter', '');
     localStorage.setItem('dashboard-chain-filter', '');
     localStorage.setItem('dashboard-provider-filter', '');
     localStorage.setItem('dashboard-tax-filter', 'false');
+    localStorage.setItem('dashboard-hide-offline', 'false');
     updateTaxFilterButton();
+    updateHideOfflineButton();
     clearFilter.style.display = 'none';
     render(true);
   });
@@ -4379,6 +4394,12 @@ DASHBOARD_HTML = """\
     taxFilterEnabled = !taxFilterEnabled;
     localStorage.setItem('dashboard-tax-filter', String(taxFilterEnabled));
     updateTaxFilterButton();
+    render(true);
+  });
+  hideOfflineButton.addEventListener('click', function() {
+    hideOfflineEnabled = !hideOfflineEnabled;
+    localStorage.setItem('dashboard-hide-offline', String(hideOfflineEnabled));
+    updateHideOfflineButton();
     render(true);
   });
   function updateSortDirectionButton() {

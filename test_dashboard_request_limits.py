@@ -127,7 +127,7 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         for key in (
             "dashboard-bot-filter", "dashboard-chain-filter", "dashboard-provider-filter",
-            "dashboard-tax-filter",
+            "dashboard-tax-filter", "dashboard-hide-offline",
             "dashboard-sort-mode", "dashboard-sort-direction", "dashboard-profit-currency",
             "dashboard-realized-profit-unit", "dashboard-realized-profit-period",
             "dashboard-sigil-animation", "dashboard-notification-preferences",
@@ -450,6 +450,15 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("d.taxed_token === true", body)
         self.assertIn("!taxFilterEnabled || isTaxedToken", body)
         self.assertIn("Tax coins only ✓", body)
+
+    def test_offline_toggle_hides_cards_and_excludes_them_from_totals(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('id="hide-offline" type="button" aria-pressed="false"', body)
+        self.assertIn("localStorage.getItem('dashboard-hide-offline') === 'true'", body)
+        self.assertIn("!hideOfflineEnabled || reportAge(d.received_at).status !== 'offline'", body)
+        self.assertIn("updateSummary(botIds);", body)
+        self.assertIn("const states = botIds.map(function(id) { return bots[id]; });", body)
+        self.assertIn("Offline hidden ✓", body)
 
     def test_connection_status_exposes_live_diagnostics(self):
         body = self.client.get("/").get_data(as_text=True)
