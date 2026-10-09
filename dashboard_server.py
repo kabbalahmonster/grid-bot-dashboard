@@ -98,7 +98,8 @@ _PRIVATE_KEY_PATTERNS = [
 # arbitrary config or secret material merely because it has the ingest key.
 _STATUS_FIELDS = frozenset({
     "dashboard_schema_version", "incarnation_id", "revision", "bot_id", "timestamp", "uptime_seconds",
-    "price", "eth_balance", "gas_reserve_eth", "usdg_balance", "treasury_sent_usdg", "token_balance",
+    "price", "eth_balance", "gas_reserve_eth", "usdg_balance", "treasury_sent_usdg",
+    "treasury_sent_usdg_all_time", "treasury_reporting_reset_at", "token_balance",
     "moonbag_balance", "estimated_moonbag_value_eth",
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
@@ -780,6 +781,15 @@ def _allowlisted_status_payload(data):
         "threshold", "drawdown_ladder", "survivor",
     }:
         filtered.pop("entry_allocation_mode", None)
+    if ("treasury_reporting_reset_at" in filtered
+            and not _route_timestamp(filtered["treasury_reporting_reset_at"])):
+        filtered.pop("treasury_reporting_reset_at", None)
+    all_time_treasury = filtered.get("treasury_sent_usdg_all_time")
+    if ("treasury_sent_usdg_all_time" in filtered
+            and not (type(all_time_treasury) in (int, float)
+                     and math.isfinite(all_time_treasury)
+                     and 0 <= all_time_treasury < 1e96)):
+        filtered.pop("treasury_sent_usdg_all_time", None)
 
     for field, allowed, maximum in (
         ("positions", _POSITION_FIELDS, _MAX_POSITIONS),
@@ -3945,7 +3955,11 @@ DASHBOARD_HTML = """\
         ['Buys', 'buys'], ['Sells', 'sells'],
         ['Realized Sells', 'realized_sales'], ['Profit Tracking Since', 'profit_tracking_started_at'],
         ['Next Buy Est.', 'next_buy_estimated_eth'], ['Gas Reserve', 'gas_reserve_eth'],
-        ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'], ['Treasury Sent', 'treasury_sent_usdg'], ['Token Balance', 'token_balance'],
+        ['ETH Balance', 'eth_balance'], ['USDG Balance', 'usdg_balance'],
+        ...(d.treasury_reporting_reset_at
+          ? [['Treasury Sent Since Reset', 'treasury_sent_usdg'], ['Treasury Sent All Time', 'treasury_sent_usdg_all_time'], ['Treasury Reporting Since', 'treasury_reporting_reset_at']]
+          : [['Treasury Sent', 'treasury_sent_usdg']]),
+        ['Token Balance', 'token_balance'],
         ['Est. Moonbag Value', 'estimated_moonbag_value_eth'],
         ['Wallet', 'wallet_link'], ['Contract', 'token_link'],
         ['RPC', 'rpc_status'], ['Polling', 'poll_interval_seconds'], ['Uptime', 'uptime_seconds'],
@@ -3980,7 +3994,7 @@ DASHBOARD_HTML = """\
           } else if (key === 'session_profit_eth' || key === 'realized_profit_eth') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(8) + ' ETH';
-          } else if (key === 'profit_tracking_started_at') {
+          } else if (key === 'profit_tracking_started_at' || key === 'treasury_reporting_reset_at') {
             const timestamp = Date.parse(val);
             val = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleString() : val;
           } else if (key === 'price' || key === 'next_ladder_buy_price' || key === 'next_leading_buy_price') {
@@ -4001,8 +4015,8 @@ DASHBOARD_HTML = """\
             val = String(val) === 'minimum_profit' ? 'Minimum profit' : 'Sell threshold';
           } else if (key === 'next_buy_estimated_eth' || key === 'gas_reserve_eth' || key === 'estimated_moonbag_value_eth') {
             val = parseFloat(val).toFixed(5).replace(/\\.?0+$/, '') + ' ETH';
-          } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'token_balance') {
-            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : ((key === 'usdg_balance' || key === 'treasury_sent_usdg') ? 2 : 0));
+          } else if (key === 'eth_balance' || key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'treasury_sent_usdg_all_time' || key === 'token_balance') {
+            val = parseFloat(val).toFixed(key === 'eth_balance' ? 4 : ((key === 'usdg_balance' || key === 'treasury_sent_usdg' || key === 'treasury_sent_usdg_all_time') ? 2 : 0));
           }
           const renderedValue = key === 'wallet_link' || key === 'token_link' || key === 'estimated_bag_value' ? val : esc(val);
           return '<div class="metric"><span class="label">' + esc(label) + '</span><span class="value ' + cls + '">' + renderedValue + '</span></div>';

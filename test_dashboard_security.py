@@ -239,6 +239,23 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
         })
         self.assertEqual(result, {})
 
+    def test_treasury_reporting_baseline_fields_are_bounded(self):
+        result = _allowlisted_status_payload({
+            "treasury_sent_usdg": 3.25,
+            "treasury_sent_usdg_all_time": 15.75,
+            "treasury_reporting_reset_at": "2026-01-15T00:00:00+00:00",
+        })
+        self.assertEqual(result, {
+            "treasury_sent_usdg": 3.25,
+            "treasury_sent_usdg_all_time": 15.75,
+            "treasury_reporting_reset_at": "2026-01-15T00:00:00+00:00",
+        })
+        invalid = _allowlisted_status_payload({
+            "treasury_sent_usdg_all_time": float("inf"),
+            "treasury_reporting_reset_at": "yesterday",
+        })
+        self.assertEqual(invalid, {})
+
 
 if __name__ == "__main__":
     unittest.main()

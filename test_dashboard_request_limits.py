@@ -150,6 +150,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("function realizedProfitForPeriod(d, period)", body)
         self.assertIn("d.trades_history || []", body)
 
+    def test_treasury_summary_uses_reset_total_and_card_keeps_all_time_audit(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn("parseFloat(d.treasury_sent_usdg) || 0", body)
+        self.assertIn("'Treasury Sent Since Reset'", body)
+        self.assertIn("'Treasury Sent All Time'", body)
+        self.assertIn("'treasury_sent_usdg_all_time'", body)
+        self.assertIn("'Treasury Reporting Since'", body)
+
     def test_realized_profit_summary_cycles_units(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("dashboard-realized-profit-unit", body)

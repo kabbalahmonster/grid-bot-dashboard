@@ -400,7 +400,9 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "eth_balance": 0.00099309,
   "gas_reserve_eth": 0.0005,
   "usdg_balance": 12.34,
-  "treasury_sent_usdg": 125.50,
+  "treasury_sent_usdg": 25.50,
+  "treasury_sent_usdg_all_time": 125.50,
+  "treasury_reporting_reset_at": "2026-08-01T00:00:00+00:00",
   "token_balance": 328902.93,
   "positions": [{
     "id": "11",
@@ -499,7 +501,16 @@ Telegram low-funds threshold. `buy_point_percent` and `sell_point_percent`
 display the configured strategy points. Older bots remain compatible and
 contribute zero or omit the corresponding metric until updated.
 
-`usdg_balance` is an optional read-only ERC-20 balance, summed as **USDG** in the fleet header. `treasury_sent_usdg` is the bot's all-time total of successful USDG treasury sweeps from its local receipt log; the dashboard renders it in **More info** and sums it in the fleet header. Older bots remain compatible and contribute zero until updated. `capacity_warning` drives the static **ADD POSITIONS** flag when gridless slots are full and another buy would otherwise trigger. `swap_provider` supplies the provider badge; values are rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
+`usdg_balance` is an optional read-only ERC-20 balance, summed as **USDG** in
+the fleet header. `treasury_sent_usdg` is the successful USDG total since the
+last `reset-bot` accounting reset and is summed in the fleet header.
+`treasury_sent_usdg_all_time` preserves the receipt-ledger total and
+`treasury_reporting_reset_at` identifies the reporting boundary; both appear
+under **More info**. Older bots remain compatible and continue reporting their
+legacy all-time total until updated. `capacity_warning` drives the static
+**ADD POSITIONS** flag when gridless slots are full and another buy would
+otherwise trigger. `swap_provider` supplies the provider badge; values are
+rendered generically, including `0x`, `LIFI`, `UNISWAP`, and `SUSHISWAP`.
 
 `sell_attempt` is optional, transient live state. When its `status` is `quote_below_minimum`, the card renders a gently pulsing cyan **SELL CHECK ACTIVE** strip with “Waiting for minimum quote” and, when both numbers are present, projected net profit after sell gas versus minimum profit. Older payloads fall back to quoted profit minus projected gas, then gross quoted profit when no gas estimate was reported. The bot clears this field at the start of every trading cycle and reports it only when that cycle actually reaches the below-minimum sell-quote path. Consequently, the strip appears on the same reporting round as the attempted sell and disappears on the next report without another blocked attempt. It is not added to the persistent Events feed.
 
