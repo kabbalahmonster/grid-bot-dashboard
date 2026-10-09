@@ -477,6 +477,7 @@ drawdown payloads can still be recognized from `entry_allocation_mode`.
 The **Hide offline** toolbar toggle removes offline cards from the current view
 and excludes those bots from displayed fleet value, balance, profit, position,
 uptime, and retained-history totals. The preference is saved in the browser.
+The **Offline: X** status badge still reports and lists hidden offline bots.
 
 Fee-on-transfer state is optional and backward compatible. `taxed_token`
 enables the badge, `token_transfer_fee_percent` supplies its effective fee, and

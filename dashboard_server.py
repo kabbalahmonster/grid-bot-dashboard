@@ -1851,6 +1851,7 @@ DASHBOARD_HTML = """\
   let historyModalReturnFocus = null;
   let historyModalMode = 'history';
   let summaryBotIds = [];
+  let statusSummaryBotIds = [];
   const notificationsButton = document.getElementById('notifications');
   const reconnectCardsButton = document.getElementById('reconnect-cards');
   const notificationMenu = document.getElementById('notification-menu');
@@ -2676,7 +2677,7 @@ DASHBOARD_HTML = """\
 
   function openStatusList(wantedStatus, trigger, refreshOnly) {
     const preservedScrollTop = historyList.scrollTop;
-    const entries = summaryBotIds.map(function(botId) {
+    const entries = statusSummaryBotIds.map(function(botId) {
       const state = bots[botId];
       const age = reportAge(state && state.received_at);
       return { botId: botId, state: state, age: age };
@@ -3033,8 +3034,9 @@ DASHBOARD_HTML = """\
     return { rank: 8, timestamp: 0 };
   }
 
-  function updateSummary(botIds) {
+  function updateSummary(botIds, statusBotIds) {
     summaryBotIds = botIds.slice();
+    statusSummaryBotIds = statusBotIds.slice();
     const states = botIds.map(function(id) { return bots[id]; });
     const needsPositions = Object.keys(bots).filter(function(id) {
       const state = bots[id];
@@ -3080,7 +3082,9 @@ DASHBOARD_HTML = """\
     });
     const active = states.filter(function(d) { return reportAge(d.received_at).status === 'running'; }).length;
     const stale = states.filter(function(d) { return reportAge(d.received_at).status === 'stale'; }).length;
-    const offline = states.filter(function(d) { return reportAge(d.received_at).status === 'offline'; }).length;
+    const offline = statusBotIds.filter(function(id) {
+      return reportAge(bots[id].received_at).status === 'offline';
+    }).length;
     const profit = states.reduce(function(total, d) { return total + (parseFloat(d.session_profit_eth) || 0); }, 0);
     const allRealizedProfit = states.reduce(function(total, d) { return total + (parseFloat(d.realized_profit_eth) || 0); }, 0);
     const realizedProfit = realizedProfitPeriod === 'all' ? allRealizedProfit : states.reduce(function(total, d) {
@@ -3630,7 +3634,7 @@ DASHBOARD_HTML = """\
     const query = botFilter.value.trim().toLowerCase();
     const wantedChain = chainFilter.value;
     const wantedProvider = providerFilter.value;
-    const botIds = Object.keys(bots).filter(function(id) {
+    const filteredBotIds = Object.keys(bots).filter(function(id) {
       const d = bots[id];
       const provider = String(d.swap_provider || '').toLowerCase();
       const haystack = [id, d.display_name, d.token_symbol, d.group, provider].join(' ').toLowerCase();
@@ -3641,8 +3645,10 @@ DASHBOARD_HTML = """\
         ['manual', 'declared', 'auto-detected'].includes(taxSource);
       return (!query || haystack.includes(query)) &&
         (!wantedChain || String(d.chain_id) === wantedChain) && providerMatches &&
-        (!taxFilterEnabled || isTaxedToken) &&
-        (!hideOfflineEnabled || reportAge(d.received_at).status !== 'offline');
+        (!taxFilterEnabled || isTaxedToken);
+    });
+    const botIds = filteredBotIds.filter(function(id) {
+      return !hideOfflineEnabled || reportAge(bots[id].received_at).status !== 'offline';
     }).sort(function(a, b) {
       const av = bots[a], bv = bots[b], mode = sortBots.value;
       let result;
@@ -3735,7 +3741,7 @@ DASHBOARD_HTML = """\
       else result = a.localeCompare(b);
       return sortDirectionValue === 'asc' ? result : -result;
     });
-    updateSummary(botIds);
+    updateSummary(botIds, filteredBotIds);
     if (botIds.length === 0) {
       const filtered = Object.keys(bots).length > 0 && Boolean(query || wantedChain || wantedProvider || taxFilterEnabled || hideOfflineEnabled);
       emptyState.querySelector('p').textContent = filtered ? 'No bots match your filters' : 'No bots reporting yet';

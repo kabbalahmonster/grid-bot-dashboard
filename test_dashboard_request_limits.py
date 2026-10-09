@@ -455,9 +455,11 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('id="hide-offline" type="button" aria-pressed="false"', body)
         self.assertIn("localStorage.getItem('dashboard-hide-offline') === 'true'", body)
-        self.assertIn("!hideOfflineEnabled || reportAge(d.received_at).status !== 'offline'", body)
-        self.assertIn("updateSummary(botIds);", body)
+        self.assertIn("!hideOfflineEnabled || reportAge(bots[id].received_at).status !== 'offline'", body)
+        self.assertIn("updateSummary(botIds, filteredBotIds);", body)
         self.assertIn("const states = botIds.map(function(id) { return bots[id]; });", body)
+        self.assertIn("const offline = statusBotIds.filter", body)
+        self.assertIn("const entries = statusSummaryBotIds.map", body)
         self.assertIn("Offline hidden ✓", body)
 
     def test_connection_status_exposes_live_diagnostics(self):
