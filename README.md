@@ -466,8 +466,9 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 `strategy_spacing` (`linear` or `log`) and a bounded `drawdown_ladder` summary.
 The card keeps this to one compact badge; live funded/open/reserved counts,
 terminal drawdown, reserved ETH, the exact next ready ladder price and amount,
-and the indicative next Survivor leading-edge price appear under **More info**.
-The leading price is a display target;
+and up to three indicative Survivor leading-edge prices appear under **More info**.
+The first leading price is actionable; the later two are projected from it and
+advance after each confirmed fill. All leading prices are display targets;
 the bot still requires its fresh authorized route-side P&L observation before buying.
 Older bots need no configuration
 change: a missing explicit mode renders **LEGACY / UNKNOWN**, while older

@@ -180,6 +180,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "leading_edge_open": True,
                 "next_level_price": 0.00000123,
                 "next_leading_edge_price": 0.00000145,
+                "leading_edge_runway_prices": [0.00000145, 0.00000149, 0.00000153],
                 "leading_edge_trigger_percent": 2.5,
                 "private_note": "drop me",
             },
@@ -207,6 +208,7 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "leading_edge_open": True,
             "next_level_price": 0.00000123,
             "next_leading_edge_price": 0.00000145,
+            "leading_edge_runway_prices": [0.00000145, 0.00000149, 0.00000153],
             "leading_edge_trigger_percent": 2.5,
         })
         self.assertEqual(
@@ -216,6 +218,16 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
         self.assertEqual(
             _allowlisted_status_payload({"entry_allocation_mode": "survivor"}),
             {"entry_allocation_mode": "survivor"},
+        )
+
+    def test_invalid_leading_edge_runway_is_dropped(self):
+        result = _allowlisted_status_payload({
+            "drawdown_ladder": {
+                "leading_edge_runway_prices": [1, 2, 3, 4],
+            },
+        })
+        self.assertNotIn(
+            "leading_edge_runway_prices", result["drawdown_ladder"]
         )
 
     def test_invalid_strategy_values_are_dropped_for_legacy_safety(self):

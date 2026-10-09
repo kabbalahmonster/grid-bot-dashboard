@@ -153,7 +153,7 @@ _DRAWDOWN_LADDER_FIELDS = frozenset({
     "realized_profit_eth", "expires_at",
     "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
     "leading_edge_open", "leading_edge_open_count", "next_leading_edge_price",
-    "leading_edge_trigger_percent",
+    "leading_edge_runway_prices", "leading_edge_trigger_percent",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -491,6 +491,11 @@ def _allowlisted_drawdown_ladder(value):
         if not (type(number) in (int, float) and math.isfinite(number)
                 and 0 <= number < 1e96):
             clean.pop(key, None)
+    runway = clean.get("leading_edge_runway_prices")
+    if not (isinstance(runway, list) and 1 <= len(runway) <= 3
+            and all(type(number) in (int, float) and math.isfinite(number)
+                    and 0 < number < 1e96 for number in runway)):
+        clean.pop("leading_edge_runway_prices", None)
     leading_trigger = clean.get("leading_edge_trigger_percent")
     if not (type(leading_trigger) in (int, float)
             and math.isfinite(leading_trigger)
@@ -2884,6 +2889,9 @@ DASHBOARD_HTML = """\
     const ladderPrice = decimal(ladder.next_level_price);
     const ladderAmount = decimal(ladder.next_level_amount_eth);
     const leadingPrice = decimal(ladder.next_leading_edge_price);
+    const leadingRunway = Array.isArray(ladder.leading_edge_runway_prices)
+      ? ladder.leading_edge_runway_prices.map(decimal).filter(function(value) { return value !== null && value > 0; }).slice(0, 3)
+      : (leadingPrice !== null ? [leadingPrice] : []);
     const leadingTrigger = decimal(ladder.leading_edge_trigger_percent);
     const stat = function(value, label) {
       return '<div class="ladder-stat"><strong>' + esc(value) + '</strong><span>' + esc(label) + '</span></div>';
@@ -2917,7 +2925,12 @@ DASHBOARD_HTML = """\
     if (reservedCount !== null && reservedCount !== ready) ladderNotes.push(reservedCount + ' reserved');
     if (ladderAmount !== null) ladderNotes.push(ladderAmount.toFixed(6).replace(/\\.?0+$/, '') + ' ETH next');
     html += target('ladder', 'Next ladder buy', ladderNotes.join(' · ') || 'Pullback entry', ladderPrice);
-    html += target('leading', 'Next leading buy', leadingTrigger !== null ? '+' + leadingTrigger.toFixed(2).replace(/\\.00$/, '') + '% P&L trigger' : 'Momentum entry', leadingPrice);
+    leadingRunway.forEach(function(price, index) {
+      const label = index === 0 ? 'Next leading buy' : 'Projected lead ' + (index + 1);
+      const triggerNote = leadingTrigger !== null ? '+' + leadingTrigger.toFixed(2).replace(/\\.00$/, '') + '% step' : 'Momentum step';
+      const note = index === 0 ? triggerNote + ' · actionable' : triggerNote + ' · advances after confirmed fill';
+      html += target('leading', label, note, price);
+    });
     html += '</div></section>';
     return html;
   }
