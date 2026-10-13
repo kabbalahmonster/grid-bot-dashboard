@@ -28,6 +28,24 @@ class TestStrategyModeRendering(unittest.TestCase):
         )
         return json.loads(result.stdout)
 
+    def _overview(self, strategy, ladder):
+        body = self.client.get("/").get_data(as_text=True)
+        start = body.index("  function strategyOverview(")
+        end = body.index("\n  function reportAge(", start)
+        script = "function esc(value) { return String(value); }\n" + body[start:end]
+        result = subprocess.run(
+            [
+                "node",
+                "-e",
+                script + "\nconsole.log(strategyOverview(" + json.dumps(strategy)
+                + ", " + json.dumps(ladder) + ", null));",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+
     def test_compact_labels_cover_all_modes_and_legacy_payloads(self):
         rendered = self._present([
             {"strategy_mode": "grid"},
@@ -75,9 +93,54 @@ class TestStrategyModeRendering(unittest.TestCase):
         self.assertIn("'Projected lead '", body)
         self.assertIn("ETH/token ·", body)
         self.assertIn("' ETH next'", body)
+        self.assertIn("'Future buys'", body)
+        self.assertIn("'Open positions'", body)
+        self.assertIn("'Unfunded slots'", body)
+        self.assertIn("'Buy budget'", body)
+        self.assertIn("legacy state blocked cycling; update the bot to recover these slots", body)
+        self.assertIn("' ETH average future buy'", body)
         self.assertIn("'% step'", body)
         self.assertIn("' · advances after confirmed fill'", body)
         self.assertIn("...(strategyOverviewHtml ? [] : [['Strategy', 'strategy_display']])", body)
+
+    def test_survivor_overview_explains_cyclical_slots_and_buy_sizing(self):
+        rendered = self._overview(
+            {"mode": "survivor", "spacing": "log"},
+            {
+                "levels_total": 100,
+                "levels_funded": 85,
+                "levels_open": 15,
+                "levels_ready": 72,
+                "levels_reserved": 72,
+                "levels_inactive": 0,
+                "levels_retired": 0,
+                "terminal_drawdown_percent": 80,
+                "reserved_eth": 0.08706,
+                "average_position_eth": 0.0010242353,
+                "minimum_position_eth": 0.001,
+            },
+        )
+        self.assertIn(">85</strong><span>Future buys</span>", rendered)
+        self.assertIn(">15</strong><span>Open positions</span>", rendered)
+        self.assertIn(">0</strong><span>Unfunded slots</span>", rendered)
+        self.assertIn("85 future + 15 open = 100/100 slots", rendered)
+        self.assertNotIn("blocked cycling", rendered)
+        self.assertIn("0.001024 ETH average future buy · 0.001 ETH minimum · −80% floor", rendered)
+
+    def test_survivor_overview_flags_legacy_blocked_slots_as_a_fault(self):
+        rendered = self._overview(
+            {"mode": "survivor", "spacing": "log"},
+            {
+                "levels_total": 100,
+                "levels_funded": 72,
+                "levels_open": 15,
+                "levels_inactive": 0,
+                "levels_retired": 13,
+                "reserved_eth": 0.08706,
+            },
+        )
+        self.assertIn("72 future + 15 open + 13 blocked = 100/100 slots", rendered)
+        self.assertIn("legacy state blocked cycling; update the bot to recover these slots", rendered)
 
     def test_ladder_overview_has_mobile_safe_layout(self):
         body = self.client.get("/").get_data(as_text=True)

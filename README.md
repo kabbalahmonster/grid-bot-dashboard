@@ -434,8 +434,11 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
     "levels_open": 4,
     "levels_ready": 12,
     "levels_reserved": 13,
+    "levels_inactive": 16,
+    "levels_retired": 17,
     "next_level_price": 0.00000123,
     "next_level_amount_eth": 0.001,
+    "minimum_position_eth": 0.001,
     "reserved_eth": 0.043
   },
   "capacity_warning": null,
@@ -466,8 +469,12 @@ Bots may additionally send `display_name`, `group`, and up to 50 entries in `tra
 `strategy_mode` is an optional display-only enum: `grid`,
 `gridless_threshold`, `drawdown_ladder`, or `survivor`. Ladder payloads may also provide
 `strategy_spacing` (`linear` or `log`) and a bounded `drawdown_ladder` summary.
-The card keeps this to one compact badge; live funded/open/reserved counts,
-terminal drawdown, reserved ETH, the exact next ready ladder price and amount,
+The card keeps this to one compact badge. Survivor cards distinguish future
+buys, open positions, and currently unfunded slots, and show the slot equation
+explicitly. Active Survivor slots are cyclical; a nonzero legacy retired count
+is displayed as blocked capacity with an update warning, not as normal
+operation. Cards also label reserved ETH as the future-buy budget and show its
+average buy size beside the configured minimum. Terminal drawdown, the exact next ready ladder price and amount,
 and up to three indicative Survivor leading-edge prices appear under **More info**.
 The first leading price is actionable; the later two are projected from it and
 advance after each confirmed fill. All leading prices are display targets;

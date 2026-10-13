@@ -148,9 +148,9 @@ _REALIZED_PERIOD_FIELDS = frozenset({"month", "week", "5d", "3d", "24h", "12h", 
 _DRAWDOWN_LADDER_FIELDS = frozenset({
     "id", "state_version", "status", "spacing", "reference_price", "terminal_drawdown_percent",
     "levels_total", "levels_funded", "levels_open", "levels_adopted", "levels_ready",
-    "levels_reserved",
+    "levels_reserved", "levels_inactive", "levels_retired",
     "completed_cycles", "next_level_price", "allocated_budget_eth", "deployed_eth",
-    "reserved_eth", "average_position_eth", "next_level_amount_eth",
+    "reserved_eth", "average_position_eth", "next_level_amount_eth", "minimum_position_eth",
     "realized_profit_eth", "expires_at",
     "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
     "leading_edge_open", "leading_edge_open_count", "next_leading_edge_price",
@@ -476,7 +476,8 @@ def _allowlisted_drawdown_ladder(value):
         clean.pop("mode", None)
     for key in (
         "levels_total", "levels_funded", "levels_open", "levels_adopted",
-        "state_version", "levels_ready", "levels_reserved", "completed_cycles",
+        "state_version", "levels_ready", "levels_reserved", "levels_inactive",
+        "levels_retired", "completed_cycles",
         "reanchor_count", "leading_edge_open_count",
     ):
         number = clean.get(key)
@@ -486,7 +487,7 @@ def _allowlisted_drawdown_ladder(value):
     for key in (
         "reference_price", "next_level_price", "next_leading_edge_price",
         "allocated_budget_eth", "deployed_eth", "reserved_eth",
-        "average_position_eth", "next_level_amount_eth",
+        "average_position_eth", "next_level_amount_eth", "minimum_position_eth",
     ):
         number = clean.get(key)
         if not (type(number) in (int, float) and math.isfinite(number)
@@ -1552,6 +1553,7 @@ DASHBOARD_HTML = """\
   .ladder-stat { min-width: 0; padding: 0.45rem 0.35rem; border-radius: 0.35rem; background: #1e293b; text-align: center; }
   .ladder-stat strong { display: block; color: #f1f5f9; font-size: 0.78rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
   .ladder-stat span { display: block; margin-top: 0.12rem; color: #64748b; font-size: 0.58rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+  .ladder-accounting { grid-column: 1 / -1; color: #94a3b8; font-size: 0.64rem; line-height: 1.45; text-align: center; }
   .buy-targets { display: grid; gap: 0.4rem; }
   .buy-target { display: grid; grid-template-columns: minmax(7.5rem, auto) minmax(0, 1fr); align-items: center; gap: 0.75rem; padding: 0.55rem 0.65rem; border-left: 3px solid #64748b; border-radius: 0.3rem; background: #172033; }
   .buy-target.ladder { border-left-color: #38bdf8; }
@@ -2865,8 +2867,10 @@ DASHBOARD_HTML = """\
         const open = Number(ladder.levels_open);
         const terminal = Number(ladder.terminal_drawdown_percent);
         const reserved = Number(ladder.reserved_eth);
-        if (Number.isInteger(funded) && Number.isInteger(total)) details.push(funded + '/' + total + ' funded');
-        if (Number.isInteger(open)) details.push(open + ' open');
+        if (Number.isInteger(funded) && Number.isInteger(total)) {
+          details.push(mode === 'survivor' ? funded + ' future buys' : funded + '/' + total + ' funded');
+        }
+        if (Number.isInteger(open)) details.push(open + (mode === 'survivor' ? ' open positions' : ' open'));
         if (Number.isFinite(terminal)) details.push(terminal + '% terminal');
         if (Number.isFinite(reserved)) details.push(reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH reserved');
       }
@@ -2905,11 +2909,15 @@ DASHBOARD_HTML = """\
     const open = integer(ladder.levels_open);
     const ready = integer(ladder.levels_ready);
     const reservedCount = integer(ladder.levels_reserved);
+    const inactive = integer(ladder.levels_inactive);
+    const retired = integer(ladder.levels_retired);
     const terminal = decimal(ladder.terminal_drawdown_percent);
     const reserved = decimal(ladder.reserved_eth);
     const market = decimal(currentPrice);
     const ladderPrice = decimal(ladder.next_level_price);
     const ladderAmount = decimal(ladder.next_level_amount_eth);
+    const averageAmount = decimal(ladder.average_position_eth);
+    const minimumAmount = decimal(ladder.minimum_position_eth);
     const leadingPrice = decimal(ladder.next_leading_edge_price);
     const leadingRunway = Array.isArray(ladder.leading_edge_runway_prices)
       ? ladder.leading_edge_runway_prices.map(decimal).filter(function(value) { return value !== null && value > 0; }).slice(0, 3)
@@ -2937,10 +2945,38 @@ DASHBOARD_HTML = """\
       '<span class="strategy-overview-name">' + esc(strategyName) +
       (spacingName ? ' <span class="spacing">· ' + esc(spacingName) + '</span>' : '') + '</span></div>' +
       '<div class="ladder-stats">';
-    html += stat(funded !== null && total !== null ? funded + '/' + total : '—', 'Funded');
-    html += stat(open !== null ? open : '—', 'Open');
-    html += stat(terminal !== null ? '−' + terminal + '%' : '—', 'Floor');
-    html += stat(reserved !== null ? reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH' : '—', 'Reserved');
+    if (strategy.mode === 'survivor') {
+      const accounted = [funded, open, retired, inactive].every(function(value) { return value !== null; })
+        ? funded + open + retired + inactive : null;
+      const unknown = total !== null && funded !== null && open !== null
+        ? Math.max(0, total - funded - open) : null;
+      html += stat(funded !== null ? funded : '—', 'Future buys');
+      html += stat(open !== null ? open : '—', 'Open positions');
+      html += stat(inactive !== null ? inactive : (unknown !== null ? unknown : '—'), inactive !== null ? 'Unfunded slots' : 'Other slots');
+      html += stat(reserved !== null ? reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH' : '—', 'Buy budget');
+      const slotParts = [];
+      if (funded !== null) slotParts.push(funded + ' future');
+      if (open !== null) slotParts.push(open + ' open');
+      if (inactive !== null && inactive > 0) slotParts.push(inactive + ' unfunded');
+      if (retired !== null && retired > 0) slotParts.push(retired + ' blocked');
+      if (retired === null && inactive === null && unknown !== null && unknown > 0) slotParts.push(unknown + ' other');
+      if (slotParts.length && total !== null) {
+        html += '<div class="ladder-accounting">' + esc(slotParts.join(' + ')) + ' = ' +
+          esc(accounted !== null ? accounted : total) + '/' + esc(total) + ' slots';
+        if (retired !== null && retired > 0) html += ' · legacy state blocked cycling; update the bot to recover these slots';
+        html += '</div>';
+      }
+      const sizingParts = [];
+      if (averageAmount !== null) sizingParts.push(averageAmount.toFixed(6).replace(/\\.?0+$/, '') + ' ETH average future buy');
+      if (minimumAmount !== null) sizingParts.push(minimumAmount.toFixed(6).replace(/\\.?0+$/, '') + ' ETH minimum');
+      if (terminal !== null) sizingParts.push('−' + terminal + '% floor');
+      if (sizingParts.length) html += '<div class="ladder-accounting">' + esc(sizingParts.join(' · ')) + '</div>';
+    } else {
+      html += stat(funded !== null && total !== null ? funded + '/' + total : '—', 'Funded');
+      html += stat(open !== null ? open : '—', 'Open');
+      html += stat(terminal !== null ? '−' + terminal + '%' : '—', 'Floor');
+      html += stat(reserved !== null ? reserved.toFixed(5).replace(/\\.?0+$/, '') + ' ETH' : '—', 'Reserved');
+    }
     html += '</div><div class="buy-targets">';
     const ladderNotes = [];
     if (ready !== null) ladderNotes.push(ready + ' ready rung' + (ready === 1 ? '' : 's'));
