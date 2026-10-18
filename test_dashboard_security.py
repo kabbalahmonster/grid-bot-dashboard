@@ -236,6 +236,54 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
             "leading_edge_runway_prices", result["drawdown_ladder"]
         )
 
+    def test_threshold_gap_metrics_are_strictly_allowlisted(self):
+        result = _allowlisted_status_payload({
+            "strategy_mode": "gridless_threshold",
+            "threshold_gap": {
+                "enabled": True,
+                "eligible": False,
+                "decision": "dip_spacing_guard",
+                "reason": "Net trigger crossed but physical spacing did not",
+                "market_price": 0.1,
+                "filled_positions": 11,
+                "max_positions": 16,
+                "remaining_slots": 5,
+                "buy_threshold_percent": -10.0,
+                "leading_spacing_percent": 2.5,
+                "dip_anchor_position_id": "10",
+                "dip_anchor_price": 0.1,
+                "dip_price_move_percent": 0.0,
+                "next_dip_price": 0.09,
+                "buy_trigger_source": "uniswap",
+                "buy_trigger_pnl_percent": -12.0,
+                "buy_trigger_crossed": True,
+                "lower_anchor_position_id": "10",
+                "lower_anchor_price": 0.1,
+                "lower_anchor_move_percent": 0.0,
+                "next_leading_edge_price": 0.1025,
+                "upper_boundary_position_id": "0",
+                "upper_boundary_price": 0.14,
+                "room_above_percent": 40.0,
+                "max_gap_entry_price": 0.14 / 1.025,
+                "private_note": "drop me",
+            },
+            "positions": [{
+                "id": "10",
+                "threshold_entry_kind": "dip",
+                "threshold_fill_price": 0.1,
+                "private_note": "drop me",
+            }],
+        })
+
+        self.assertEqual(result["threshold_gap"]["decision"], "dip_spacing_guard")
+        self.assertEqual(result["threshold_gap"]["next_leading_edge_price"], 0.1025)
+        self.assertNotIn("private_note", result["threshold_gap"])
+        self.assertEqual(result["positions"], [{
+            "id": "10",
+            "threshold_entry_kind": "dip",
+            "threshold_fill_price": 0.1,
+        }])
+
     def test_invalid_strategy_values_are_dropped_for_legacy_safety(self):
         result = _allowlisted_status_payload({
             "strategy_mode": "execute_everything",

@@ -104,7 +104,7 @@ _STATUS_FIELDS = frozenset({
     "positions", "profit_percent", "session_profit_eth", "realized_profit_eth", "realized_profit_periods",
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "buy_attempt", "sell_attempt",
-    "strategy_mode", "strategy_spacing", "entry_allocation_mode", "drawdown_ladder",
+    "strategy_mode", "strategy_spacing", "entry_allocation_mode", "drawdown_ladder", "threshold_gap",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
@@ -119,6 +119,7 @@ _POSITION_FIELDS = frozenset({
     "sell_pnl", "sell_quote_at", "sell_quote_provider",
     "sell_quote_source_position_id", "sell_projected_gas_eth", "sell_quote_basis",
     "legacy_pnl", "legacy_quote_at", "legacy_quote_provider", "legacy_quote_basis",
+    "threshold_entry_kind", "threshold_fill_price",
 })
 _TRADE_FIELDS = frozenset({
     "timestamp", "side", "eth_amount", "token_amount", "price", "tx_hash",
@@ -135,6 +136,11 @@ _BUY_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "quote_provider", "projected_gas_eth",
     "maximum_gas_eth", "gas_limit", "gas_price_wei", "buy_amount_eth",
     "available_slots", "phase",
+    "allocation_mode", "threshold_entry_kind", "threshold_market_price",
+    "threshold_anchor_position_id", "threshold_anchor_price",
+    "threshold_ceiling_position_id", "threshold_ceiling_price",
+    "threshold_spacing_percent", "buy_trigger_source",
+    "buy_trigger_pnl_percent", "dip_price_move_percent",
 })
 _SELL_ATTEMPT_FIELDS = frozenset({
     "status", "position_id", "pnl_percent", "quoted_profit_eth", "minimum_profit_eth",
@@ -155,6 +161,17 @@ _DRAWDOWN_LADDER_FIELDS = frozenset({
     "mode", "reanchor_count", "last_reanchor_at", "leading_edge_pending",
     "leading_edge_open", "leading_edge_open_count", "next_leading_edge_price",
     "leading_edge_runway_prices", "leading_edge_trigger_percent",
+})
+_THRESHOLD_GAP_FIELDS = frozenset({
+    "enabled", "eligible", "decision", "reason", "market_price",
+    "filled_positions", "max_positions", "remaining_slots",
+    "buy_threshold_percent", "leading_spacing_percent",
+    "dip_anchor_position_id", "dip_anchor_price", "dip_price_move_percent",
+    "next_dip_price", "buy_trigger_source", "buy_trigger_pnl_percent",
+    "buy_trigger_crossed", "lower_anchor_position_id", "lower_anchor_price",
+    "lower_anchor_move_percent", "next_leading_edge_price",
+    "upper_boundary_position_id", "upper_boundary_price",
+    "room_above_percent", "max_gap_entry_price",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -524,6 +541,62 @@ def _allowlisted_drawdown_ladder(value):
     return clean
 
 
+def _allowlisted_threshold_gap(value):
+    """Keep only bounded, public threshold-gap decision telemetry."""
+    clean = _allowlisted_mapping(value, _THRESHOLD_GAP_FIELDS)
+    if clean is None:
+        return None
+    decisions = {
+        "invalid_market", "waiting", "at_capacity", "dip_buy",
+        "gap_leading_edge", "dip_spacing_guard", "outside_bounded_gap",
+        "waiting_for_leading_edge",
+    }
+    if clean.get("decision") not in decisions:
+        clean.pop("decision", None)
+    for key in ("enabled", "eligible", "buy_trigger_crossed"):
+        if key in clean and not isinstance(clean[key], bool):
+            clean.pop(key)
+    for key in ("filled_positions", "max_positions", "remaining_slots"):
+        value = clean.get(key)
+        if not (isinstance(value, int) and not isinstance(value, bool)
+                and 0 <= value <= 10000):
+            clean.pop(key, None)
+    for key in (
+        "market_price", "dip_anchor_price", "next_dip_price",
+        "lower_anchor_price", "next_leading_edge_price",
+        "upper_boundary_price", "max_gap_entry_price",
+    ):
+        number = clean.get(key)
+        if not (type(number) in (int, float) and math.isfinite(number)
+                and 0 <= number < 1e96):
+            clean.pop(key, None)
+    for key in (
+        "buy_threshold_percent", "leading_spacing_percent",
+        "dip_price_move_percent", "buy_trigger_pnl_percent",
+        "lower_anchor_move_percent", "room_above_percent",
+    ):
+        number = clean.get(key)
+        if not (type(number) in (int, float) and math.isfinite(number)
+                and abs(number) <= 10000):
+            clean.pop(key, None)
+    for key in (
+        "dip_anchor_position_id", "lower_anchor_position_id",
+        "upper_boundary_position_id",
+    ):
+        value = clean.get(key)
+        if not (isinstance(value, str)
+                and re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", value)):
+            clean.pop(key, None)
+    source = clean.get("buy_trigger_source")
+    if not (isinstance(source, str)
+            and re.fullmatch(r"[A-Za-z0-9._:-]{1,64}", source)):
+        clean.pop("buy_trigger_source", None)
+    reason = clean.get("reason")
+    if not (isinstance(reason, str) and len(reason) <= 500):
+        clean.pop("reason", None)
+    return clean
+
+
 _ROUTE_ENUMS = {
     "provider": {"uniswap", "sushiswap", "umbra", "lifi"},
     "settlement": {"native", "weth"},
@@ -803,6 +876,14 @@ def _allowlisted_status_payload(data):
         filtered[field] = [item for item in (
             _allowlisted_mapping(entry, allowed) for entry in value[:maximum]
         ) if item is not None]
+    for position in filtered.get("positions", []):
+        if position.get("threshold_entry_kind") not in {
+                "initial", "dip", "gap_leading_edge"}:
+            position.pop("threshold_entry_kind", None)
+        fill_price = position.get("threshold_fill_price")
+        if not (type(fill_price) in (int, float)
+                and math.isfinite(fill_price) and 0 < fill_price < 1e96):
+            position.pop("threshold_fill_price", None)
 
     for field, allowed in (
         ("capacity_warning", _CAPACITY_WARNING_FIELDS),
@@ -822,6 +903,13 @@ def _allowlisted_status_payload(data):
         )
         if filtered["drawdown_ladder"] is None:
             filtered.pop("drawdown_ladder")
+
+    if "threshold_gap" in filtered:
+        filtered["threshold_gap"] = _allowlisted_threshold_gap(
+            filtered["threshold_gap"]
+        )
+        if filtered["threshold_gap"] is None:
+            filtered.pop("threshold_gap")
 
     for direction in ("buy", "sell"):
         field = direction + "_attempt"
@@ -1549,6 +1637,8 @@ DASHBOARD_HTML = """\
   .strategy-overview-kicker { color: #94a3b8; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
   .strategy-overview-name { color: #f1f5f9; font-size: 0.82rem; font-weight: 700; text-align: right; }
   .strategy-overview-name .spacing { color: #c4b5fd; }
+  .threshold-gap-overview { border-color: #4c3f70; background: linear-gradient(135deg, rgba(76, 29, 149, 0.13), rgba(15, 23, 42, 0.48)); }
+  .threshold-gap-overview .strategy-overview-name { color: #c4b5fd; }
   .ladder-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; margin-bottom: 0.65rem; }
   .ladder-stat { min-width: 0; padding: 0.45rem 0.35rem; border-radius: 0.35rem; background: #1e293b; text-align: center; }
   .ladder-stat strong { display: block; color: #f1f5f9; font-size: 0.78rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -1596,6 +1686,7 @@ DASHBOARD_HTML = """\
   .position .pnl-value.unknown { color: #64748b; }
   .position .pnl-meta { display: block; overflow: hidden; margin-top: 0.14rem; color: #64748b; font-size: 0.6rem; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
   .position .quote-kind { color: #a78bfa; font-size: 0.58rem; }
+  .position .entry-kind { margin-left: auto; margin-right: 0.4rem; padding: 0.08rem 0.3rem; border: 1px solid #4c3f70; border-radius: 9999px; color: #c4b5fd; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
   .position .pos-details { color: #94a3b8; font-size: 0.75rem; }
   .position.pos-hidden { display: none; }
   .timestamp { font-size: 0.75rem; color: #64748b; margin-top: 0.5rem; }
@@ -2993,6 +3084,61 @@ DASHBOARD_HTML = """\
     return html;
   }
 
+  function thresholdGapOverview(strategy, gap, currentPrice) {
+    if (!gap || strategy.mode !== 'gridless_threshold') return '';
+    const number = function(value) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const price = function(value) {
+      const parsed = number(value);
+      return parsed !== null && parsed > 0 ? parsed.toFixed(10) : '—';
+    };
+    const percent = function(value) {
+      const parsed = number(value);
+      return parsed !== null ? (parsed >= 0 ? '+' : '') + parsed.toFixed(2) + '%' : '—';
+    };
+    const decisionLabels = {
+      dip_buy: 'DIP BUY READY',
+      gap_leading_edge: 'GAP BUY READY',
+      dip_spacing_guard: 'SPACING GUARD',
+      waiting_for_leading_edge: 'WAITING FOR RISE',
+      outside_bounded_gap: 'OUTSIDE BOUNDED GAP',
+      at_capacity: 'AT CAPACITY',
+      invalid_market: 'INVALID MARKET',
+      waiting: 'WAITING',
+    };
+    const decision = String(gap.decision || 'waiting');
+    const stat = function(value, label) {
+      return '<div class="ladder-stat"><strong>' + esc(value) + '</strong><span>' + esc(label) + '</span></div>';
+    };
+    let html = '<section class="strategy-overview threshold-gap-overview" aria-label="Threshold gap controls">' +
+      '<div class="strategy-overview-header"><span class="strategy-overview-kicker">Threshold gap</span>' +
+      '<span class="strategy-overview-name">' + esc(decisionLabels[decision] || decision.toUpperCase()) + '</span></div>' +
+      '<div class="ladder-stats">';
+    html += stat(percent(gap.buy_trigger_pnl_percent), 'Net buy mark');
+    html += stat(percent(gap.dip_price_move_percent), 'Dip spacing');
+    html += stat(percent(gap.lower_anchor_move_percent), 'Anchor rise');
+    html += stat(percent(gap.room_above_percent), 'Ceiling room');
+    html += '<div class="ladder-accounting">' + esc(gap.reason || 'No decision reason reported') + '</div></div>';
+    html += '<div class="buy-targets">';
+    if (number(gap.next_leading_edge_price) > 0) {
+      html += '<div class="buy-target leading"><div class="buy-target-label">Next gap buy<small>anchor #' +
+        esc(gap.lower_anchor_position_id || '?') + ' · needs +' + esc(number(gap.leading_spacing_percent)?.toFixed(2) || '?') +
+        '%</small></div><div class="buy-target-value">' + esc(price(gap.next_leading_edge_price)) +
+        '<small>ceiling #' + esc(gap.upper_boundary_position_id || '?') + ' · max fill ' +
+        esc(price(gap.max_gap_entry_price)) + '</small></div></div>';
+    }
+    if (number(gap.next_dip_price) > 0) {
+      html += '<div class="buy-target ladder"><div class="buy-target-label">Next true dip<small>anchor #' +
+        esc(gap.dip_anchor_position_id || '?') + ' · route ' + esc(gap.buy_trigger_source || 'awaiting') +
+        '</small></div><div class="buy-target-value">' + esc(price(gap.next_dip_price)) +
+        '<small>' + esc(gap.remaining_slots ?? '?') + ' slots remain</small></div></div>';
+    }
+    html += '</div></section>';
+    return html;
+  }
+
   function reportAge(receivedAt, precisionSeconds) {
     const timestamp = Date.parse(receivedAt || '');
     if (!Number.isFinite(timestamp)) return { status: 'unknown', text: 'unknown' };
@@ -3975,6 +4121,7 @@ DASHBOARD_HTML = """\
       const ladderTelemetry = d.drawdown_ladder && typeof d.drawdown_ladder === 'object'
         ? d.drawdown_ladder : null;
       const strategyOverviewHtml = strategyOverview(strategy, ladderTelemetry, d.price);
+      const thresholdGapHtml = thresholdGapOverview(strategy, d.threshold_gap, d.price);
 
       const metrics = [
         ['Estimated Bag Value', 'estimated_bag_value'],
@@ -4078,6 +4225,7 @@ DASHBOARD_HTML = """\
       metrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '<details class="more-info" data-bot-key="' + esc(botKey) + '"' + (moreOpen ? ' open' : '') + '><summary class="toggle-raw">More info</summary>';
       html += strategyOverviewHtml;
+      html += thresholdGapHtml;
       moreMetrics.forEach(function(pair) { html += renderMetric(pair); });
       html += '</details>';
 
@@ -4160,7 +4308,11 @@ DASHBOARD_HTML = """\
           const hidden = i >= showCount ? ' pos-hidden' : '';
           const visibleStyle = i >= showCount && positionsOpen ? ' style="display:block"' : '';
           html += '<div class="position' + hidden + '"' + visibleStyle + '>';
+          const thresholdKind = String(pos.threshold_entry_kind || '');
+          const thresholdKindLabel = thresholdKind === 'gap_leading_edge' ? 'gap lead' :
+            (thresholdKind === 'dip' ? 'dip seed' : (thresholdKind === 'initial' ? 'initial' : ''));
           html += '<div class="pos-header"><span class="pos-id">POSITION #' + esc(pos.id || '—') + '</span>' +
+            (thresholdKindLabel ? '<span class="entry-kind">' + esc(thresholdKindLabel) + '</span>' : '') +
             (sellPnl !== null ? '<span class="quote-kind">' + (sellExact ? 'exact exit size' : 'extrapolated exit') + '</span>' : '') + '</div>';
           html += '<div class="pnl-sides">';
           html += '<div class="pnl-side buy" title="Net buy-side mark using conservative quoted token output and projected gas">' +
@@ -4179,6 +4331,9 @@ DASHBOARD_HTML = """\
           html += '<div class="pos-details">';
           html += 'Amount: ' + esc(formatTokenAmount(pos.buy_amount_token)) + ' | ';
           html += 'Cost: ' + esc(parseFloat(pos.cost_basis || 0).toFixed(8)) + ' ETH';
+          if (Number.isFinite(parseFloat(pos.threshold_fill_price))) {
+            html += ' | Entry ref: ' + esc(parseFloat(pos.threshold_fill_price).toFixed(10));
+          }
           html += '</div></div>';
         });
         if (sorted.length > showCount) {

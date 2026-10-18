@@ -483,6 +483,14 @@ Older bots need no configuration
 change: a missing explicit mode renders **LEGACY / UNKNOWN**, while older
 drawdown payloads can still be recognized from `entry_allocation_mode`.
 
+Threshold bots may send a bounded `threshold_gap` snapshot. Under **More info**,
+the dashboard separates the net route buy mark from physical entry spacing and
+shows the current decision, confirmed dip anchor, gap anchor and ceiling, next
+true-dip price, next leading-edge price, maximum guarded fill price, remaining
+slots, and the exact wait/block reason. Position cards label new fills as
+`initial`, `dip seed`, or `gap lead` and show their principal-only entry
+reference. Missing telemetry is harmless and older bots render unchanged.
+
 The **Hide offline** toolbar toggle removes offline cards from the current view
 and excludes those bots from displayed fleet value, balance, profit, position,
 uptime, and retained-history totals. The preference is saved in the browser.

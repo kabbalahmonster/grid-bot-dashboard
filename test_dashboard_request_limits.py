@@ -329,6 +329,19 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("(parseFloat(d.eth_balance) || 0) - reserve", body)
         self.assertIn("toFixed(5)", body)
 
+    def test_threshold_gap_metrics_explain_spacing_and_boundaries(self):
+        body = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn("function thresholdGapOverview", body)
+        self.assertIn("SPACING GUARD", body)
+        self.assertIn("Net buy mark", body)
+        self.assertIn("Dip spacing", body)
+        self.assertIn("Next gap buy", body)
+        self.assertIn("Next true dip", body)
+        self.assertIn("max fill", body)
+        self.assertIn("threshold_entry_kind", body)
+        self.assertIn("Entry ref:", body)
+
     def test_dashboard_offers_operational_next_buy_and_capacity_sorts(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn('<option value="next-buy-estimate">Next buy estimate</option>', body)
