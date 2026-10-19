@@ -5,6 +5,17 @@ from dashboard_server import _allowlisted_status_payload
 
 
 class TestStatusPayloadAllowlist(unittest.TestCase):
+    def test_dexscreener_pair_override_requires_evm_address(self):
+        valid = "0x" + "9" * 40
+        self.assertEqual(
+            _allowlisted_status_payload({"dexscreener_pair_address": valid}),
+            {"dexscreener_pair_address": valid},
+        )
+        self.assertEqual(
+            _allowlisted_status_payload({"dexscreener_pair_address": "javascript:alert(1)"}),
+            {},
+        )
+
     def test_drops_unknown_top_level_and_nested_fields(self):
         payload = {
             "bot_id": "test-bot",

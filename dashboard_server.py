@@ -107,7 +107,8 @@ _STATUS_FIELDS = frozenset({
     "strategy_mode", "strategy_spacing", "entry_allocation_mode", "drawdown_ladder", "threshold_gap",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
-    "swap_slippage_percent", "token_symbol", "token_address", "wallet_address",
+    "swap_slippage_percent", "token_symbol", "token_address",
+    "dexscreener_pair_address", "wallet_address",
     "display_name", "group", "buy_point_percent", "sell_point_percent",
     "pnl_polling_mode", "pnl_legacy_triggers", "pnl_trigger_mode",
     "pnl_focus_side", "pnl_focus_reason", "pnl_focus_directions",
@@ -272,8 +273,9 @@ _sse_lock = threading.Lock()
 _rate_store: dict[str, deque] = defaultdict(lambda: deque(maxlen=RATE_LIMIT_MAX_REQUESTS + 1))
 _rate_lock = threading.Lock()
 
-# (chain_id, token_address) -> (cached_at_monotonic, selected pair market data)
-_dexscreener_pair_cache: dict[tuple[int, str], tuple[float, dict]] = {}
+# (chain_id, token_address, pair_override) ->
+# (cached_at_monotonic, selected pair market data)
+_dexscreener_pair_cache: dict[tuple[int, str, str], tuple[float, dict]] = {}
 _dexscreener_lock = threading.Lock()
 
 # Cached ETH fiat prices: (cached_at_monotonic, {"usd": float, "cad": float})
@@ -825,6 +827,11 @@ def _allowlisted_status_payload(data):
     if not (isinstance(revision, int) and not isinstance(revision, bool)
             and 0 <= revision < 2**53):
         filtered.pop("revision", None)
+    pair_override = filtered.get("dexscreener_pair_address")
+    if not (isinstance(pair_override, str)
+            and (pair_override == ""
+                 or re.fullmatch(r"0x[0-9a-fA-F]{40}", pair_override))):
+        filtered.pop("dexscreener_pair_address", None)
     if filtered.get("pnl_polling_mode") not in {
         "legacy", "buy", "sell", "bidirectional", "trilateral",
     }:
@@ -1338,12 +1345,15 @@ def eth_price():
             return jsonify({"error": "ETH price temporarily unavailable"}), 503
 
 
-def _dexscreener_pair_data(chain_id, token_address):
+def _dexscreener_pair_data(chain_id, token_address, pair_override=""):
     """Return cached preferred-pair data, preserving stale data on API failure."""
     chain_slug = CHAIN_SLUGS.get(chain_id)
     if not chain_slug:
         raise ValueError(f"Unsupported chain_id: {chain_id}")
-    cache_key = (chain_id, token_address.lower())
+    pair_override = str(pair_override or "").strip().lower()
+    if pair_override and not re.fullmatch(r"0x[0-9a-f]{40}", pair_override):
+        raise ValueError("Invalid Dexscreener pair override")
+    cache_key = (chain_id, token_address.lower(), pair_override)
     now = time.monotonic()
     with _dexscreener_lock:
         cached = _dexscreener_pair_cache.get(cache_key)
@@ -1387,7 +1397,18 @@ def _dexscreener_pair_data(chain_id, token_address):
             # liquidity as a tie-breaker.
             return (coherent, is_eth, volume, liquidity)
 
-        selected = max(pairs, key=pair_rank)
+        if pair_override:
+            selected = next(
+                (pair for pair in pairs
+                 if str(pair.get("pairAddress", "")).lower() == pair_override),
+                None,
+            )
+            if selected is None:
+                raise LookupError(
+                    "Configured Dexscreener pair was not returned for token"
+                )
+        else:
+            selected = max(pairs, key=pair_rank)
         pair_address = str(selected.get("pairAddress", ""))
         if not pair_address:
             raise LookupError("Dexscreener pair response missing address")
@@ -1406,8 +1427,13 @@ def _dexscreener_pair_data(chain_id, token_address):
                 price_change[window] = float(raw_changes[window])
             except (KeyError, TypeError, ValueError):
                 price_change[window] = None
-        data = {"pair_address": pair_address, "label": label, "value_usd": value,
-                "price_change": price_change}
+        data = {
+            "pair_address": pair_address,
+            "pair_selection": "override" if pair_override else "automatic",
+            "label": label,
+            "value_usd": value,
+            "price_change": price_change,
+        }
         with _dexscreener_lock:
             _dexscreener_pair_cache[cache_key] = (now, data)
         return {**data, "cached": False, "stale": False}
@@ -1423,23 +1449,37 @@ def dexscreener_market_data():
     """Return batched cached market cap/FDV data for currently reported bots."""
     with _lock:
         reported = {
-            bot_id: (state.get("chain_id"), str(state.get("token_address", "")).strip())
+            bot_id: (
+                state.get("chain_id"),
+                str(state.get("token_address", "")).strip(),
+                str(state.get("dexscreener_pair_address", "")).strip(),
+            )
             for bot_id, state in bot_states.items()
         }
     token_bots = defaultdict(list)
-    for bot_id, (chain_id, token_address) in reported.items():
+    for bot_id, (chain_id, token_address, pair_override) in reported.items():
         try:
             chain_id = int(chain_id)
         except (TypeError, ValueError):
             continue
-        if chain_id in CHAIN_SLUGS and re.fullmatch(r"0x[0-9a-fA-F]{40}", token_address):
-            token_bots[(chain_id, token_address.lower())].append(bot_id)
+        valid_override = (
+            not pair_override
+            or re.fullmatch(r"0x[0-9a-fA-F]{40}", pair_override)
+        )
+        if (chain_id in CHAIN_SLUGS
+                and re.fullmatch(r"0x[0-9a-fA-F]{40}", token_address)
+                and valid_override):
+            token_bots[(
+                chain_id, token_address.lower(), pair_override.lower()
+            )].append(bot_id)
 
     results = {}
     with ThreadPoolExecutor(max_workers=min(8, max(1, len(token_bots)))) as executor:
         futures = {
-            executor.submit(_dexscreener_pair_data, chain, token): (chain, token)
-            for chain, token in token_bots
+            executor.submit(_dexscreener_pair_data, chain, token, pair): (
+                chain, token, pair
+            )
+            for chain, token, pair in token_bots
         }
         for future in as_completed(futures):
             key = futures[future]
@@ -1455,23 +1495,28 @@ def dexscreener_market_data():
 
 @app.route("/api/dexscreener/chart-url", methods=["GET"])
 def dexscreener_chart_url():
-    """Resolve the preferred WETH pair and return its direct embed URL."""
+    """Resolve the automatic or explicitly overridden pair embed URL."""
     try:
         chain_id = int(request.args.get("chain_id", ""))
     except ValueError:
         return jsonify({"error": "Invalid chain_id"}), 400
 
     token_address = request.args.get("token_address", "").strip()
+    pair_override = request.args.get("pair_address", "").strip()
     wallet_address = request.args.get("wallet_address", "").strip()
     if not re.fullmatch(r"0x[0-9a-fA-F]{40}", token_address):
         return jsonify({"error": "Invalid token_address"}), 400
     if wallet_address and not re.fullmatch(r"0x[0-9a-fA-F]{40}", wallet_address):
         return jsonify({"error": "Invalid wallet_address"}), 400
+    if pair_override and not re.fullmatch(r"0x[0-9a-fA-F]{40}", pair_override):
+        return jsonify({"error": "Invalid pair_address"}), 400
     if chain_id not in CHAIN_SLUGS:
         return jsonify({"error": f"Unsupported chain_id: {chain_id}"}), 400
 
     try:
-        pair_data = _dexscreener_pair_data(chain_id, token_address)
+        pair_data = _dexscreener_pair_data(
+            chain_id, token_address, pair_override
+        )
     except LookupError:
         return jsonify({"error": "No Dexscreener pair found"}), 404
     except (http_requests.RequestException, ValueError) as exc:
@@ -4235,6 +4280,9 @@ DASHBOARD_HTML = """\
           token_address: String(d.token_address),
           wallet_address: String(d.wallet_address),
         });
+        if (d.dexscreener_pair_address) {
+          chartParams.set('pair_address', String(d.dexscreener_pair_address));
+        }
         html += '<details class="chart-panel" data-chart-key="' + esc(botKey) + '"' + (chartOpen ? ' open' : '') + '><summary class="toggle-raw">Dexscreener chart</summary>';
         html += '<iframe class="dex-chart" loading="lazy" data-resolver="/api/dexscreener/chart-url?' + esc(chartParams.toString()) + '" title="Dexscreener chart"></iframe></details>';
       }

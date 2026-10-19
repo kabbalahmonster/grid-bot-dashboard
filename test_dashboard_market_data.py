@@ -9,6 +9,7 @@ import dashboard_server
 
 TOKEN = "0x" + "1" * 40
 PAIR = "0x" + "2" * 40
+OVERRIDE_PAIR = "0x" + "9" * 40
 
 
 def response(pairs):
@@ -42,6 +43,36 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertEqual(data["label"], "Market Cap")
         self.assertEqual(data["value_usd"], 1234567.0)
         self.assertEqual(data["price_change"], {"m5": -0.5, "h1": 1.25, "h6": -3.0, "h24": 8.43})
+        self.assertEqual(data["pair_selection"], "automatic")
+
+    @patch("dashboard_server.http_requests.get")
+    def test_explicit_pair_override_wins_over_automatic_ranking(self, get):
+        get.return_value = response([
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "ETH"},
+             "liquidity": {"usd": 1000}, "volume": {"h24": 1000},
+             "marketCap": 111},
+            {"pairAddress": OVERRIDE_PAIR, "quoteToken": {"symbol": "WETH"},
+             "liquidity": {"usd": 10}, "volume": {"h24": 10},
+             "marketCap": 222},
+        ])
+
+        data = dashboard_server._dexscreener_pair_data(
+            8453, TOKEN, OVERRIDE_PAIR.upper().replace("0X", "0x")
+        )
+
+        self.assertEqual(data["pair_address"], OVERRIDE_PAIR)
+        self.assertEqual(data["value_usd"], 222.0)
+        self.assertEqual(data["pair_selection"], "override")
+
+    @patch("dashboard_server.http_requests.get")
+    def test_unknown_explicit_pair_fails_closed(self, get):
+        get.return_value = response([
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "ETH"},
+             "liquidity": {"usd": 1000}, "volume": {"h24": 1000}},
+        ])
+
+        with self.assertRaisesRegex(LookupError, "not returned for token"):
+            dashboard_server._dexscreener_pair_data(8453, TOKEN, OVERRIDE_PAIR)
 
     @patch("dashboard_server.http_requests.get")
     def test_rejects_bogus_high_liquidity_pair_with_incoherent_reserves(self, get):
@@ -79,8 +110,9 @@ class TestDexscreenerMarketData(unittest.TestCase):
         ])
         dashboard_server._dexscreener_pair_data(8453, TOKEN)
         with dashboard_server._dexscreener_lock:
-            _, cached = dashboard_server._dexscreener_pair_cache[(8453, TOKEN.lower())]
-            dashboard_server._dexscreener_pair_cache[(8453, TOKEN.lower())] = (0, cached)
+            key = (8453, TOKEN.lower(), "")
+            _, cached = dashboard_server._dexscreener_pair_cache[key]
+            dashboard_server._dexscreener_pair_cache[key] = (0, cached)
         get.side_effect = requests.ConnectionError("offline")
         data = dashboard_server._dexscreener_pair_data(8453, TOKEN)
         self.assertTrue(data["stale"])
@@ -103,6 +135,51 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertEqual(set(result.get_json()["bots"]), {"alpha", "beta"})
         self.assertEqual(get.call_count, 1)
 
+    @patch("dashboard_server.http_requests.get")
+    def test_batched_endpoint_isolates_pair_overrides(self, get):
+        get.return_value = response([
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "ETH"},
+             "liquidity": {"usd": 1000}, "volume": {"h24": 1000}},
+            {"pairAddress": OVERRIDE_PAIR, "quoteToken": {"symbol": "WETH"},
+             "liquidity": {"usd": 10}, "volume": {"h24": 10}},
+        ])
+        with dashboard_server._lock:
+            dashboard_server.bot_states.update({
+                "automatic": {"chain_id": 8453, "token_address": TOKEN},
+                "overridden": {
+                    "chain_id": 8453,
+                    "token_address": TOKEN,
+                    "dexscreener_pair_address": OVERRIDE_PAIR,
+                },
+            })
+
+        result = self.client.get("/api/dexscreener/market-data")
+        bots = result.get_json()["bots"]
+
+        self.assertEqual(bots["automatic"]["pair_address"], PAIR)
+        self.assertEqual(bots["overridden"]["pair_address"], OVERRIDE_PAIR)
+        self.assertEqual(get.call_count, 2)
+
+    @patch("dashboard_server.http_requests.get")
+    def test_chart_url_uses_explicit_pair_override(self, get):
+        get.return_value = response([
+            {"pairAddress": PAIR, "quoteToken": {"symbol": "ETH"}},
+            {"pairAddress": OVERRIDE_PAIR, "quoteToken": {"symbol": "WETH"}},
+        ])
+
+        result = self.client.get(
+            "/api/dexscreener/chart-url",
+            query_string={
+                "chain_id": 8453,
+                "token_address": TOKEN,
+                "pair_address": OVERRIDE_PAIR,
+            },
+        )
+
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(result.get_json()["pair_address"], OVERRIDE_PAIR)
+        self.assertIn(OVERRIDE_PAIR, result.get_json()["chart_url"])
+
     def test_market_cap_row_precedes_average_pnl(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertLess(body.index("data-market-key"), body.index("metrics.forEach"))
@@ -120,6 +197,7 @@ class TestDexscreenerMarketData(unittest.TestCase):
         self.assertIn("frame.dataset.pairAddress", body)
         self.assertIn("loadedPair === expectedPair", body)
         self.assertIn("frame.src = data.chart_url", body)
+        self.assertIn("chartParams.set('pair_address'", body)
 
     def test_more_info_shows_estimated_moonbag_value(self):
         body = self.client.get("/").get_data(as_text=True)

@@ -43,7 +43,8 @@ Each position shows token amount, ETH cost basis, and separate buy, sell, and le
 - Round-scoped sell-check indication that clears automatically with the next report that omits it
 - Persistent realized-profit totals with non-destructive accounting baselines
 - Per-cycle USDG balances when reported by current bots
-- Lazy-loaded Dexscreener WETH-pair charts filtered to the bot wallet
+- Lazy-loaded Dexscreener ETH/WETH-pair charts, with per-bot pair overrides,
+  filtered to the bot wallet
 - Built-in Gzip compression for the dashboard, JSON APIs, and flush-safe live
   SSE snapshots, reducing transfer size on constrained mobile connections
 - Live report age with running, stale, and offline states
@@ -376,9 +377,11 @@ Optional:
 BOT_ID=MERD
 DASHBOARD_NAME=MERD Main
 DASHBOARD_GROUP=Robinhood Farm
+# Pair contract copied from the desired Dexscreener chart URL; optional.
+DEXSCREENER_PAIR_ADDRESS=0x0000000000000000000000000000000000000001
 ```
 
-`BOT_ID` defaults to `TOKEN_SYMBOL`, then `grid-bot-CHAIN_ID`. Reporting is disabled when `DASHBOARD_URL` is empty. It uses a bounded background thread and does not block trading. Successful POST/response logs appear only at DEBUG; failures remain warnings.
+`BOT_ID` defaults to `TOKEN_SYMBOL`, then `grid-bot-CHAIN_ID`. Reporting is disabled when `DASHBOARD_URL` is empty. `DEXSCREENER_PAIR_ADDRESS` overrides the Dexscreener pair for only that bot card. DoomDash verifies the pair belongs to the reported token and uses it for market cap, movements, and the embedded chart; blank or absent retains automatic selection. It uses a bounded background thread and does not block trading. Successful POST/response logs appear only at DEBUG; failures remain warnings.
 
 Restart the bot after configuration:
 
@@ -457,6 +460,7 @@ Bots POST JSON to `/api/status` with the shared key in `X-API-Key`:
   "sell_point_percent": 5.0,
   "swap_provider": "uniswap",
   "token_address": "0x0000000000000000000000000000000000000001",
+  "dexscreener_pair_address": "0x0000000000000000000000000000000000000003",
   "wallet_address": "0x0000000000000000000000000000000000000002",
   "trades_history": [],
   "events": [],
@@ -604,8 +608,10 @@ Each card independently displays Dexscreener **Market Cap** immediately above
 AVG P&L. When Dexscreener does not provide circulating market cap but does
 provide fully diluted valuation, the card says **FDV** instead; the two values
 are never silently conflated. The browser polls one batched dashboard endpoint
-every 60 seconds, and the server deduplicates identical chain/token pairs and
-caches the preferred WETH-pair result. Market values update their existing DOM
+every 60 seconds, and the server deduplicates identical chain/token selections and
+caches the preferred ETH/WETH-pair result. A bot may report an optional
+`DEXSCREENER_PAIR_ADDRESS` override; its cache is isolated from the automatic
+selection and from other pair overrides for the same token. Market values update their existing DOM
 nodes without rebuilding cards, preserving smooth mobile scrolling and zoom.
 Temporary API failures retain stale successful cache values; unavailable values
 render as an em dash.
@@ -729,7 +735,7 @@ token names focus the corresponding card.
 | `GET` | `/api/health` | No | Health and counts |
 | `GET` | `/api/eth-price` | No | Cached ETH/USD/CAD conversion rates |
 | `GET` | `/api/dexscreener/market-data` | No | Batched cached market cap/FDV for reported bots |
-| `GET` | `/api/dexscreener/chart-url` | No | Resolve preferred WETH pair embed URL |
+| `GET` | `/api/dexscreener/chart-url` | No | Resolve automatic or overridden pair embed URL |
 
 SSE events:
 
@@ -761,9 +767,9 @@ active tournament card and summary count, showing the baseline route only as a
 detail; it does not relabel the user-facing tournament as a fallback.
 
 Dexscreener charts are lazy-loaded: the iframe has no URL until its panel is
-opened. Chart resolution and card market values share the token's preferred
-WETH-pair cache. The cache refreshes at most once per minute per unique
-chain/token pair and serves its last successful value as stale during temporary
+opened. Chart resolution and card market values share the token's selected
+pair cache, including an explicit bot-level override when configured. The cache
+refreshes at most once per minute per unique chain/token/override combination and serves its last successful value as stale during temporary
 Dexscreener failures. Routine SSE updates do not reload an open chart.
 
 The fleet toolbar can search bot IDs, display names, token symbols, groups, and provider names;
