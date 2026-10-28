@@ -131,10 +131,20 @@ class TestDashboardRequestLimits(unittest.TestCase):
             "dashboard-sort-mode", "dashboard-sort-direction", "dashboard-profit-currency",
             "dashboard-realized-profit-unit", "dashboard-realized-profit-period",
             "dashboard-sigil-animation", "dashboard-notification-preferences",
+            "dashboard-theme",
         ):
             self.assertIn(key, body)
         self.assertIn("['asc', 'desc'].includes(storedSortDirection)", body)
         self.assertIn("['cad', 'usd'].includes(storedProfitCurrency)", body)
+
+    def test_dashboard_offers_reversible_doomscout_theme(self):
+        body = self.client.get("/").get_data(as_text=True)
+        self.assertIn('html[data-theme="doomscout"]', body)
+        self.assertIn('id="theme-toggle"', body)
+        self.assertIn("storedTheme === 'classic' ? 'classic' : 'doomscout'", body)
+        self.assertIn("localStorage.setItem('dashboard-theme', nextTheme)", body)
+        self.assertIn("Theme: DoomScout", body)
+        self.assertIn("Theme: Classic", body)
 
     def test_summary_shows_realized_profit_age_and_averages(self):
         body = self.client.get("/").get_data(as_text=True)

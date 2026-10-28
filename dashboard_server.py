@@ -1885,12 +1885,151 @@ DASHBOARD_HTML = """\
   .tournament-final { margin-top: .65rem; border-top: 1px solid #7c3aed; padding-top: .65rem; color: #f5d0fe; }
   .tournament-final a { color: inherit; }
   .summary-item.tournaments-active { background:#4c1d95; border-color:#a78bfa; color:#f5f3ff; font-weight:700; animation:capacity-pulse 1.5s ease-in-out infinite; }
+
+  /* DoomScout theme: an isolated skin so the original dashboard remains one click away. */
+  html[data-theme="doomscout"] { color-scheme: dark; }
+  html[data-theme="doomscout"] body {
+    --ds-bg: #080c0e;
+    --ds-panel: #0e1518;
+    --ds-panel-deep: #0a1013;
+    --ds-line: #213036;
+    --ds-line-soft: #172226;
+    --ds-text: #dce8e9;
+    --ds-muted: #82949a;
+    --ds-green: #50f0b6;
+    --ds-yellow: #f3c66c;
+    --ds-red: #ff6e79;
+    --ds-blue: #7cb7ff;
+    font-family: Manrope, Inter, system-ui, -apple-system, sans-serif;
+    color: var(--ds-text);
+    background:
+      radial-gradient(circle at 82% -4rem, rgba(30, 94, 72, 0.28), transparent 30rem),
+      linear-gradient(rgba(80, 240, 182, 0.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(80, 240, 182, 0.018) 1px, transparent 1px),
+      var(--ds-bg);
+    background-size: auto, 32px 32px, 32px 32px, auto;
+  }
+  .brand-lockup { display: flex; align-items: center; gap: 0.72rem; }
+  .brand-mark { display: none; }
+  .brand-copy { display: grid; gap: 0.08rem; }
+  .brand-name { font: inherit; }
+  .brand-tagline { display: none; }
+  html[data-theme="doomscout"] .header {
+    position: sticky; top: 0; z-index: 40;
+    min-height: 58px; padding: 0.68rem max(1rem, calc((100vw - 1200px) / 2 + 1rem));
+    border-color: var(--ds-line); background: rgba(9, 14, 17, 0.9);
+    backdrop-filter: blur(14px); box-shadow: 0 10px 35px rgba(0, 0, 0, 0.18);
+  }
+  html[data-theme="doomscout"] .header h1 { font-size: 1rem; letter-spacing: 0.02em; }
+  html[data-theme="doomscout"] .brand-mark {
+    display: grid; place-items: center; width: 34px; height: 34px;
+    border: 1px solid #377b65; color: var(--ds-green); background: #10251f;
+    font: 800 1rem 'DM Mono', ui-monospace, monospace; transform: rotate(-4deg);
+  }
+  html[data-theme="doomscout"] .brand-name { color: #e7f1f1; font-weight: 800; }
+  html[data-theme="doomscout"] .brand-tagline { display: block; color: var(--ds-muted); font: 500 0.58rem 'DM Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
+  html[data-theme="doomscout"] .container { max-width: 1200px; margin-top: 1.35rem; }
+  html[data-theme="doomscout"] .connection-button { color: #a9b9bd; font: 500 0.7rem 'DM Mono', ui-monospace, monospace; letter-spacing: 0.04em; text-transform: uppercase; }
+  html[data-theme="doomscout"] .status-dot.connected { background: var(--ds-green); box-shadow: 0 0 9px rgba(80, 240, 182, 0.72); }
+  html[data-theme="doomscout"] .status-dot.disconnected { background: var(--ds-red); box-shadow: 0 0 8px rgba(255, 110, 121, 0.42); }
+  html[data-theme="doomscout"] .connection-diagnostics,
+  html[data-theme="doomscout"] .notification-menu,
+  html[data-theme="doomscout"] .history-modal-content { border-color: var(--ds-line); background: #0c1316; color: #b8c8cb; }
+  html[data-theme="doomscout"] .summary-item,
+  html[data-theme="doomscout"] .card,
+  html[data-theme="doomscout"] .scout-panel { border-color: var(--ds-line); background: linear-gradient(145deg, #0f171a, #0b1113); border-radius: 7px; }
+  html[data-theme="doomscout"] .summary-item { padding: 0.62rem 0.78rem; }
+  html[data-theme="doomscout"] .summary-detail,
+  html[data-theme="doomscout"] .scout-meta,
+  html[data-theme="doomscout"] .scout-note,
+  html[data-theme="doomscout"] .tournament-age { color: var(--ds-muted); }
+  html[data-theme="doomscout"] .toolbar { padding: 0.65rem; border: 1px solid var(--ds-line); border-radius: 8px; background: rgba(12, 18, 21, 0.84); }
+  html[data-theme="doomscout"] .toolbar select,
+  html[data-theme="doomscout"] .toolbar input,
+  html[data-theme="doomscout"] .toolbar button,
+  html[data-theme="doomscout"] .realized-period {
+    color: #dfeaea; border-color: var(--ds-line); border-radius: 6px; background: var(--ds-panel-deep);
+  }
+  html[data-theme="doomscout"] .toolbar select:focus,
+  html[data-theme="doomscout"] .toolbar input:focus,
+  html[data-theme="doomscout"] .toolbar button:focus-visible { outline: none; border-color: #469f80; box-shadow: 0 0 0 2px rgba(40, 103, 80, 0.27); }
+  html[data-theme="doomscout"] .toolbar button:hover { color: #caffec; border-color: #397f68; background: #153f34; }
+  html[data-theme="doomscout"] .toolbar button[aria-pressed="true"],
+  html[data-theme="doomscout"] #theme-toggle[aria-pressed="true"] { color: #caffec; border-color: #397f68; background: #153f34; }
+  html[data-theme="doomscout"] .card { padding: 1rem; box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12); }
+  html[data-theme="doomscout"] .card h2,
+  html[data-theme="doomscout"] .card h3,
+  html[data-theme="doomscout"] .scout-title { color: #e8f3f2; letter-spacing: -0.015em; }
+  html[data-theme="doomscout"] .card-header { border-color: var(--ds-line-soft); }
+  html[data-theme="doomscout"] .chain-badge,
+  html[data-theme="doomscout"] .provider-badge,
+  html[data-theme="doomscout"] .group-badge,
+  html[data-theme="doomscout"] .strategy-mode-badge,
+  html[data-theme="doomscout"] .pnl-mode-badge,
+  html[data-theme="doomscout"] .pnl-trigger-badge { color: #aabbbf; background: #152126; border: 1px solid #293b41; }
+  html[data-theme="doomscout"] .position,
+  html[data-theme="doomscout"] .trade,
+  html[data-theme="doomscout"] .event,
+  html[data-theme="doomscout"] .scout-card,
+  html[data-theme="doomscout"] pre.raw { border-color: var(--ds-line-soft); background: var(--ds-panel-deep); }
+  html[data-theme="doomscout"] .position .pnl-side { border-color: #223238; background: #0c1417; }
+  html[data-theme="doomscout"] .position .pnl-side.sell { border-color: #285f4d; background: #0f201a; }
+  html[data-theme="doomscout"] .position .pnl-side.legacy { border-color: #4a405c; background: #181522; }
+  html[data-theme="doomscout"] .strategy-overview,
+  html[data-theme="doomscout"] .threshold-gap-overview,
+  html[data-theme="doomscout"] .buy-target,
+  html[data-theme="doomscout"] .ladder-stat { border-color: var(--ds-line); background: rgba(10, 16, 19, 0.74); }
+  html[data-theme="doomscout"] .positive,
+  html[data-theme="doomscout"] .scout-route-ok { color: var(--ds-green); }
+  html[data-theme="doomscout"] .negative,
+  html[data-theme="doomscout"] .scout-route-bad,
+  html[data-theme="doomscout"] .scout-reason { color: var(--ds-red); }
+  html[data-theme="doomscout"] .event.success { border-left-color: var(--ds-green); }
+  html[data-theme="doomscout"] .event.error { border-left-color: var(--ds-red); }
+  html[data-theme="doomscout"] .event:not(.success):not(.error) { border-left-color: var(--ds-yellow); }
+  html[data-theme="doomscout"] .scout-header { background: linear-gradient(90deg, rgba(80, 240, 182, 0.045), transparent 60%); }
+  html[data-theme="doomscout"] .scout-icon { color: var(--ds-green); border-color: #284e42; background: #0e1c18; }
+  html[data-theme="doomscout"] .scout-body,
+  html[data-theme="doomscout"] .scout-routes,
+  html[data-theme="doomscout"] .shadow-routes li,
+  html[data-theme="doomscout"] .tournament-detail { border-color: var(--ds-line-soft); }
+  html[data-theme="doomscout"] .scout-card.pass { border-left-color: var(--ds-green); }
+  html[data-theme="doomscout"] .scout-card.caution { border-left-color: var(--ds-yellow); }
+  html[data-theme="doomscout"] .scout-card.reject { border-left-color: var(--ds-red); }
+  html[data-theme="doomscout"] .scout-score { color: var(--ds-yellow); font-family: 'DM Mono', ui-monospace, monospace; }
+  html[data-theme="doomscout"] .scout-links a,
+  html[data-theme="doomscout"] a { color: var(--ds-blue); }
+  html[data-theme="doomscout"] .tournament-card { border-color: #397f68; background: linear-gradient(145deg, rgba(21, 63, 52, 0.62), rgba(10, 16, 19, 0.88)); }
+  html[data-theme="doomscout"] .tournament-card h4,
+  html[data-theme="doomscout"] .tournament-card .arena-status { color: #caffec; }
+  html[data-theme="doomscout"] .tournament-contestant { border-color: var(--ds-line); background: rgba(8, 12, 14, 0.74); }
+  html[data-theme="doomscout"] .tournament-final { border-color: #397f68; color: #bcead8; }
+  html[data-theme="doomscout"] .sigil-stage,
+  html[data-theme="doomscout"] .sigil-modal-content { border-color: var(--ds-line); background: radial-gradient(circle at center, #10251f 0, #080c0e 70%); }
+  html[data-theme="doomscout"] .dex-chart { border-color: var(--ds-line); background: var(--ds-panel-deep); }
+  html[data-theme="doomscout"] ::selection { color: #06100c; background: var(--ds-green); }
+  html[data-theme="doomscout"] ::-webkit-scrollbar { width: 10px; height: 10px; }
+  html[data-theme="doomscout"] ::-webkit-scrollbar-track { background: #080c0e; }
+  html[data-theme="doomscout"] ::-webkit-scrollbar-thumb { border: 2px solid #080c0e; border-radius: 8px; background: #284139; }
+  @media (max-width: 640px) {
+    html[data-theme="doomscout"] .header { padding: 0.6rem 0.8rem; }
+    html[data-theme="doomscout"] .brand-tagline { display: none; }
+    html[data-theme="doomscout"] .container { margin-top: 1rem; }
+    html[data-theme="doomscout"] .toolbar { padding: 0.5rem; }
+  }
 </style>
+<script>
+  (function() {
+    var storedTheme = null;
+    try { storedTheme = localStorage.getItem('dashboard-theme'); } catch (_) {}
+    document.documentElement.dataset.theme = storedTheme === 'classic' ? 'classic' : 'doomscout';
+  }());
+</script>
 </head>
 <body>
 
 <div class="header">
-  <h1>⚡ Grid Bot Dashboard</h1>
+  <h1 class="brand-lockup"><span class="brand-mark" aria-hidden="true">D</span><span class="brand-copy"><span class="brand-name">DoomDash</span><span class="brand-tagline">Fleet operations</span></span></h1>
   <div class="connection-wrap">
     <button class="connection-button" id="connection-button" type="button" aria-expanded="false" aria-controls="connection-diagnostics">
       <span class="status-dot disconnected" id="dot"></span>
@@ -1919,6 +2058,7 @@ DASHBOARD_HTML = """\
     <select id="provider-filter"><option value="">All providers</option><option value="0x">0x</option><option value="lifi">LI.FI</option><option value="uniswap">Uniswap</option><option value="sushiswap">SushiSwap</option><option value="__unreported">Unreported</option></select>
     <button id="tax-filter" type="button" aria-pressed="false" title="Show only manually declared or auto-detected taxed tokens">Tax coins</button>
     <button id="hide-offline" type="button" aria-pressed="false" title="Hide offline bot cards and exclude them from summary totals">Hide offline</button>
+    <button id="theme-toggle" type="button" aria-pressed="true" title="Switch between DoomScout and classic dashboard styling">Theme: DoomScout</button>
     <select id="sort-bots"><option value="name">Name</option><option value="symbol">Symbol</option><option value="estimated-value">Estimated value</option><option value="moonbag-value">Moonbag value</option><option value="next-buy-estimate">Next buy estimate</option><option value="needs-positions">Needs positions</option><option value="market-cap">Market Cap</option><option value="day-movement">Day Movement</option><option value="pnl">AVG P&amp;L</option><option value="top-position-pnl">Top position P&amp;L</option><option value="profit" selected>Session profit</option><option value="buys">Session buys</option><option value="sells">Session sells</option><option value="realized-profit">Realized profit</option><option value="treasury-sent">Treasury sent</option><option value="position-utilization">Position utilization</option><option value="eth-balance">ETH balance</option><option value="usdg-balance">USDG balance</option><option value="status">Status</option></select>
     <button id="sort-direction" type="button" title="Reverse sort direction">Descending ↓</button>
     <span class="notification-wrap"><button id="notifications" type="button" aria-haspopup="true" aria-expanded="false">Notifications</button>
@@ -1985,6 +2125,7 @@ DASHBOARD_HTML = """\
   const providerFilter = document.getElementById('provider-filter');
   const taxFilter = document.getElementById('tax-filter');
   const hideOfflineButton = document.getElementById('hide-offline');
+  const themeToggle = document.getElementById('theme-toggle');
   const sortBots = document.getElementById('sort-bots');
   const sortDirection = document.getElementById('sort-direction');
   const sigilModal = document.getElementById('sigil-modal');
@@ -2063,6 +2204,12 @@ DASHBOARD_HTML = """\
     hideOfflineButton.textContent = hideOfflineEnabled ? 'Offline hidden ✓' : 'Hide offline';
   }
   updateHideOfflineButton();
+  function updateThemeToggle() {
+    const doomScoutThemeEnabled = document.documentElement.dataset.theme !== 'classic';
+    themeToggle.setAttribute('aria-pressed', String(doomScoutThemeEnabled));
+    themeToggle.textContent = doomScoutThemeEnabled ? 'Theme: DoomScout' : 'Theme: Classic';
+  }
+  updateThemeToggle();
   clearFilter.style.display = botFilter.value ? 'block' : 'none';
   const storedRealizedProfitUnit = localStorage.getItem('dashboard-realized-profit-unit');
   let realizedProfitUnit = ['eth', 'cad', 'usd'].includes(storedRealizedProfitUnit) ? storedRealizedProfitUnit : 'eth';
@@ -4660,6 +4807,12 @@ DASHBOARD_HTML = """\
     localStorage.setItem('dashboard-hide-offline', String(hideOfflineEnabled));
     updateHideOfflineButton();
     render(true);
+  });
+  themeToggle.addEventListener('click', function() {
+    const nextTheme = document.documentElement.dataset.theme === 'doomscout' ? 'classic' : 'doomscout';
+    document.documentElement.dataset.theme = nextTheme;
+    try { localStorage.setItem('dashboard-theme', nextTheme); } catch (_) {}
+    updateThemeToggle();
   });
   function updateSortDirectionButton() {
     sortDirection.textContent = sortDirectionValue === 'asc' ? 'Ascending ↑' : 'Descending ↓';
