@@ -600,7 +600,7 @@ def _allowlisted_threshold_gap(value):
 
 
 _ROUTE_ENUMS = {
-    "provider": {"uniswap", "sushiswap", "umbra", "lifi"},
+    "provider": {"uniswap", "sushiswap", "umbra", "lifi", "abyss"},
     "settlement": {"native", "weth"},
     "validation_level": {"quote_only", "rejected"},
     "gas_basis": {"conservative_budget_not_simulated", "local_estimate",
@@ -698,8 +698,8 @@ def _allowlisted_route_comparison(value, direction):
     for key in ("started_at", "updated_at", "submitted_at", "confirmed_at"):
         if _route_timestamp(value.get(key)):
             result[key] = value[key]
-    # Four providers can each report native and WETH settlement candidates.
-    for row in value["candidates"][:8]:
+    # Five providers can each report native and WETH settlement candidates.
+    for row in value["candidates"][:10]:
         if (not isinstance(row, dict) or row.get("execution_eligible") is not False
                 or not all(_route_enum(key, row.get(key)) for key in
                            ("provider", "settlement", "validation_level"))):
@@ -2585,7 +2585,7 @@ DASHBOARD_HTML = """\
 
   function tournamentRowsForDisplay(comparison, botKey) {
     const reported = Array.isArray(comparison?.candidates)
-      ? comparison.candidates.slice(0, 8) : [];
+      ? comparison.candidates.slice(0, 10) : [];
     if (comparison?.mode !== 'execution_preflight') {
       return { rows: reported, retained: false };
     }
@@ -2650,7 +2650,7 @@ DASHBOARD_HTML = """\
     const value = v => esc(v ?? '—');
     const displayedContestants = typeof tournamentRowsForDisplay === 'function'
       ? tournamentRowsForDisplay(comparison, botKey)
-      : { rows: Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 8) : [], retained: false, elapsedMs: comparison.elapsed_ms };
+      : { rows: Array.isArray(comparison.candidates) ? comparison.candidates.slice(0, 10) : [], retained: false, elapsedMs: comparison.elapsed_ms };
     const rows = displayedContestants.rows.sort(function(a, b) {
       const av = Number(a.projected_net_score); const bv = Number(b.projected_net_score);
       if (!Number.isFinite(av)) return 1; if (!Number.isFinite(bv)) return -1; return bv - av;
