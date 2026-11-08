@@ -179,6 +179,7 @@ _RAPID_CYCLE_FIELDS = frozenset({
     "mode", "status", "principal_eth", "entry_drop_percent",
     "min_profit_percent", "min_buy_samples", "lookback_samples",
     "min_confidence_samples", "buy_sample_count", "confidence_streak",
+    "max_open_positions", "open_position_count", "deployed_eth",
     "completed_cycle_count", "last_observation",
     "position", "pending_action", "last_completed_cycle",
 })
@@ -715,12 +716,16 @@ def _allowlisted_rapid_cycle(value):
     for key in (
         "min_buy_samples", "lookback_samples", "min_confidence_samples",
         "buy_sample_count", "confidence_streak",
-        "completed_cycle_count",
+        "max_open_positions", "open_position_count", "completed_cycle_count",
     ):
         number = clean.get(key)
         if not (isinstance(number, int) and not isinstance(number, bool)
                 and 0 <= number <= 1_000_000):
             clean.pop(key, None)
+    deployed = clean.get("deployed_eth")
+    if not (type(deployed) in (int, float) and math.isfinite(deployed)
+            and 0 <= deployed <= 1_000_000):
+        clean.pop("deployed_eth", None)
 
     observation = _allowlisted_mapping(
         clean.get("last_observation"), _RAPID_OBSERVATION_FIELDS
@@ -3520,7 +3525,7 @@ DASHBOARD_HTML = """\
       }).join(' / ');
     };
     let stateLabel = 'Scanning exit-qualified entries';
-    if (status === 'open') stateLabel = mode === 'shadow' ? 'Paper position open' : 'Live position open';
+    if (status === 'open') stateLabel = mode === 'shadow' ? 'Paper portfolio open' : 'Live position open';
     else if (status === 'action_pending') stateLabel = 'Fresh ' + String(pending.type || 'trade') + ' validation pending';
     const stat = function(label, value, css) {
       return '<div class="rapid-cycle-stat"><span>' + esc(label) + '</span><strong' +
@@ -3548,6 +3553,10 @@ DASHBOARD_HTML = """\
           percent(observation.drop_from_peak_percent, false) + ' / ' +
           percent(rapid.entry_drop_percent, false));
       }
+    } else if (mode === 'shadow') {
+      html += stat('Open shots', String(parseInt(rapid.open_position_count, 10) || 0) +
+        ' / ' + String(parseInt(rapid.max_open_positions, 10) || 1));
+      html += stat('Paper deployed', eth(rapid.deployed_eth));
     } else {
       html += stat((position.kind === 'paper' ? 'Paper ' : '') + 'Cost basis', eth(position.cost_eth));
       const projected = number(observation.projected_profit_percent);

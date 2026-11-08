@@ -43,6 +43,9 @@ class TestRapidCycleDashboard(unittest.TestCase):
             "min_confidence_samples": 2,
             "buy_sample_count": 3,
             "confidence_streak": 2,
+            "max_open_positions": 10,
+            "open_position_count": 4,
+            "deployed_eth": 0.00404,
             "completed_cycle_count": 4,
             "last_observation": {
                 "direction": "sell",
@@ -77,6 +80,7 @@ class TestRapidCycleDashboard(unittest.TestCase):
         self.assertEqual(clean["last_observation"]["provider"], "abyss")
         self.assertTrue(clean["last_observation"]["round_trip_qualified"])
         self.assertEqual(clean["confidence_streak"], 2)
+        self.assertEqual(clean["open_position_count"], 4)
         self.assertEqual(clean["position"]["kind"], "paper")
         self.assertNotIn("calldata", clean["last_observation"])
         self.assertNotIn("wallet_address", clean["position"])
@@ -138,6 +142,9 @@ class TestRapidCycleDashboard(unittest.TestCase):
             "principal_eth": 0.001,
             "min_profit_percent": 1,
             "completed_cycle_count": 2,
+            "max_open_positions": 10,
+            "open_position_count": 4,
+            "deployed_eth": 0.00404,
             "position": {
                 "kind": "paper",
                 "cost_eth": 0.00101,
@@ -151,9 +158,11 @@ class TestRapidCycleDashboard(unittest.TestCase):
             },
         })
 
-        self.assertIn("Paper position open", html)
-        self.assertIn("Paper Cost basis", html)
-        self.assertIn("+0.42% / +1.00%", html)
+        self.assertIn("Paper portfolio open", html)
+        self.assertIn("Open shots", html)
+        self.assertIn(">4 / 10</strong>", html)
+        self.assertIn("Paper deployed", html)
+        self.assertIn(">0.00404 ETH</strong>", html)
         self.assertIn("paper amount: 2,100.5 tokens", html)
 
     def test_older_flat_payload_keeps_legacy_improvement_display(self):
