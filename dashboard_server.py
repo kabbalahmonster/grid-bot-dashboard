@@ -178,12 +178,15 @@ _THRESHOLD_GAP_FIELDS = frozenset({
 _RAPID_CYCLE_FIELDS = frozenset({
     "mode", "status", "principal_eth", "entry_drop_percent",
     "min_profit_percent", "min_buy_samples", "lookback_samples",
-    "buy_sample_count", "completed_cycle_count", "last_observation",
+    "min_confidence_samples", "buy_sample_count", "confidence_streak",
+    "completed_cycle_count", "last_observation",
     "position", "pending_action", "last_completed_cycle",
 })
 _RAPID_OBSERVATION_FIELDS = frozenset({
     "direction", "block_number", "provider", "settlement", "observed_at",
     "drop_from_peak_percent", "projected_profit_percent", "projected_gas_eth",
+    "exit_provider", "exit_settlement", "round_trip_qualified",
+    "confidence_streak", "required_confidence_samples",
 })
 _RAPID_POSITION_FIELDS = frozenset({
     "kind", "opened_at", "token_amount", "cost_eth", "buy_provider",
@@ -710,7 +713,8 @@ def _allowlisted_rapid_cycle(value):
                 and 0 <= number <= maximum):
             clean.pop(key, None)
     for key in (
-        "min_buy_samples", "lookback_samples", "buy_sample_count",
+        "min_buy_samples", "lookback_samples", "min_confidence_samples",
+        "buy_sample_count", "confidence_streak",
         "completed_cycle_count",
     ):
         number = clean.get(key)
@@ -724,8 +728,9 @@ def _allowlisted_rapid_cycle(value):
     if observation is not None:
         if observation.get("direction") not in {"buy", "sell"}:
             observation.pop("direction", None)
-        for key in ("provider", "settlement"):
-            if key in observation and not _route_enum(key, observation[key]):
+        for key in ("provider", "settlement", "exit_provider", "exit_settlement"):
+            enum_key = "provider" if key.endswith("provider") else "settlement"
+            if key in observation and not _route_enum(enum_key, observation[key]):
                 observation.pop(key)
         if "observed_at" in observation and not _route_timestamp(observation["observed_at"]):
             observation.pop("observed_at")
@@ -740,6 +745,14 @@ def _allowlisted_rapid_cycle(value):
             number = observation.get(key)
             if not (type(number) in (int, float) and math.isfinite(number)
                     and abs(number) < 1e96):
+                observation.pop(key, None)
+        qualified = observation.get("round_trip_qualified")
+        if not isinstance(qualified, bool):
+            observation.pop("round_trip_qualified", None)
+        for key in ("confidence_streak", "required_confidence_samples"):
+            number = observation.get(key)
+            if not (isinstance(number, int) and not isinstance(number, bool)
+                    and 0 <= number <= 1_000_000):
                 observation.pop(key, None)
         clean["last_observation"] = observation
     else:
@@ -3506,7 +3519,7 @@ DASHBOARD_HTML = """\
         return String(value).toUpperCase();
       }).join(' / ');
     };
-    let stateLabel = 'Scanning executable entries';
+    let stateLabel = 'Scanning exit-qualified entries';
     if (status === 'open') stateLabel = mode === 'shadow' ? 'Paper position open' : 'Live position open';
     else if (status === 'action_pending') stateLabel = 'Fresh ' + String(pending.type || 'trade') + ' validation pending';
     const stat = function(label, value, css) {
@@ -3523,9 +3536,18 @@ DASHBOARD_HTML = """\
     if (status === 'flat' || (status === 'action_pending' && pending.type === 'buy')) {
       const samples = parseInt(rapid.buy_sample_count, 10) || 0;
       const minimum = parseInt(rapid.min_buy_samples, 10) || 0;
+      const confidence = parseInt(rapid.confidence_streak, 10) || 0;
+      const confidenceMinimum = parseInt(rapid.min_confidence_samples, 10) || 0;
       html += stat('Entry samples', samples + ' / ' + minimum);
-      html += stat(status === 'action_pending' ? 'Entry signal' : 'Latest improvement',
-        percent(observation.drop_from_peak_percent, false) + ' / ' + percent(rapid.entry_drop_percent, false));
+      if (confidenceMinimum > 0) {
+        html += stat(status === 'action_pending' ? 'Entry qualified' : 'Exit confidence',
+          confidence + ' / ' + confidenceMinimum,
+          observation.round_trip_qualified === true ? 'positive' : '');
+      } else {
+        html += stat(status === 'action_pending' ? 'Entry signal' : 'Latest improvement',
+          percent(observation.drop_from_peak_percent, false) + ' / ' +
+          percent(rapid.entry_drop_percent, false));
+      }
     } else {
       html += stat((position.kind === 'paper' ? 'Paper ' : '') + 'Cost basis', eth(position.cost_eth));
       const projected = number(observation.projected_profit_percent);
@@ -3537,6 +3559,17 @@ DASHBOARD_HTML = """\
     const observedAge = observation.observed_at ? reportAge(observation.observed_at).text : '';
     const details = [];
     if (lastRoute) details.push('Last ' + String(observation.direction || 'route') + ': ' + lastRoute);
+    const exitRoute = route(observation.exit_provider, observation.exit_settlement);
+    if (exitRoute) details.push('preflight exit: ' + exitRoute);
+    if (status === 'flat' && Number(rapid.min_confidence_samples) > 0 &&
+        number(observation.drop_from_peak_percent) !== null) {
+      details.push('improvement ' + percent(observation.drop_from_peak_percent, false) +
+        ' / ' + percent(rapid.entry_drop_percent, false));
+    }
+    if (status === 'flat' && number(observation.projected_profit_percent) !== null) {
+      details.push('round trip ' + percent(observation.projected_profit_percent, true) +
+        ' / +' + percent(rapid.min_profit_percent, false));
+    }
     if (observedAge) details.push(observedAge);
     if (status === 'open' && number(position.token_amount) !== null) {
       details.push((position.kind === 'paper' ? 'paper' : 'position') + ' amount: ' +

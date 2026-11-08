@@ -40,7 +40,9 @@ class TestRapidCycleDashboard(unittest.TestCase):
             "min_profit_percent": 1.0,
             "min_buy_samples": 3,
             "lookback_samples": 12,
+            "min_confidence_samples": 2,
             "buy_sample_count": 3,
+            "confidence_streak": 2,
             "completed_cycle_count": 4,
             "last_observation": {
                 "direction": "sell",
@@ -50,6 +52,11 @@ class TestRapidCycleDashboard(unittest.TestCase):
                 "observed_at": "2026-11-08T03:50:00+00:00",
                 "projected_profit_percent": 0.42,
                 "projected_gas_eth": 0.00001,
+                "exit_provider": "sushiswap",
+                "exit_settlement": "weth",
+                "round_trip_qualified": True,
+                "confidence_streak": 2,
+                "required_confidence_samples": 2,
                 "calldata": "drop-me",
             },
             "position": {
@@ -68,6 +75,8 @@ class TestRapidCycleDashboard(unittest.TestCase):
 
         self.assertEqual(clean["mode"], "shadow")
         self.assertEqual(clean["last_observation"]["provider"], "abyss")
+        self.assertTrue(clean["last_observation"]["round_trip_qualified"])
+        self.assertEqual(clean["confidence_streak"], 2)
         self.assertEqual(clean["position"]["kind"], "paper")
         self.assertNotIn("calldata", clean["last_observation"])
         self.assertNotIn("wallet_address", clean["position"])
@@ -93,23 +102,34 @@ class TestRapidCycleDashboard(unittest.TestCase):
             "status": "flat",
             "principal_eth": 0.001,
             "entry_drop_percent": 2,
+            "min_profit_percent": 1,
             "min_buy_samples": 3,
+            "min_confidence_samples": 2,
             "buy_sample_count": 2,
+            "confidence_streak": 1,
             "completed_cycle_count": 0,
             "last_observation": {
                 "direction": "buy",
                 "provider": "uniswap",
                 "settlement": "native",
                 "drop_from_peak_percent": 1.25,
+                "projected_profit_percent": 1.5,
+                "exit_provider": "sushiswap",
+                "exit_settlement": "weth",
+                "round_trip_qualified": True,
                 "observed_at": "2026-11-08T03:50:00+00:00",
             },
         })
 
         self.assertIn("SHADOW · PAPER ONLY", html)
-        self.assertIn("Scanning executable entries", html)
+        self.assertIn("Scanning exit-qualified entries", html)
         self.assertIn(">2 / 3</strong>", html)
-        self.assertIn(">1.25% / 2.00%</strong>", html)
+        self.assertIn("Exit confidence", html)
+        self.assertIn(">1 / 2</strong>", html)
+        self.assertIn("improvement 1.25% / 2.00%", html)
+        self.assertIn("round trip +1.50% / +1.00%", html)
         self.assertIn("UNISWAP / NATIVE", html)
+        self.assertIn("preflight exit: SUSHISWAP / WETH", html)
 
     def test_open_card_shows_paper_position_and_projected_exit(self):
         html = self._render({
@@ -135,6 +155,16 @@ class TestRapidCycleDashboard(unittest.TestCase):
         self.assertIn("Paper Cost basis", html)
         self.assertIn("+0.42% / +1.00%", html)
         self.assertIn("paper amount: 2,100.5 tokens", html)
+
+    def test_older_flat_payload_keeps_legacy_improvement_display(self):
+        html = self._render({
+            "mode": "shadow", "status": "flat", "entry_drop_percent": 2,
+            "min_buy_samples": 3, "buy_sample_count": 2,
+            "last_observation": {"drop_from_peak_percent": 1.25},
+        })
+        self.assertIn("Latest improvement", html)
+        self.assertIn(">1.25% / 2.00%</strong>", html)
+        self.assertNotIn("Exit confidence", html)
 
     def test_main_card_renders_rapid_cycle_without_affecting_legacy_payloads(self):
         body = self.client.get("/").get_data(as_text=True)
