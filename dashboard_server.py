@@ -177,7 +177,7 @@ _THRESHOLD_GAP_FIELDS = frozenset({
 })
 _RAPID_CYCLE_FIELDS = frozenset({
     "mode", "status", "principal_eth", "entry_drop_percent",
-    "min_profit_percent", "min_buy_samples", "lookback_samples",
+    "min_profit_percent", "entry_strategy", "min_buy_samples", "lookback_samples",
     "min_confidence_samples", "buy_sample_count", "confidence_streak",
     "max_open_positions", "open_position_count", "deployed_eth",
     "completed_cycle_count", "last_observation",
@@ -713,6 +713,8 @@ def _allowlisted_rapid_cycle(value):
         if not (type(number) in (int, float) and math.isfinite(number)
                 and 0 <= number <= maximum):
             clean.pop(key, None)
+    if clean.get("entry_strategy") not in {"dip", "route_arbitrage"}:
+        clean.pop("entry_strategy", None)
     for key in (
         "min_buy_samples", "lookback_samples", "min_confidence_samples",
         "buy_sample_count", "confidence_streak",
@@ -3524,7 +3526,10 @@ DASHBOARD_HTML = """\
         return String(value).toUpperCase();
       }).join(' / ');
     };
-    let stateLabel = 'Scanning exit-qualified entries';
+    const entryStrategy = String(rapid.entry_strategy || 'dip');
+    let stateLabel = entryStrategy === 'route_arbitrage'
+      ? 'Scanning profitable round trips'
+      : 'Scanning exit-qualified entries';
     if (status === 'open') stateLabel = mode === 'shadow' ? 'Paper portfolio open' : 'Live position open';
     else if (status === 'action_pending') stateLabel = 'Fresh ' + String(pending.type || 'trade') + ' validation pending';
     const stat = function(label, value, css) {
@@ -3543,9 +3548,12 @@ DASHBOARD_HTML = """\
       const minimum = parseInt(rapid.min_buy_samples, 10) || 0;
       const confidence = parseInt(rapid.confidence_streak, 10) || 0;
       const confidenceMinimum = parseInt(rapid.min_confidence_samples, 10) || 0;
-      html += stat('Entry samples', samples + ' / ' + minimum);
+      if (entryStrategy !== 'route_arbitrage') {
+        html += stat('Entry samples', Math.min(samples, minimum) + ' / ' + minimum);
+      }
       if (confidenceMinimum > 0) {
-        html += stat(status === 'action_pending' ? 'Entry qualified' : 'Exit confidence',
+        html += stat(status === 'action_pending' ? 'Entry qualified' :
+          (entryStrategy === 'route_arbitrage' ? 'Route confirmations' : 'Exit confidence'),
           confidence + ' / ' + confidenceMinimum,
           observation.round_trip_qualified === true ? 'positive' : '');
       } else {

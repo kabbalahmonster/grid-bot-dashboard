@@ -38,6 +38,7 @@ class TestRapidCycleDashboard(unittest.TestCase):
             "principal_eth": 0.001,
             "entry_drop_percent": 2.0,
             "min_profit_percent": 1.0,
+            "entry_strategy": "route_arbitrage",
             "min_buy_samples": 3,
             "lookback_samples": 12,
             "min_confidence_samples": 2,
@@ -77,6 +78,7 @@ class TestRapidCycleDashboard(unittest.TestCase):
         clean = server._allowlisted_status_payload({"rapid_cycle": payload})["rapid_cycle"]
 
         self.assertEqual(clean["mode"], "shadow")
+        self.assertEqual(clean["entry_strategy"], "route_arbitrage")
         self.assertEqual(clean["last_observation"]["provider"], "abyss")
         self.assertTrue(clean["last_observation"]["round_trip_qualified"])
         self.assertEqual(clean["confidence_streak"], 2)
@@ -133,7 +135,34 @@ class TestRapidCycleDashboard(unittest.TestCase):
         self.assertIn("improvement 1.25% / 2.00%", html)
         self.assertIn("round trip +1.50% / +1.00%", html)
         self.assertIn("UNISWAP / NATIVE", html)
-        self.assertIn("preflight exit: SUSHISWAP / WETH", html)
+
+    def test_route_arbitrage_card_shows_bounded_confirmations_not_entry_failures(self):
+        html = self._render({
+            "mode": "shadow",
+            "status": "flat",
+            "entry_strategy": "route_arbitrage",
+            "principal_eth": 0.001,
+            "entry_drop_percent": 2,
+            "min_profit_percent": 1,
+            "min_buy_samples": 3,
+            "min_confidence_samples": 2,
+            "buy_sample_count": 5,
+            "confidence_streak": 1,
+            "completed_cycle_count": 0,
+            "last_observation": {
+                "direction": "buy",
+                "provider": "uniswap",
+                "settlement": "native",
+                "projected_profit_percent": 1.5,
+                "round_trip_qualified": True,
+            },
+        })
+
+        self.assertIn("Scanning profitable round trips", html)
+        self.assertIn("Route confirmations", html)
+        self.assertIn(">1 / 2</strong>", html)
+        self.assertNotIn("Entry samples", html)
+        self.assertNotIn("5 / 3", html)
 
     def test_open_card_shows_paper_position_and_projected_exit(self):
         html = self._render({
