@@ -105,6 +105,7 @@ _STATUS_FIELDS = frozenset({
     "realized_sales", "profit_tracking_started_at", "buys", "sells",
     "filled_positions", "max_positions", "capacity_warning", "needs_gas", "funding_warning", "buy_attempt", "sell_attempt",
     "strategy_mode", "strategy_spacing", "entry_allocation_mode", "drawdown_ladder", "threshold_gap",
+    "rapid_cycle",
     "chain_id", "swap_provider", "taxed_token", "token_transfer_fee_percent",
     "token_tax_detection_source", "token_tax_detection_observations",
     "swap_slippage_percent", "token_symbol", "token_address",
@@ -173,6 +174,25 @@ _THRESHOLD_GAP_FIELDS = frozenset({
     "lower_anchor_move_percent", "next_leading_edge_price",
     "upper_boundary_position_id", "upper_boundary_price",
     "room_above_percent", "max_gap_entry_price",
+})
+_RAPID_CYCLE_FIELDS = frozenset({
+    "mode", "status", "principal_eth", "entry_drop_percent",
+    "min_profit_percent", "min_buy_samples", "lookback_samples",
+    "buy_sample_count", "completed_cycle_count", "last_observation",
+    "position", "pending_action", "last_completed_cycle",
+})
+_RAPID_OBSERVATION_FIELDS = frozenset({
+    "direction", "block_number", "provider", "settlement", "observed_at",
+    "drop_from_peak_percent", "projected_profit_percent", "projected_gas_eth",
+})
+_RAPID_POSITION_FIELDS = frozenset({
+    "kind", "opened_at", "token_amount", "cost_eth", "buy_provider",
+    "buy_settlement",
+})
+_RAPID_PENDING_FIELDS = frozenset({"type", "requested_at"})
+_RAPID_COMPLETED_FIELDS = frozenset({
+    "opened_at", "closed_at", "profit_eth", "profit_percent",
+    "buy_provider", "buy_settlement", "sell_provider", "sell_settlement",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -672,6 +692,112 @@ def _route_timestamp(value):
         return False
 
 
+def _allowlisted_rapid_cycle(value):
+    """Keep only bounded public state needed by the rapid-cycle card."""
+    clean = _allowlisted_mapping(value, _RAPID_CYCLE_FIELDS)
+    if clean is None or clean.get("mode") not in {"shadow", "live"}:
+        return None
+    if clean.get("status") not in {"flat", "open", "action_pending"}:
+        return None
+
+    for key, maximum in (
+        ("principal_eth", 1000),
+        ("entry_drop_percent", 100),
+        ("min_profit_percent", 1000),
+    ):
+        number = clean.get(key)
+        if not (type(number) in (int, float) and math.isfinite(number)
+                and 0 <= number <= maximum):
+            clean.pop(key, None)
+    for key in (
+        "min_buy_samples", "lookback_samples", "buy_sample_count",
+        "completed_cycle_count",
+    ):
+        number = clean.get(key)
+        if not (isinstance(number, int) and not isinstance(number, bool)
+                and 0 <= number <= 1_000_000):
+            clean.pop(key, None)
+
+    observation = _allowlisted_mapping(
+        clean.get("last_observation"), _RAPID_OBSERVATION_FIELDS
+    )
+    if observation is not None:
+        if observation.get("direction") not in {"buy", "sell"}:
+            observation.pop("direction", None)
+        for key in ("provider", "settlement"):
+            if key in observation and not _route_enum(key, observation[key]):
+                observation.pop(key)
+        if "observed_at" in observation and not _route_timestamp(observation["observed_at"]):
+            observation.pop("observed_at")
+        block = observation.get("block_number")
+        if not (isinstance(block, int) and not isinstance(block, bool)
+                and 0 <= block < 2**63):
+            observation.pop("block_number", None)
+        for key in (
+            "drop_from_peak_percent", "projected_profit_percent",
+            "projected_gas_eth",
+        ):
+            number = observation.get(key)
+            if not (type(number) in (int, float) and math.isfinite(number)
+                    and abs(number) < 1e96):
+                observation.pop(key, None)
+        clean["last_observation"] = observation
+    else:
+        clean.pop("last_observation", None)
+
+    position = _allowlisted_mapping(clean.get("position"), _RAPID_POSITION_FIELDS)
+    if position is not None:
+        if position.get("kind") not in {"paper", "live"}:
+            position.pop("kind", None)
+        if "opened_at" in position and not _route_timestamp(position["opened_at"]):
+            position.pop("opened_at")
+        for key in ("buy_provider", "buy_settlement"):
+            enum_key = "provider" if key.endswith("provider") else "settlement"
+            if key in position and not _route_enum(enum_key, position[key]):
+                position.pop(key)
+        for key in ("token_amount", "cost_eth"):
+            number = position.get(key)
+            if not (type(number) in (int, float) and math.isfinite(number)
+                    and 0 <= number < 1e96):
+                position.pop(key, None)
+        clean["position"] = position
+    else:
+        clean.pop("position", None)
+
+    pending = _allowlisted_mapping(clean.get("pending_action"), _RAPID_PENDING_FIELDS)
+    if pending is not None:
+        if pending.get("type") not in {"buy", "sell"}:
+            pending.pop("type", None)
+        if "requested_at" in pending and not _route_timestamp(pending["requested_at"]):
+            pending.pop("requested_at")
+        clean["pending_action"] = pending
+    else:
+        clean.pop("pending_action", None)
+
+    completed = _allowlisted_mapping(
+        clean.get("last_completed_cycle"), _RAPID_COMPLETED_FIELDS
+    )
+    if completed is not None:
+        for key in ("opened_at", "closed_at"):
+            if key in completed and not _route_timestamp(completed[key]):
+                completed.pop(key)
+        for key in ("buy_provider", "sell_provider"):
+            if key in completed and not _route_enum("provider", completed[key]):
+                completed.pop(key)
+        for key in ("buy_settlement", "sell_settlement"):
+            if key in completed and not _route_enum("settlement", completed[key]):
+                completed.pop(key)
+        for key in ("profit_eth", "profit_percent"):
+            number = completed.get(key)
+            if not (type(number) in (int, float) and math.isfinite(number)
+                    and abs(number) < 1e96):
+                completed.pop(key, None)
+        clean["last_completed_cycle"] = completed
+    else:
+        clean.pop("last_completed_cycle", None)
+    return clean
+
+
 def _allowlisted_route_comparison(value, direction):
     """Explicit, fixed-depth shadow schema; no generic recursive copying."""
     if not isinstance(value, dict):
@@ -917,6 +1043,13 @@ def _allowlisted_status_payload(data):
         )
         if filtered["threshold_gap"] is None:
             filtered.pop("threshold_gap")
+
+    if "rapid_cycle" in filtered:
+        filtered["rapid_cycle"] = _allowlisted_rapid_cycle(
+            filtered["rapid_cycle"]
+        )
+        if filtered["rapid_cycle"] is None:
+            filtered.pop("rapid_cycle")
 
     for direction in ("buy", "sell"):
         field = direction + "_attempt"
@@ -1684,6 +1817,22 @@ DASHBOARD_HTML = """\
   .strategy-overview-name .spacing { color: #c4b5fd; }
   .threshold-gap-overview { border-color: #4c3f70; background: linear-gradient(135deg, rgba(76, 29, 149, 0.13), rgba(15, 23, 42, 0.48)); }
   .threshold-gap-overview .strategy-overview-name { color: #c4b5fd; }
+  .rapid-cycle-card { margin: 0.75rem 0; padding: 0.75rem; border: 1px solid #155e75; border-radius: 0.5rem; background: linear-gradient(135deg, rgba(8, 145, 178, 0.14), rgba(88, 28, 135, 0.12)); }
+  .rapid-cycle-card.live { border-color: #7c3aed; background: linear-gradient(135deg, rgba(124, 58, 237, 0.18), rgba(15, 23, 42, 0.5)); }
+  .rapid-cycle-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.65rem; margin-bottom: 0.65rem; }
+  .rapid-cycle-title { color: #f1f5f9; font-size: 0.82rem; font-weight: 800; letter-spacing: 0.03em; text-transform: uppercase; }
+  .rapid-cycle-state { display: block; margin-top: 0.1rem; color: #a5f3fc; font-size: 0.68rem; font-weight: 600; }
+  .rapid-cycle-card.live .rapid-cycle-state { color: #c4b5fd; }
+  .rapid-cycle-mode { flex: 0 0 auto; padding: 0.18rem 0.45rem; border: 1px solid #0e7490; border-radius: 9999px; color: #67e8f9; background: rgba(8, 47, 73, 0.75); font-size: 0.58rem; font-weight: 800; letter-spacing: 0.06em; }
+  .rapid-cycle-card.live .rapid-cycle-mode { border-color: #7c3aed; color: #ddd6fe; background: rgba(46, 16, 101, 0.8); }
+  .rapid-cycle-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.35rem; }
+  .rapid-cycle-stat { min-width: 0; padding: 0.45rem 0.5rem; border-radius: 0.35rem; background: rgba(15, 23, 42, 0.62); }
+  .rapid-cycle-stat span { display: block; color: #64748b; font-size: 0.56rem; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
+  .rapid-cycle-stat strong { display: block; margin-top: 0.12rem; color: #e2e8f0; font-size: 0.75rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  .rapid-cycle-stat strong.positive { color: #4ade80; }
+  .rapid-cycle-stat strong.negative { color: #fb7185; }
+  .rapid-cycle-meta { margin-top: 0.55rem; color: #94a3b8; font-size: 0.63rem; line-height: 1.45; overflow-wrap: anywhere; }
+  .rapid-cycle-last { margin-top: 0.4rem; padding-top: 0.4rem; border-top: 1px solid rgba(100, 116, 139, 0.3); color: #a7f3d0; font-size: 0.63rem; }
   .ladder-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.35rem; margin-bottom: 0.65rem; }
   .ladder-stat { min-width: 0; padding: 0.45rem 0.35rem; border-radius: 0.35rem; background: #1e293b; text-align: center; }
   .ladder-stat strong { display: block; color: #f1f5f9; font-size: 0.78rem; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
@@ -3331,6 +3480,81 @@ DASHBOARD_HTML = """\
     return html;
   }
 
+  function renderRapidCycle(rapid) {
+    if (!rapid || !['shadow', 'live'].includes(String(rapid.mode))) return '';
+    const mode = String(rapid.mode);
+    const status = String(rapid.status || 'flat');
+    const observation = rapid.last_observation || {};
+    const position = rapid.position || {};
+    const pending = rapid.pending_action || {};
+    const completed = rapid.last_completed_cycle || {};
+    const number = function(value) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const eth = function(value) {
+      const parsed = number(value);
+      return parsed === null ? '—' : parsed.toFixed(8).replace(/0+$/, '').replace(/\\.$/, '') + ' ETH';
+    };
+    const percent = function(value, signed) {
+      const parsed = number(value);
+      if (parsed === null) return '—';
+      return (signed && parsed >= 0 ? '+' : '') + parsed.toFixed(2) + '%';
+    };
+    const route = function(provider, settlement) {
+      return [provider, settlement].filter(Boolean).map(function(value) {
+        return String(value).toUpperCase();
+      }).join(' / ');
+    };
+    let stateLabel = 'Scanning executable entries';
+    if (status === 'open') stateLabel = mode === 'shadow' ? 'Paper position open' : 'Live position open';
+    else if (status === 'action_pending') stateLabel = 'Fresh ' + String(pending.type || 'trade') + ' validation pending';
+    const stat = function(label, value, css) {
+      return '<div class="rapid-cycle-stat"><span>' + esc(label) + '</span><strong' +
+        (css ? ' class="' + esc(css) + '"' : '') + '>' + esc(value) + '</strong></div>';
+    };
+    let html = '<section class="rapid-cycle-card ' + esc(mode) + '" aria-label="Rapid-cycle trading">' +
+      '<div class="rapid-cycle-header"><div><div class="rapid-cycle-title">⚡ Rapid Cycle</div>' +
+      '<span class="rapid-cycle-state">' + esc(stateLabel) + '</span></div>' +
+      '<span class="rapid-cycle-mode">' + (mode === 'shadow' ? 'SHADOW · PAPER ONLY' : 'LIVE · GUARDED') + '</span></div>' +
+      '<div class="rapid-cycle-stats">';
+    html += stat('Principal', eth(rapid.principal_eth));
+    html += stat('Completed cycles', String(parseInt(rapid.completed_cycle_count, 10) || 0));
+    if (status === 'flat' || (status === 'action_pending' && pending.type === 'buy')) {
+      const samples = parseInt(rapid.buy_sample_count, 10) || 0;
+      const minimum = parseInt(rapid.min_buy_samples, 10) || 0;
+      html += stat('Entry samples', samples + ' / ' + minimum);
+      html += stat(status === 'action_pending' ? 'Entry signal' : 'Latest improvement',
+        percent(observation.drop_from_peak_percent, false) + ' / ' + percent(rapid.entry_drop_percent, false));
+    } else {
+      html += stat((position.kind === 'paper' ? 'Paper ' : '') + 'Cost basis', eth(position.cost_eth));
+      const projected = number(observation.projected_profit_percent);
+      html += stat('Projected exit', percent(projected, true) + ' / +' + percent(rapid.min_profit_percent, false),
+        projected === null ? '' : (projected >= number(rapid.min_profit_percent) ? 'positive' : 'negative'));
+    }
+    html += '</div>';
+    const lastRoute = route(observation.provider, observation.settlement);
+    const observedAge = observation.observed_at ? reportAge(observation.observed_at).text : '';
+    const details = [];
+    if (lastRoute) details.push('Last ' + String(observation.direction || 'route') + ': ' + lastRoute);
+    if (observedAge) details.push(observedAge);
+    if (status === 'open' && number(position.token_amount) !== null) {
+      details.push((position.kind === 'paper' ? 'paper' : 'position') + ' amount: ' +
+        Number(position.token_amount).toLocaleString(undefined, { maximumFractionDigits: 6 }) + ' tokens');
+    }
+    if (details.length) html += '<div class="rapid-cycle-meta">' + esc(details.join(' · ')) + '</div>';
+    if (completed.closed_at) {
+      const completedProfit = number(completed.profit_percent);
+      const completedRoute = route(completed.buy_provider, completed.buy_settlement) +
+        (completed.sell_provider ? ' → ' + route(completed.sell_provider, completed.sell_settlement) : '');
+      html += '<div class="rapid-cycle-last">Last cycle ' +
+        esc(completedProfit === null ? 'completed' : percent(completedProfit, true) + ' net') +
+        (completedRoute ? ' · ' + esc(completedRoute) : '') + ' · ' +
+        esc(reportAge(completed.closed_at).text) + '</div>';
+    }
+    return html + '</section>';
+  }
+
   function reportAge(receivedAt, precisionSeconds) {
     const timestamp = Date.parse(receivedAt || '');
     if (!Number.isFinite(timestamp)) return { status: 'unknown', text: 'unknown' };
@@ -4307,6 +4531,8 @@ DASHBOARD_HTML = """\
         .filter(Boolean)
         .sort(function(a, b) { return tournamentTimestamp(b) - tournamentTimestamp(a); })
         .forEach(function(comparison) { html += renderRouteComparison(comparison, botKey); });
+
+      html += renderRapidCycle(d.rapid_cycle);
 
       d.buys = d.buys ?? 0;
       d.sells = d.sells ?? 0;
