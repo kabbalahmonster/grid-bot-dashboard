@@ -343,6 +343,8 @@ class TestDashboardRequestLimits(unittest.TestCase):
         body = self.client.get("/").get_data(as_text=True)
 
         self.assertIn("function thresholdGapOverview", body)
+        self.assertIn("gap_leading_edge_disabled: 'GAP BUY DISABLED'", body)
+        self.assertIn("gap.gap_leading_edge_enabled !== false", body)
         self.assertIn("SPACING GUARD", body)
         self.assertIn("Net buy mark", body)
         self.assertIn("Dip spacing", body)

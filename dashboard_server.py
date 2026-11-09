@@ -3293,6 +3293,7 @@ DASHBOARD_HTML = """\
     const decisionLabels = {
       dip_buy: 'DIP BUY READY',
       gap_leading_edge: 'GAP BUY READY',
+      gap_leading_edge_disabled: 'GAP BUY DISABLED',
       dip_spacing_guard: 'SPACING GUARD',
       waiting_for_leading_edge: 'WAITING FOR RISE',
       outside_bounded_gap: 'OUTSIDE BOUNDED GAP',
@@ -3314,7 +3315,7 @@ DASHBOARD_HTML = """\
     html += stat(percent(gap.room_above_percent), 'Ceiling room');
     html += '<div class="ladder-accounting">' + esc(gap.reason || 'No decision reason reported') + '</div></div>';
     html += '<div class="buy-targets">';
-    if (number(gap.next_leading_edge_price) > 0) {
+    if (gap.gap_leading_edge_enabled !== false && number(gap.next_leading_edge_price) > 0) {
       html += '<div class="buy-target leading"><div class="buy-target-label">Next gap buy<small>anchor #' +
         esc(gap.lower_anchor_position_id || '?') + ' · needs +' + esc(number(gap.leading_spacing_percent)?.toFixed(2) || '?') +
         '%</small></div><div class="buy-target-value">' + esc(price(gap.next_leading_edge_price)) +
