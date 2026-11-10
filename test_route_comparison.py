@@ -127,6 +127,26 @@ class TestRouteComparison(unittest.TestCase):
         })
         self.assertNotIn("secret", json.dumps(clean))
 
+    def test_pretrigger_no_winner_keeps_rejected_contestants(self):
+        value = comparison("sell")
+        value.update(
+            mode="execution_preflight",
+            status="pretrigger_no_qualifying_candidate",
+            selected_hypothetical_winner=None,
+            runner_up_delta=None,
+        )
+        value["candidates"][0].update(
+            validation_level="rejected",
+            rejections=["sell_profit_floor"],
+            minimum_profit_percent=5.0,
+        )
+
+        clean = self.clean(value, "sell")["route_comparison"]
+
+        self.assertEqual(clean["status"], "pretrigger_no_qualifying_candidate")
+        self.assertEqual(len(clean["candidates"]), 1)
+        self.assertEqual(clean["candidates"][0]["rejections"], ["sell_profit_floor"])
+
     def test_completed_fallback_keeps_execution_identity(self):
         value = comparison("sell")
         value.update(
@@ -546,6 +566,12 @@ console.log(JSON.stringify(results));
         self.assertFalse(refreshed["retained"])
         self.assertEqual(refreshed["rows"][0]["provider"], "sushiswap")
         self.assertNotIn("Refreshing contestants", html)
+
+    def test_collecting_round_does_not_claim_that_no_contestants_reported(self):
+        html = server.DASHBOARD_HTML
+
+        self.assertIn("Collecting contestants…", html)
+        self.assertIn("comparison.status === 'collecting_candidates'", html)
 
     def test_aborted_tournament_title_matches_direction(self):
         html = server.DASHBOARD_HTML

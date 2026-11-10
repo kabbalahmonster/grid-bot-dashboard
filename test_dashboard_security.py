@@ -276,6 +276,17 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
                 "upper_boundary_price": 0.14,
                 "room_above_percent": 40.0,
                 "max_gap_entry_price": 0.14 / 1.025,
+                "pretrigger": {
+                    "enabled": True,
+                    "eligible": True,
+                    "margin_percent": 2.0,
+                    "buy_threshold_percent": -10.0,
+                    "route_distance_percent": 0.2,
+                    "physical_distance_percent": 0.4,
+                    "maximum_fill_price": 0.09,
+                    "reason": "Route mark is inside the approach window",
+                    "private_note": "drop me",
+                },
                 "private_note": "drop me",
             },
             "positions": [{
@@ -288,6 +299,16 @@ class TestStatusPayloadAllowlist(unittest.TestCase):
 
         self.assertEqual(result["threshold_gap"]["decision"], "dip_spacing_guard")
         self.assertEqual(result["threshold_gap"]["next_leading_edge_price"], 0.1025)
+        self.assertEqual(result["threshold_gap"]["pretrigger"], {
+            "enabled": True,
+            "eligible": True,
+            "margin_percent": 2.0,
+            "buy_threshold_percent": -10.0,
+            "route_distance_percent": 0.2,
+            "physical_distance_percent": 0.4,
+            "maximum_fill_price": 0.09,
+            "reason": "Route mark is inside the approach window",
+        })
         self.assertNotIn("private_note", result["threshold_gap"])
         self.assertEqual(result["positions"], [{
             "id": "10",
