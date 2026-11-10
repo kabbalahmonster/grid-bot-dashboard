@@ -172,7 +172,12 @@ _THRESHOLD_GAP_FIELDS = frozenset({
     "buy_trigger_crossed", "lower_anchor_position_id", "lower_anchor_price",
     "lower_anchor_move_percent", "next_leading_edge_price",
     "upper_boundary_position_id", "upper_boundary_price",
-    "room_above_percent", "max_gap_entry_price",
+    "room_above_percent", "max_gap_entry_price", "pretrigger",
+})
+_PRETRIGGER_FIELDS = frozenset({
+    "enabled", "eligible", "margin_percent", "buy_threshold_percent",
+    "route_distance_percent", "physical_distance_percent",
+    "maximum_fill_price", "reason",
 })
 _SIGIL_FIELDS = frozenset({"version", "method", "key", "seed"})
 _MAX_POSITIONS = 100
@@ -596,6 +601,31 @@ def _allowlisted_threshold_gap(value):
     reason = clean.get("reason")
     if not (isinstance(reason, str) and len(reason) <= 500):
         clean.pop("reason", None)
+    pretrigger = _allowlisted_mapping(clean.get("pretrigger"), _PRETRIGGER_FIELDS)
+    if pretrigger is None:
+        clean.pop("pretrigger", None)
+    else:
+        for key in ("enabled", "eligible"):
+            if key in pretrigger and not isinstance(pretrigger[key], bool):
+                pretrigger.pop(key)
+        for key in (
+            "margin_percent", "buy_threshold_percent",
+            "route_distance_percent", "physical_distance_percent",
+        ):
+            number = pretrigger.get(key)
+            if not (type(number) in (int, float) and math.isfinite(number)
+                    and abs(number) <= 10000):
+                pretrigger.pop(key, None)
+        maximum_fill = pretrigger.get("maximum_fill_price")
+        if not (type(maximum_fill) in (int, float)
+                and math.isfinite(maximum_fill)
+                and 0 <= maximum_fill < 1e96):
+            pretrigger.pop("maximum_fill_price", None)
+        pretrigger_reason = pretrigger.get("reason")
+        if not (isinstance(pretrigger_reason, str)
+                and len(pretrigger_reason) <= 500):
+            pretrigger.pop("reason", None)
+        clean["pretrigger"] = pretrigger
     return clean
 
 
@@ -682,6 +712,7 @@ def _allowlisted_route_comparison(value, direction):
             or not isinstance(status, str)
             or status not in {"hypothetical_only", "no_eligible_candidate", "observation_failed",
                               "collecting_candidates", "preflight_no_authorized_candidate", "preflight_candidate_selected",
+                              "pretrigger_no_qualifying_candidate",
                               "preflight_failed", "required_provider_unavailable",
                               "required_local_gas_estimator_unavailable", "execution_aborted",
                               "baseline_fallback", "transaction_submitted", "completed"}
@@ -2694,7 +2725,9 @@ DASHBOARD_HTML = """\
       const pendingBadge = pendingTx
         ? '<div class="tournament-pending" role="status">⏳ PENDING ON-CHAIN · <a href="https://robinhoodchain.blockscout.com/tx/' + value(pendingTx) + '" target="_blank" rel="noopener noreferrer">Tx ↗</a></div>' : '';
       let html = '<section class="tournament-card" data-tournament-card data-tournament-updated-at="' + value(updatedAt) + '"><div class="tournament-heading"><h4>' + title + '</h4><span class="tournament-age" data-tournament-age="' + value(updatedAt) + '">' + value(tournamentAgeLabel(updatedAt)) + '</span></div>' + confirmationBadge + pendingBadge + '<div class="arena-status">' + value(arenaText) + '</div><div class="tournament-scoreboard">';
-      if (!rows.length) html += '<div>No contestants reported this round.</div>';
+      if (!rows.length) html += '<div>' + (comparison.status === 'collecting_candidates'
+        ? 'Collecting contestants…'
+        : 'No contestants reported this round.') + '</div>';
       rows.forEach(function(row, index) {
         const rejected = row.validation_level === 'rejected';
         const isWinner = displayWinner && row.provider === displayWinner.provider && row.settlement === displayWinner.settlement;
