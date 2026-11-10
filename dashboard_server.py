@@ -680,7 +680,7 @@ _ROUTE_REJECTIONS = frozenset({
     "missing_sell_cost_basis", "sell_profit_floor", "candidate_failed", "observation_deadline",
     "observation_timeout", "provider_swap_gas_estimate_missing",
     "local_gas_simulation_failed", "approval_required_before_local_simulation",
-    "local_conversion_gas_simulation_failed",
+    "local_conversion_gas_simulation_failed", "buy_trigger_fill_ceiling",
 })
 
 
@@ -904,7 +904,9 @@ def _allowlisted_route_comparison(value, direction):
             if _route_float(extra):
                 clean[key] = extra
         for key in ("projected_profit_eth", "projected_profit_percent",
-                    "minimum_return_eth", "minimum_profit_percent"):
+                    "minimum_return_eth", "minimum_profit_percent",
+                    "buy_reference_price", "projected_buy_move_percent",
+                    "buy_trigger_threshold_percent"):
             extra = row.get(key)
             if type(extra) in (int, float) and math.isfinite(extra) and abs(extra) < 1e96:
                 clean[key] = extra
@@ -2881,12 +2883,16 @@ DASHBOARD_HTML = """\
       const currentTargetPercent = Number((selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.minimum_profit_percent)); }) || {}).minimum_profit_percent);
       const retainedTargetPercent = Number(displayedContestants.targetPercent);
       const targetPercent = Number.isFinite(currentTargetPercent) ? currentTargetPercent : retainedTargetPercent;
+      const buyTargetRow = selectedRow || rows.find(function(row) { return Number.isFinite(Number(row.buy_trigger_threshold_percent)); });
+      const buyTargetPercent = Number(buyTargetRow?.buy_trigger_threshold_percent);
       const updatedAt = comparison.updated_at || '';
       const elapsedMs = Number(displayedContestants.elapsedMs);
       const elapsedText = Number.isFinite(elapsedMs) && elapsedMs >= 0
         ? value(elapsedMs) + ' ms' : '';
-      const targetText = !isBuy && Number.isFinite(targetPercent)
-        ? 'target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
+      const targetText = isBuy && Number.isFinite(buyTargetPercent)
+        ? 'target ' + (buyTargetPercent >= 0 ? '+' : '') + buyTargetPercent.toFixed(2).replace(/\\.00$/, '') + '%'
+        : !isBuy && Number.isFinite(targetPercent)
+          ? 'target +' + targetPercent.toFixed(2).replace(/\\.00$/, '') + '%' : '';
       const arenaText = [elapsedText, targetText].filter(Boolean).join(' · ');
       const confirmationBadge = completed && comparison.final
         ? '<div class="tournament-confirmed" role="status">✅ TRANSACTION CONFIRMED ON-CHAIN</div>' : '';
@@ -2901,6 +2907,8 @@ DASHBOARD_HTML = """\
         const rejected = row.validation_level === 'rejected';
         const isWinner = displayWinner && row.provider === displayWinner.provider && row.settlement === displayWinner.settlement;
         const pct = Number(row.projected_profit_percent);
+        const buyMovePercent = Number(row.projected_buy_move_percent);
+        const buyTriggerPercent = Number(row.buy_trigger_threshold_percent);
         const profitEth = Number(row.projected_profit_eth);
         const minimumEth = Number(row.minimum_return_eth);
         const gasEth = Number(row.gas_total_eth);
@@ -2914,10 +2922,10 @@ DASHBOARD_HTML = """\
         const contestantKey = String(botKey || '') + ':' + row.provider + ':' + row.settlement;
         html += '<details class="tournament-contestant' + (isWinner ? ' winner' : '') + '" data-tournament-key="' + value(contestantKey) + '"' + (openTournamentContestants.has(contestantKey) ? ' open' : '') + '><summary>' +
           '<span class="tournament-rank">#' + (index + 1) + '</span><strong>' + (isWinner ? '👑 ' : '') + value(row.provider) + ' · ' + value(row.settlement).toUpperCase() + '</strong>' +
-          '<span class="tournament-profit ' + (isBuy || pct >= 0 ? 'positive' : 'negative') + '">' + (timedOut ? 'timed out' : isBuy ? (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) + ' tokens' : '—') : (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—')) + '</span>' +
+          '<span class="tournament-profit ' + (isBuy || pct >= 0 ? 'positive' : 'negative') + '">' + (timedOut ? 'timed out' : isBuy ? (Number.isFinite(buyMovePercent) ? (buyMovePercent >= 0 ? '+' : '') + buyMovePercent.toFixed(2) + '%' : (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) + ' tokens' : '—')) : (Number.isFinite(pct) ? (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%' : '—')) + '</span>' +
           '<span>' + (rejected ? '🛡️ rejected' : '⚔️ eligible') + '</span></summary>' +
           '<div class="tournament-detail">' + (isBuy
-            ? 'Quoted tokens: <strong>' + (Number.isFinite(quotedTokens) ? formatTokenAmount(quotedTokens) : '—') + '</strong><br>Conservative receive floor: ' + (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) : '—') + ' tokens<br>'
+            ? (Number.isFinite(buyMovePercent) ? 'Conservative fill move / trigger: <strong>' + (buyMovePercent >= 0 ? '+' : '') + buyMovePercent.toFixed(2) + '% / ' + (Number.isFinite(buyTriggerPercent) ? (buyTriggerPercent >= 0 ? '+' : '') + buyTriggerPercent.toFixed(2) + '%' : '—') + '</strong><br>' : '') + 'Quoted tokens: <strong>' + (Number.isFinite(quotedTokens) ? formatTokenAmount(quotedTokens) : '—') + '</strong><br>Conservative receive floor: ' + (Number.isFinite(conservativeTokens) ? formatTokenAmount(conservativeTokens) : '—') + ' tokens<br>'
             : 'Projected profit: <strong>' + (Number.isFinite(profitEth) ? (profitEth >= 0 ? '+' : '') + profitEth.toFixed(8) + ' ETH' : '—') + '</strong><br>Estimated return / minimum: ' + (Number.isFinite(Number(row.projected_net_score)) ? (Number(row.projected_net_score) / 1e18).toFixed(8) : '—') + ' / ' + (Number.isFinite(minimumEth) ? minimumEth.toFixed(8) : '—') + ' ETH<br>') +
           'Estimated gas: ' + (Number.isFinite(gasEth) ? gasEth.toFixed(8) : '—') + ' ETH · protocol: ' + value(row.protocol || 'auto') + '<br>' +
           'Quoted / conservative floor: ' + value(row.quoted_output_human) + ' / ' + value(row.output_floor_human) +

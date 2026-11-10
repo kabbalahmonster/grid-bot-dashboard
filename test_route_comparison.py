@@ -71,6 +71,7 @@ class TestRouteComparison(unittest.TestCase):
         for field, invalids in {
             "quoted_output_raw": [True, 12, "-1", str(2**256), "9" * 1000, {"secret": "x"}, "0x123"],
             "projected_net_score": ["NaN", "Infinity", "1e999", "<script>", [], True],
+            "projected_buy_move_percent": ["-9.7", float("nan"), float("inf"), "<script>", [], True],
             "slippage_fraction": [True, -1, 1, float("nan"), float("inf"), "0.1"],
             "approval_assumption": ["api-secret", {}, "0x" + "a" * 40],
         }.items():
@@ -484,6 +485,41 @@ class TestRouteComparison(unittest.TestCase):
         self.assertEqual(clean["final"]["tx_hash"], "0x" + "a" * 64)
         self.assertEqual(clean["final"]["provider"], "uniswap")
 
+    def test_buy_fill_move_and_trigger_are_allowlisted_and_rendered(self):
+        value = comparison("buy")
+        value.update(mode="execution_preflight", status="pretrigger_no_qualifying_candidate",
+                     selected_hypothetical_winner=None, runner_up_delta=None)
+        value["candidates"][0].update(
+            validation_level="rejected", rejections=["buy_trigger_fill_ceiling"],
+            quoted_output_human=3450.31, output_floor_human=3381.30,
+            buy_reference_price=0.0001, projected_buy_move_percent=-9.72,
+            buy_trigger_threshold_percent=-10.0,
+        )
+        clean = self.clean(value, "buy")["route_comparison"]
+        row = clean["candidates"][0]
+        self.assertEqual(row["projected_buy_move_percent"], -9.72)
+        self.assertEqual(row["buy_trigger_threshold_percent"], -10.0)
+        self.assertEqual(row["rejections"], ["buy_trigger_fill_ceiling"])
+
+        html = server.DASHBOARD_HTML
+        start = html.index("  function renderRouteComparison(")
+        end = html.index("\n  function ", html.index("  function esc(", start) + 4)
+        script = """const document = {createElement: () => ({textContent: '',
+          get innerHTML() { return this.textContent.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+        })};
+const openTournamentContestants = new Set();
+const tournamentAgeLabel = () => 'just now';
+const formatTokenAmount = value => Number(value).toFixed(2);
+""" + html[start:end]
+        output = subprocess.run(
+            ["node", "-e", script + "\nconsole.log(renderRouteComparison(" + json.dumps(clean) + "));"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        self.assertIn("target -10%", output)
+        self.assertIn("-9.72%", output)
+        self.assertIn("Conservative fill move / trigger", output)
+        self.assertIn("buy_trigger_fill_ceiling", output)
+
     def test_aborted_buy_tournament_preserves_terminal_guard_details(self):
         value = comparison("buy")
         value.update(mode="execution_preflight", status="execution_aborted",
@@ -516,7 +552,8 @@ class TestRouteComparison(unittest.TestCase):
         html = server.DASHBOARD_HTML
         for needle in ("BUY ROUTE TOURNAMENT", "SELL ROUTE TOURNAMENT",
                        "Quoted tokens:",
-                       "Conservative receive floor:", "target +",
+                       "Conservative receive floor:", "Conservative fill move / trigger:",
+                       "target +", "buy_trigger_threshold_percent",
                        "BUY TOURNAMENT ABORTED", "SELL TOURNAMENT ABORTED",
                        "No transaction sent",
                        "execution_aborted"):
