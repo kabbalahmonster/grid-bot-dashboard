@@ -5,6 +5,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from requests.exceptions import ReadTimeout
+
 from telegram_alerts import TelegramAlerts
 
 
@@ -47,7 +49,15 @@ class TestTelegramAlerts(unittest.TestCase):
         self.alerts.send.side_effect = [False, True]
 
         self.alerts.process_status("retry", previous, current)
-        self.assertIn("trade:sells:retry:0xretry", self.alerts._pending_trade_alerts)
+        identity = "trade:sells:retry:0xretry"
+        self.assertIn(identity, self.alerts._pending_trade_alerts)
+
+        self.alerts.process_status("retry", current, current)
+        self.assertEqual(self.alerts.send.call_count, 1)
+
+        self.alerts._trade_retry_state[identity]["next_retry_at"] = (
+            datetime(1970, 1, 1, tzinfo=timezone.utc).isoformat()
+        )
 
         self.alerts.process_status("retry", current, current)
         self.alerts.process_status("retry", current, current)
@@ -66,11 +76,35 @@ class TestTelegramAlerts(unittest.TestCase):
         reloaded.enabled = True
         reloaded.send = Mock(return_value=True)
         try:
+            identity = "trade:sells:restart:0xrestart"
+            reloaded._trade_retry_state[identity]["next_retry_at"] = (
+                datetime(1970, 1, 1, tzinfo=timezone.utc).isoformat()
+            )
             reloaded.process_status("restart", current, current)
             self.assertEqual(reloaded.send.call_count, 1)
             self.assertFalse(reloaded._pending_trade_alerts)
         finally:
             reloaded.close()
+
+    @patch("telegram_alerts.requests.post")
+    def test_read_timeout_is_consumed_as_indeterminate_delivery(self, post):
+        post.side_effect = ReadTimeout("response was lost")
+
+        delivered = TelegramAlerts.send(self.alerts, "one trade only")
+
+        self.assertTrue(delivered)
+        post.assert_called_once()
+
+    def test_failed_trade_alert_retries_are_bounded(self):
+        identity = "trade:sells:bounded:0xbounded"
+
+        for _ in range(5):
+            self.alerts._finish_trade_alert(identity, False)
+
+        self.assertNotIn(identity, self.alerts._pending_trade_alerts)
+        self.assertNotIn(identity, self.alerts._trade_retry_state)
+        self.assertIn(identity, self.alerts._seen_set)
+        self.assertFalse(self.alerts._claim_trade_alert(identity, is_new=False))
 
     def test_muted_sell_does_not_create_retry_backlog(self):
         trade = {"side": "sell", "tx_hash": "0xmuted", "profit_eth": 0.001}

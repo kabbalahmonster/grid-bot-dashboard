@@ -36,6 +36,8 @@ CHAIN_EXPLORERS = {
     8453: "https://base.blockscout.com/tx/",
     4663: "https://robinhoodchain.blockscout.com/tx/",
 }
+TRADE_ALERT_MAX_ATTEMPTS = 5
+TRADE_ALERT_RETRY_DELAYS_SECONDS = (30, 120, 600, 1800)
 
 
 class TelegramAlerts:
@@ -66,6 +68,7 @@ class TelegramAlerts:
         self._seen = deque(maxlen=5000)
         self._seen_set = set()
         self._pending_trade_alerts = set()
+        self._trade_retry_state = {}
         self._trade_alerts_inflight = set()
         self._offline_notified = set()
         self._low_funds_notified = set()
@@ -116,6 +119,12 @@ class TelegramAlerts:
             self._seen = deque(state.get("seen", [])[-5000:], maxlen=5000)
             self._seen_set = set(self._seen)
             self._pending_trade_alerts = set(state.get("pending_trade_alerts", []))
+            retry_state = state.get("trade_retry_state", {})
+            if isinstance(retry_state, dict):
+                self._trade_retry_state = {
+                    identity: retry for identity, retry in retry_state.items()
+                    if identity in self._pending_trade_alerts and isinstance(retry, dict)
+                }
             self._offline_notified = set(state.get("offline_notified", []))
             self._low_funds_notified = set(state.get("low_funds_notified", []))
             self._unbanked_usdg_notified = set(state.get("unbanked_usdg_notified", []))
@@ -140,6 +149,11 @@ class TelegramAlerts:
                 "preferences": self._preferences,
                 "seen": list(self._seen),
                 "pending_trade_alerts": sorted(self._pending_trade_alerts),
+                "trade_retry_state": {
+                    identity: self._trade_retry_state[identity]
+                    for identity in sorted(self._pending_trade_alerts)
+                    if identity in self._trade_retry_state
+                },
                 "offline_notified": sorted(self._offline_notified),
                 "low_funds_notified": sorted(self._low_funds_notified),
                 "unbanked_usdg_notified": sorted(self._unbanked_usdg_notified),
@@ -171,6 +185,13 @@ class TelegramAlerts:
                 return False
             if not is_new and identity not in self._pending_trade_alerts:
                 return False
+            if identity in self._pending_trade_alerts:
+                retry_at = self._trade_retry_state.get(identity, {}).get("next_retry_at")
+                try:
+                    if retry_at and datetime.fromisoformat(retry_at) > datetime.now(timezone.utc):
+                        return False
+                except (TypeError, ValueError):
+                    pass
             self._trade_alerts_inflight.add(identity)
             return True
 
@@ -185,8 +206,37 @@ class TelegramAlerts:
                     self._seen.append(identity)
                     self._seen_set.add(identity)
                 self._pending_trade_alerts.discard(identity)
+                self._trade_retry_state.pop(identity, None)
             else:
-                self._pending_trade_alerts.add(identity)
+                previous_attempts = self._trade_retry_state.get(identity, {}).get("attempts", 0)
+                try:
+                    attempts = int(previous_attempts) + 1
+                except (TypeError, ValueError):
+                    attempts = 1
+                if attempts >= TRADE_ALERT_MAX_ATTEMPTS:
+                    if len(self._seen) == self._seen.maxlen:
+                        self._seen_set.discard(self._seen[0])
+                    if identity not in self._seen_set:
+                        self._seen.append(identity)
+                        self._seen_set.add(identity)
+                    self._pending_trade_alerts.discard(identity)
+                    self._trade_retry_state.pop(identity, None)
+                    self.log.error(
+                        "Giving up Telegram trade alert after %d definite failures: %s",
+                        attempts,
+                        identity,
+                    )
+                else:
+                    delay = TRADE_ALERT_RETRY_DELAYS_SECONDS[
+                        min(attempts - 1, len(TRADE_ALERT_RETRY_DELAYS_SECONDS) - 1)
+                    ]
+                    self._pending_trade_alerts.add(identity)
+                    self._trade_retry_state[identity] = {
+                        "attempts": attempts,
+                        "next_retry_at": (
+                            datetime.now(timezone.utc) + timedelta(seconds=delay)
+                        ).isoformat(),
+                    }
             self._save_locked()
 
     def _wanted(self, category):
@@ -224,6 +274,16 @@ class TelegramAlerts:
                 timeout=self.request_timeout,
             )
             response.raise_for_status()
+            return True
+        except requests.exceptions.ReadTimeout as exc:
+            # Telegram may have accepted the POST before its response was lost.
+            # Retrying an indeterminate delivery can spam the same trade on
+            # every bot heartbeat, so consume it as at-most-once delivery.
+            self.log.warning(
+                "Telegram response timed out after submission; suppressing "
+                "retry because delivery is indeterminate: %s",
+                exc,
+            )
             return True
         except requests.RequestException as exc:
             self.log.warning("Telegram send failed: %s", exc)
