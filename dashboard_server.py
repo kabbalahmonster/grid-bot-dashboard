@@ -2217,6 +2217,10 @@ DASHBOARD_HTML = """\
   let sortDirectionValue = ['asc', 'desc'].includes(storedSortDirection) ? storedSortDirection : (defaultSortDirections[sortBots.value] || 'asc');
   const storedProfitCurrency = localStorage.getItem('dashboard-profit-currency');
   let profitCurrency = ['cad', 'usd'].includes(storedProfitCurrency) ? storedProfitCurrency : 'cad';
+  // Keep bag-value display separate from profit display.  Older browsers that
+  // only have dashboard-profit-currency retain their selected fiat currency.
+  const storedBagCurrency = localStorage.getItem('dashboard-bag-currency');
+  let bagCurrency = ['eth', 'cad', 'usd'].includes(storedBagCurrency) ? storedBagCurrency : profitCurrency;
   const launchParams = new URLSearchParams(window.location.search);
   const launchedBot = (launchParams.get('bot') || '').trim();
   botFilter.value = launchedBot || localStorage.getItem('dashboard-bot-filter') || '';
@@ -3543,15 +3547,18 @@ DASHBOARD_HTML = """\
     const uptimeText = uptimeDays > 0 ? uptimeDays + 'd ' + uptimeHours + 'h' : (uptimeHours > 0 ? uptimeHours + 'h ' + uptimeMinutes + 'm' : uptimeMinutes + 'm');
     const fiatRate = ethPrices[profitCurrency];
     const fiatCode = profitCurrency.toUpperCase();
+    const bagCode = bagCurrency.toUpperCase();
     const usdgCadValue = Number.isFinite(ethPrices.cad) && Number.isFinite(ethPrices.usd) && ethPrices.usd > 0
       ? usdgBalance * ethPrices.cad / ethPrices.usd : null;
     const fiatProfit = Number.isFinite(fiatRate) ? profit * fiatRate : null;
     const fleetBagValue = states.reduce(function(total, d) {
-      const value = estimatedBagValue(d, profitCurrency);
+      const value = estimatedBagValue(d, bagCurrency);
       return value === null ? total : total + value;
     }, 0);
-    const fleetBagValueAvailable = Number.isFinite(fiatRate) && Number.isFinite(ethPrices.usd);
-    const totalEthFiat = Number.isFinite(fiatRate) ? totalEthBalance * fiatRate : null;
+    const fleetBagValueAvailable = Number.isFinite(ethPrices.usd) &&
+      (bagCurrency === 'eth' || Number.isFinite(ethPrices[bagCurrency]));
+    const totalEthBagValue = bagCurrency === 'eth' ? totalEthBalance :
+      (Number.isFinite(ethPrices[bagCurrency]) ? totalEthBalance * ethPrices[bagCurrency] : null);
     const realizedUnitCode = realizedProfitUnit.toUpperCase();
     const realizedUnitRate = realizedProfitUnit === 'eth' ? 1 : ethPrices[realizedProfitUnit];
     const formatRealizedAmount = function(valueEth, includeUnit) {
@@ -3607,8 +3614,8 @@ DASHBOARD_HTML = """\
       '<button class="summary-item status-summary stale" type="button" data-status-list="stale" title="List stale bots">Stale: ' + stale + '</button>' +
       '<button class="summary-item status-summary offline" type="button" data-status-list="offline" title="List offline bots">Offline: ' + offline + '</button>' +
       '<span class="summary-item" title="Estimated from current balances and spot prices; liquidation value may be lower">Estimated fleet value: ' +
-      (fleetBagValueAvailable ? formatBagValue(fleetBagValue, profitCurrency) : '—') +
-      ' <button class="currency-toggle" type="button" data-bag-currency-toggle>' + fiatCode + '</button>' +
+      (fleetBagValueAvailable ? formatBagValue(fleetBagValue, bagCurrency) : '—') +
+      ' <button class="currency-toggle" type="button" data-bag-currency-toggle>' + bagCode + '</button>' +
       '<span class="summary-detail">ETH + USDG + tokens</span></span>' +
       '<span class="summary-item">Session profit: ' + (profit >= 0 ? '+' : '') + profit.toFixed(8) + ' ETH' +
       (fiatProfit === null ? '' : ' / ' + (fiatProfit >= 0 ? '+' : '') + new Intl.NumberFormat(undefined, { style: 'currency', currency: fiatCode }).format(fiatProfit)) +
@@ -3620,8 +3627,8 @@ DASHBOARD_HTML = """\
         formatRealizedAmount(realizedDailyAverage, false) + '/day · ' +
         formatRealizedAmount(realizedHourlyAverage, false) + '/hr</span>') + '</span>' +
       '<button class="summary-item" type="button" data-bag-currency-toggle title="Combined ETH balance across the displayed bots">Total ETH: ' +
-      totalEthBalance.toFixed(8) + ' ETH' + (totalEthFiat === null ? '' : '<span class="summary-detail">' +
-      formatBagValue(totalEthFiat, profitCurrency) + ' ' + fiatCode + ' · tap for ' + (profitCurrency === 'usd' ? 'CAD' : 'USD') + '</span>') + '</button>' +
+      totalEthBalance.toFixed(8) + ' ETH' + (totalEthBagValue === null ? '' : '<span class="summary-detail">' +
+      formatBagValue(totalEthBagValue, bagCurrency) + ' ' + bagCode + ' · tap for ' + ({ eth: 'CAD', cad: 'USD', usd: 'ETH' }[bagCurrency]) + '</span>') + '</button>' +
       '<span class="summary-item">USDG: ' + usdgBalance.toFixed(2) +
       (usdgCadValue === null ? '' : '<span class="summary-detail">' + formatBagValue(usdgCadValue, 'cad') + ' CAD</span>') + '</span>' +
       '<span class="summary-item">Treasury sent: ' + treasurySentUsdg.toFixed(2) + ' USDG</span>' +
@@ -3693,16 +3700,17 @@ DASHBOARD_HTML = """\
   }
 
   function estimatedBagValue(d, currency) {
-    const ethRate = Number(ethPrices[currency]);
     const usdRate = Number(ethPrices.usd);
     const ethBalance = Number(d.eth_balance) || 0;
     const tokenBalance = Number(d.token_balance) || 0;
     const tokenPriceEth = Number(d.price) || 0;
     const usdgBalance = Number(d.usdg_balance) || 0;
-    if (!Number.isFinite(ethRate) || !Number.isFinite(usdRate) || usdRate <= 0) return null;
-    const cryptoValue = (ethBalance + tokenBalance * tokenPriceEth) * ethRate;
-    const usdgValue = currency === 'usd' ? usdgBalance : usdgBalance * ethRate / usdRate;
-    return cryptoValue + usdgValue;
+    if (!Number.isFinite(usdRate) || usdRate <= 0) return null;
+    const ethValue = ethBalance + tokenBalance * tokenPriceEth + usdgBalance / usdRate;
+    if (currency === 'eth') return ethValue;
+    const ethRate = Number(ethPrices[currency]);
+    if (!Number.isFinite(ethRate)) return null;
+    return ethValue * ethRate;
   }
 
   function estimatedNextBuy(d) {
@@ -3714,6 +3722,7 @@ DASHBOARD_HTML = """\
 
   function formatBagValue(value, currency) {
     if (!Number.isFinite(value)) return '—';
+    if (currency === 'eth') return value.toFixed(8);
     return new Intl.NumberFormat(undefined, {
       style: 'currency', currency: currency.toUpperCase(),
       minimumFractionDigits: 2, maximumFractionDigits: 2
@@ -4089,8 +4098,8 @@ DASHBOARD_HTML = """\
         result = aName.localeCompare(bName) || a.localeCompare(b);
       }
       else if (mode === 'estimated-value') {
-        const aValue = estimatedBagValue(av, profitCurrency);
-        const bValue = estimatedBagValue(bv, profitCurrency);
+        const aValue = estimatedBagValue(av, bagCurrency);
+        const bValue = estimatedBagValue(bv, bagCurrency);
         if (aValue === null && bValue === null) return a.localeCompare(b);
         if (aValue === null) return 1;
         if (bValue === null) return -1;
@@ -4391,7 +4400,7 @@ DASHBOARD_HTML = """\
       d.strategy_display = strategy.detail;
       d.ladder_summary = strategy.ladderSummary || null;
       d.next_buy_estimated_eth = estimatedNextBuy(d);
-      d.estimated_bag_value = estimatedBagValue(d, profitCurrency);
+      d.estimated_bag_value = estimatedBagValue(d, bagCurrency);
 
       function renderMetric(pair) {
         const label = pair[0], key = pair[1];
@@ -4407,7 +4416,7 @@ DASHBOARD_HTML = """\
             val = (point >= 0 ? '+' : '') + point.toFixed(2).replace(/\\.00$/, '') + '%';
           } else if (key === 'estimated_bag_value') {
             val = '<button class="currency-toggle" type="button" data-bag-currency-toggle title="Estimated from current balances and spot prices; liquidation value may be lower">' +
-              esc(formatBagValue(Number(val), profitCurrency)) + ' ' + esc(profitCurrency.toUpperCase()) + '</button>';
+              esc(formatBagValue(Number(val), bagCurrency)) + ' ' + esc(bagCurrency.toUpperCase()) + '</button>';
           } else if (key === 'session_profit_eth' || key === 'realized_profit_eth') {
             cls = parseFloat(val) >= 0 ? 'positive' : 'negative';
             val = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(8) + ' ETH';
@@ -4747,7 +4756,13 @@ DASHBOARD_HTML = """\
       render(true);
       return;
     }
-    if (!event.target.closest('[data-currency-toggle], [data-bag-currency-toggle]')) return;
+    if (event.target.closest('[data-bag-currency-toggle]')) {
+      bagCurrency = { eth: 'cad', cad: 'usd', usd: 'eth' }[bagCurrency];
+      localStorage.setItem('dashboard-bag-currency', bagCurrency);
+      render(true);
+      return;
+    }
+    if (!event.target.closest('[data-currency-toggle]')) return;
     profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
     localStorage.setItem('dashboard-profit-currency', profitCurrency);
     render(true);
@@ -4780,8 +4795,8 @@ DASHBOARD_HTML = """\
       return;
     }
     if (!event.target.closest('[data-bag-currency-toggle]')) return;
-    profitCurrency = profitCurrency === 'usd' ? 'cad' : 'usd';
-    localStorage.setItem('dashboard-profit-currency', profitCurrency);
+    bagCurrency = { eth: 'cad', cad: 'usd', usd: 'eth' }[bagCurrency];
+    localStorage.setItem('dashboard-bag-currency', bagCurrency);
     render(true);
   });
   document.addEventListener('visibilitychange', function() {

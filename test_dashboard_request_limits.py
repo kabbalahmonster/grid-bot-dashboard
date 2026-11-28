@@ -219,13 +219,14 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("Runtime auto-detected transfer fee", body)
         self.assertIn("token_tax_detection_source", body)
 
-    def test_estimated_bag_values_use_existing_balances_and_fiat_rates(self):
+    def test_estimated_bag_values_support_eth_and_existing_fiat_rates(self):
         body = self.client.get("/").get_data(as_text=True)
         self.assertIn("function estimatedBagValue(d, currency)", body)
-        self.assertIn("ethBalance + tokenBalance * tokenPriceEth", body)
-        self.assertIn("usdgBalance * ethRate / usdRate", body)
+        self.assertIn("ethBalance + tokenBalance * tokenPriceEth + usdgBalance / usdRate", body)
+        self.assertIn("if (currency === 'eth') return ethValue;", body)
+        self.assertIn("if (currency === 'eth') return value.toFixed(8);", body)
         self.assertIn("Estimated fleet value:", body)
-        self.assertIn("data-bag-currency-toggle>' + fiatCode + '</button>", body)
+        self.assertIn("data-bag-currency-toggle>' + bagCode + '</button>", body)
         self.assertIn("usdgBalance * ethPrices.cad / ethPrices.usd", body)
         self.assertIn("formatBagValue(usdgCadValue, 'cad') + ' CAD", body)
         self.assertLess(body.index("Estimated fleet value:"), body.index("Session profit:"))
@@ -234,12 +235,12 @@ class TestDashboardRequestLimits(unittest.TestCase):
         self.assertIn("liquidation value may be lower", body)
         self.assertIn('<option value="estimated-value">Estimated value</option>', body)
         self.assertIn("mode === 'estimated-value'", body)
-        self.assertIn("estimatedBagValue(av, profitCurrency)", body)
+        self.assertIn("estimatedBagValue(av, bagCurrency)", body)
         self.assertIn("'estimated-value': 'desc'", body)
         self.assertLess(body.index("Needs new positions:"), body.index("Active:"))
         self.assertIn("Total ETH: ' +", body)
         self.assertIn("totalEthBalance.toFixed(8) + ' ETH'", body)
-        self.assertIn("totalEthBalance * fiatRate", body)
+        self.assertIn("bagCurrency === 'eth' ? totalEthBalance", body)
         self.assertIn("Combined ETH balance across the displayed bots", body)
         self.assertLess(body.index("formatRealizedAmount(realizedHourlyAverage, false)"), body.index("Total ETH: ' +"))
 
